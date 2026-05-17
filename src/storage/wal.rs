@@ -60,10 +60,7 @@ impl Wal {
     /// Open or create a WAL file at the given path.
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         let count = count_entries(&path).unwrap_or(0);
 
@@ -242,7 +239,10 @@ pub fn read_entries(path: &Path) -> std::io::Result<Vec<WalEntry>> {
         // Verify CRC32
         let actual_crc = crc32fast::hash(&payload);
         if actual_crc != expected_crc {
-            warn!(pos, expected_crc, actual_crc, "WAL: CRC mismatch, stopping replay");
+            warn!(
+                pos,
+                expected_crc, actual_crc, "WAL: CRC mismatch, stopping replay"
+            );
             break;
         }
 
@@ -271,7 +271,9 @@ mod tests {
     use std::fs;
 
     fn tmp_wal(name: &str) -> PathBuf {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test_wal");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test_wal");
         fs::create_dir_all(&dir).unwrap();
         dir.join(name)
     }

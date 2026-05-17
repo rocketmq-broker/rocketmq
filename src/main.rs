@@ -1,6 +1,7 @@
 mod broker;
 mod connection;
 mod routing;
+mod queue;
 mod handler;
 mod core;
 mod storage;
