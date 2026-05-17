@@ -6,7 +6,7 @@ use super::message::Message;
 pub struct QueueState {
     pub options: QueueOptions,
     pub owner_conn_id: Option<u64>,
-    pub listeners: Vec<u64>,
+    pub listeners: Vec<(u64, u16)>,
     pub messages: PriorityQueue,
     pub inflight: HashMap<u64, Message>,
     pub next_listener: usize,
@@ -30,12 +30,24 @@ impl QueueState {
         }
     }
 
-    pub fn next_target(&mut self) -> Option<u64> {
+    pub fn next_target(&mut self, broker: &crate::state::Broker) -> Option<(u64, u16)> {
         if self.listeners.is_empty() {
             return None;
         }
-        let idx = self.next_listener % self.listeners.len();
-        self.next_listener += 1;
-        Some(self.listeners[idx])
+        let len = self.listeners.len();
+        for _ in 0..len {
+            let idx = self.next_listener % len;
+            self.next_listener += 1;
+            let (target_id, channel_id) = self.listeners[idx];
+
+            if let Some(cs) = broker.conn_state.get(&target_id) {
+                if let Some(ch) = cs.channels.get(&channel_id) {
+                    if ch.can_deliver() {
+                        return Some((target_id, channel_id));
+                    }
+                }
+            }
+        }
+        None
     }
 }

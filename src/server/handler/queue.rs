@@ -56,7 +56,7 @@ pub async fn assert_queue(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Broke
         .await;
 }
 
-pub async fn listen(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Broker, body: &[u8]) {
+pub async fn listen(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, broker: &Broker, body: &[u8]) {
     let qname = match std::str::from_utf8(body) {
         Ok(s) => s,
         Err(_) => {
@@ -67,8 +67,8 @@ pub async fn listen(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Broker, bod
 
     match broker.queues.get_mut(qname) {
         Some(mut queue) => {
-            if !queue.listeners.contains(&conn_id) {
-                queue.listeners.push(conn_id);
+            if !queue.listeners.contains(&(conn_id, channel_id)) {
+                queue.listeners.push((conn_id, channel_id));
             }
         }
         None => {
@@ -77,7 +77,7 @@ pub async fn listen(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Broker, bod
         }
     }
 
-    info!(conn_id, queue = qname, "listening");
+    info!(conn_id, channel_id, queue = qname, "listening");
     let _ = tx
         .send(Frame::with_body(Event::ListenOk, b"listen.ok".to_vec()))
         .await;

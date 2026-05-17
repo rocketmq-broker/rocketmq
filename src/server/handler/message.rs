@@ -6,7 +6,7 @@ use crate::core::protocol::{Event, Frame};
 use crate::queue::Message;
 use crate::state::Broker;
 
-pub async fn publish(conn_id: u64, broker: &Broker, headers: &[u8], body: &[u8]) {
+pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[u8], body: &[u8]) {
     let headers_str = match std::str::from_utf8(headers) {
         Ok(s) => s,
         Err(_) => {
@@ -134,22 +134,28 @@ pub async fn publish(conn_id: u64, broker: &Broker, headers: &[u8], body: &[u8])
                 redelivered: false,
             };
 
-            match queue.next_target() {
+            match queue.next_target(broker) {
                 None => {
                     queue.messages.push_back(msg);
                     debug!(conn_id, msg_id, queue = queue_name.as_str(), "queued");
                     None
                 }
-                Some(target_id) => {
+                Some((target_id, target_channel_id)) => {
                     queue.inflight.insert(msg_id, msg);
                     let msg_ref = queue.inflight.get(&msg_id).unwrap();
-                    let frame = Frame::with_deliver(msg_id, &msg_ref.headers, &msg_ref.body);
+                    let frame = Frame::with_deliver(target_channel_id, msg_id, &msg_ref.headers, &msg_ref.body);
+
+                    if let Some(mut cs) = broker.conn_state.get_mut(&target_id) {
+                        if let Some(ch) = cs.channels.get_mut(&target_channel_id) {
+                            ch.unacked_count += 1;
+                        }
+                    }
 
                     // Get connection handle (separate DashMap, no conflict)
                     broker
                         .connections
                         .get(&target_id)
-                        .map(|h| (msg_id, frame, h.clone()))
+                        .map(|h| (msg_id, frame, h.clone(), target_channel_id))
                 }
             }
         }; // queue lock released
@@ -165,16 +171,16 @@ pub async fn publish(conn_id: u64, broker: &Broker, headers: &[u8], body: &[u8])
             }
         }
 
-        if let Some((msg_id, frame, handle)) = delivery {
+        if let Some((msg_id, frame, handle, target_channel_id)) = delivery {
             let _ = handle.tx.send(frame).await;
-            info!(conn_id, msg_id, target = handle.id, "delivered");
+            info!(conn_id, msg_id, target = handle.id, target_channel_id, "delivered");
         }
     }
 
     send_confirm(conn_id, broker, true).await;
 }
 
-pub async fn ack(conn_id: u64, broker: &Broker, headers: &[u8]) {
+pub async fn ack(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[u8]) {
     let msg_id = match super::parse_msg_id(headers) {
         Some(id) => id,
         None => {
@@ -182,6 +188,14 @@ pub async fn ack(conn_id: u64, broker: &Broker, headers: &[u8]) {
             return;
         }
     };
+
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel_id) {
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
+        }
+    }
 
     for mut entry in broker.queues.iter_mut() {
         if entry.value_mut().inflight.remove(&msg_id).is_some() {
@@ -196,7 +210,7 @@ pub async fn ack(conn_id: u64, broker: &Broker, headers: &[u8]) {
     warn!(conn_id, msg_id, "ack for unknown message");
 }
 
-pub async fn nack(conn_id: u64, broker: &Broker, headers: &[u8]) {
+pub async fn nack(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[u8]) {
     let headers_str = match std::str::from_utf8(headers) {
         Ok(s) => s,
         Err(_) => {
@@ -212,6 +226,14 @@ pub async fn nack(conn_id: u64, broker: &Broker, headers: &[u8]) {
             return;
         }
     };
+
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel_id) {
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
+        }
+    }
 
     let requeue = headers_str
         .split("\r\n")
@@ -249,18 +271,25 @@ pub async fn nack(conn_id: u64, broker: &Broker, headers: &[u8]) {
             queue.messages.push_front(msg);
             info!(conn_id, msg_id, "requeued");
 
-            match queue.next_target() {
+            match queue.next_target(broker) {
                 None => None,
-                Some(target_id) => {
+                Some((target_id, target_channel_id)) => {
                     if let Some(mut requeued) = queue.messages.pop_front() {
                         requeued.id = new_id;
                         queue.inflight.insert(new_id, requeued);
                         let msg_ref = queue.inflight.get(&new_id).unwrap();
-                        let frame = Frame::with_deliver(new_id, &msg_ref.headers, &msg_ref.body);
+                        let frame = Frame::with_deliver(target_channel_id, new_id, &msg_ref.headers, &msg_ref.body);
+
+                        if let Some(mut cs) = broker.conn_state.get_mut(&target_id) {
+                            if let Some(ch) = cs.channels.get_mut(&target_channel_id) {
+                                ch.unacked_count += 1;
+                            }
+                        }
+
                         broker
                             .connections
                             .get(&target_id)
-                            .map(|h| (new_id, frame, h.clone()))
+                            .map(|h| (new_id, frame, h.clone(), target_channel_id))
                     } else {
                         None
                     }
@@ -268,9 +297,9 @@ pub async fn nack(conn_id: u64, broker: &Broker, headers: &[u8]) {
             }
         };
 
-        if let Some((new_id, frame, handle)) = redelivery {
+        if let Some((new_id, frame, handle, target_channel_id)) = redelivery {
             let _ = handle.tx.send(frame).await;
-            info!(conn_id, msg_id, new_id, target = handle.id, "redelivered");
+            info!(conn_id, msg_id, new_id, target = handle.id, target_channel_id, "redelivered");
         }
     } else {
         // Dead-letter

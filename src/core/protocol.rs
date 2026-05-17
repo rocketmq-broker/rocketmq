@@ -157,7 +157,7 @@ impl Frame {
         }
     }
 
-    pub fn with_deliver(msg_id: u64, user_headers: &[u8], body: &[u8]) -> Self {
+    pub fn with_deliver(channel_id: u16, msg_id: u64, user_headers: &[u8], body: &[u8]) -> Self {
         use std::io::Write;
         let mut prefix_buf = [0u8; 32];
         let mut cursor = &mut prefix_buf[..];
@@ -172,7 +172,7 @@ impl Frame {
         payload.extend_from_slice(body);
 
         Self {
-            header: Header::new(Event::Deliver, payload.len() as u32, bodyoff),
+            header: Header::with_channel(Event::Deliver, channel_id, payload.len() as u32, bodyoff),
             payload,
         }
     }
@@ -402,7 +402,7 @@ mod tests {
     fn frame_with_deliver_assembly() {
         let headers = b"trace:abc\r\n";
         let body = b"payload";
-        let f = Frame::with_deliver(42, headers, body);
+        let f = Frame::with_deliver(0, 42, headers, body);
 
         assert_eq!(f.header.event, Event::Deliver);
 
@@ -420,7 +420,7 @@ mod tests {
     fn frame_deliver_bodyoff_correct() {
         let headers = b"";
         let body = b"data";
-        let f = Frame::with_deliver(1, headers, body);
+        let f = Frame::with_deliver(0, 1, headers, body);
 
         // bodyoff should be the length of "id:1\r\n" = 5
         let id_header = format!("id:1\r\n");

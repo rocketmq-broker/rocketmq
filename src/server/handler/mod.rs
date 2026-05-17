@@ -34,10 +34,10 @@ pub async fn dispatch(
         Event::Nop => connection::nop(conn_id).await,
         Event::Heartbeat => connection::heartbeat(tx).await,
         Event::AssertQueue => queue::assert_queue(conn_id, tx, broker, body).await,
-        Event::Listen => queue::listen(conn_id, tx, broker, body).await,
-        Event::Publish => message::publish(conn_id, broker, inline_headers, body).await,
-        Event::Ack => message::ack(conn_id, broker, inline_headers).await,
-        Event::Nack => message::nack(conn_id, broker, inline_headers).await,
+        Event::Listen => queue::listen(conn_id, header.channel_id, tx, broker, body).await,
+        Event::Publish => message::publish(conn_id, header.channel_id, broker, inline_headers, body).await,
+        Event::Ack => message::ack(conn_id, header.channel_id, broker, inline_headers).await,
+        Event::Nack => message::nack(conn_id, header.channel_id, broker, inline_headers).await,
         Event::DeclareExchange => {
             exchange::declare_exchange(conn_id, tx, broker, inline_headers).await
         }

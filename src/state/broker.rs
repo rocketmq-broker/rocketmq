@@ -109,7 +109,7 @@ impl BrokerState {
         let mut queues_to_remove = Vec::new();
         for mut entry in self.queues.iter_mut() {
             let (name, queue) = entry.pair_mut();
-            queue.listeners.retain(|&id| id != conn_id);
+            queue.listeners.retain(|&(id, _)| id != conn_id);
             if queue.options.exclusive && queue.owner_conn_id == Some(conn_id) {
                 queues_to_remove.push(name.clone());
             }
@@ -206,7 +206,7 @@ mod tests {
         );
         bs.conn_state.insert(1, ConnectionState::new());
         bs.queues.insert("q1".into(), QueueState::new());
-        bs.queues.get_mut("q1").unwrap().listeners.push(1);
+        bs.queues.get_mut("q1").unwrap().listeners.push((1, 1));
 
         bs.remove_connection(1);
         assert!(!bs.connections.contains_key(&1));
