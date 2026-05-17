@@ -1,4 +1,4 @@
-mod broker;
+mod state;
 mod connection;
 mod routing;
 mod queue;
@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let broker: broker::Broker = Arc::new(broker::BrokerState::new());
+    let broker: state::Broker = Arc::new(state::BrokerState::new());
 
     // Initialize WAL and replay any existing entries (crash recovery)
     let wal = storage::init_with_recovery(&broker)?;

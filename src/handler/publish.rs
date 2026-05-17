@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
-use crate::broker::Broker;
+use crate::state::Broker;
 use crate::queue::Message;
 use crate::core::protocol::{Event, Frame};
 

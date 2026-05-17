@@ -9,7 +9,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
-use crate::broker::{Broker, ConnHandle, ConnectionState};
+use crate::state::{Broker, ConnHandle, ConnectionState};
 use crate::core::error::Error;
 use crate::handler;
 use crate::core::protocol::{Frame, HEADER_SIZE, Header, MAX_BODY};

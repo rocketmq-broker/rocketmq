@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use crate::broker::BrokerState;
+use crate::state::BrokerState;
 use crate::queue::{Message, QueueOptions, QueueState};
 use crate::routing::exchange::{Binding, Exchange, ExchangeType};
 use crate::storage::wal::{EntryType, Wal, WalEntry};

@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use crate::broker::Broker;
+use crate::state::Broker;
 use crate::routing::exchange::Binding;
 use crate::core::protocol::{Event, Frame};
 
