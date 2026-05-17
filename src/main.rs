@@ -1,9 +1,8 @@
-mod state;
-mod connection;
-mod routing;
-mod queue;
-mod handler;
 mod core;
+mod queue;
+mod routing;
+mod server;
+mod state;
 mod storage;
 
 use std::sync::Arc;
@@ -30,6 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (stream, addr) = listener.accept().await?;
-        connection::spawn(stream, addr, broker.clone());
+        server::connection::spawn(stream, addr, broker.clone());
     }
 }

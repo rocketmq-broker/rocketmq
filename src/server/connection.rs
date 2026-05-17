@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 use crate::state::{Broker, ConnHandle, ConnectionState};
 use crate::core::error::Error;
-use crate::handler;
+use crate::server::handler;
 use crate::core::protocol::{Frame, HEADER_SIZE, Header, MAX_BODY};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
