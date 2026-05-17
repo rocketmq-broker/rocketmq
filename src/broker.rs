@@ -8,7 +8,7 @@ use tokio::sync::{RwLock, mpsc};
 
 use dashmap::DashMap;
 
-use crate::exchange::{Binding, Exchange, create_default_exchanges};
+use crate::routing::exchange::{Binding, Exchange, create_default_exchanges};
 use crate::core::protocol::Frame;
 
 #[derive(Clone)]

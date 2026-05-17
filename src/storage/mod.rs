@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::broker::{BrokerState, Message, QueueOptions, QueueState};
-use crate::exchange::{Binding, Exchange, ExchangeType};
+use crate::routing::exchange::{Binding, Exchange, ExchangeType};
 use crate::storage::wal::{EntryType, Wal, WalEntry};
 
 const WAL_PATH: &str = "data/broker.wal";
