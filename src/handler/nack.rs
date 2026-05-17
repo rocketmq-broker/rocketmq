@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::broker::{Broker, Message};
-use crate::protocol::Frame;
+use crate::core::protocol::Frame;
 
 pub async fn handle(conn_id: u64, broker: &Broker, headers: &[u8]) {
     let headers_str = match std::str::from_utf8(headers) {

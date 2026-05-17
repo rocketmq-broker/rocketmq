@@ -10,9 +10,9 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::broker::{Broker, ConnHandle, ConnectionState};
-use crate::error::Error;
+use crate::core::error::Error;
 use crate::handler;
-use crate::protocol::{Frame, HEADER_SIZE, Header, MAX_BODY};
+use crate::core::protocol::{Frame, HEADER_SIZE, Header, MAX_BODY};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -91,7 +91,7 @@ async fn reader_task(
                     warn!(conn_id, "heartbeat timeout");
                     break;
                 }
-                if tx.send(Frame::empty(crate::protocol::Event::Heartbeat)).await.is_err() {
+                if tx.send(Frame::empty(crate::core::protocol::Event::Heartbeat)).await.is_err() {
                     break;
                 }
             }

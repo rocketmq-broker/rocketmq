@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::broker::Broker;
-use crate::protocol::{Event, Frame, Header};
+use crate::core::protocol::{Event, Frame, Header};
 
 pub use ack::handle as ack;
 pub use assert_queue::handle as assert_queue;

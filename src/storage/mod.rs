@@ -56,7 +56,11 @@ fn replay(broker: &Arc<BrokerState>, entries: &[WalEntry]) {
     for entry in broker.queues.iter() {
         msg_count += entry.value().messages.len();
     }
-    info!(queues = queue_count, messages = msg_count, "WAL replay complete");
+    info!(
+        queues = queue_count,
+        messages = msg_count,
+        "WAL replay complete"
+    );
 }
 
 fn replay_declare_queue(broker: &Arc<BrokerState>, data: &[u8]) {

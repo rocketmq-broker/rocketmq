@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, mpsc};
 use dashmap::DashMap;
 
 use crate::exchange::{Binding, Exchange, create_default_exchanges};
-use crate::protocol::Frame;
+use crate::core::protocol::Frame;
 
 #[derive(Clone)]
 pub struct ConnHandle {

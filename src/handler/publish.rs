@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 use crate::broker::{Broker, Message};
-use crate::protocol::{Event, Frame};
+use crate::core::protocol::{Event, Frame};
 
 pub async fn handle(conn_id: u64, broker: &Broker, headers: &[u8], body: &[u8]) {
     let headers_str = match std::str::from_utf8(headers) {

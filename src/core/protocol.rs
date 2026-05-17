@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 
 pub const MAGIC: [u8; 2] = [82, 81]; // "RQ"
 pub const HEADER_SIZE: usize = 14;
