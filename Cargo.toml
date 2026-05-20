@@ -10,3 +10,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 dashmap = "6"
 crc32fast = "1"
+byteorder = "1"
