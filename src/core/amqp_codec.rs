@@ -188,7 +188,13 @@ pub fn decode_content_header(payload: &[u8]) -> io::Result<ContentHeader> {
     let class_id = u16::from_be_bytes([payload[0], payload[1]]);
     // weight at [2..4] — unused, always 0
     let body_size = u64::from_be_bytes([
-        payload[4], payload[5], payload[6], payload[7], payload[8], payload[9], payload[10],
+        payload[4],
+        payload[5],
+        payload[6],
+        payload[7],
+        payload[8],
+        payload[9],
+        payload[10],
         payload[11],
     ]);
     let mut cursor = Cursor::new(&payload[12..]);
@@ -349,7 +355,12 @@ mod tests {
 
     #[test]
     fn method_frame_channel_zero() {
-        let wire = encode_method_frame(0, method::CLASS_CONNECTION, method::METHOD_CONNECTION_START, &[]);
+        let wire = encode_method_frame(
+            0,
+            method::CLASS_CONNECTION,
+            method::METHOD_CONNECTION_START,
+            &[],
+        );
         let (frame, _) = decode_frame(&wire).unwrap();
         assert_eq!(frame.channel, 0);
     }

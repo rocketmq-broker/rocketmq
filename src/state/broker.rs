@@ -73,6 +73,16 @@ pub struct ConnectionState {
     pub tx_mode: bool,
     /// Buffered operations for the current transaction.
     pub tx_buffer: Vec<PendingOp>,
+    /// Negotiated maximum frame size.
+    pub frame_max: u32,
+    /// Negotiated maximum channel number.
+    pub channel_max: u16,
+    /// Negotiated heartbeat interval (seconds).
+    pub heartbeat: u16,
+    /// Whether the connection has completed AMQP handshake.
+    pub authenticated: bool,
+    /// Username from SASL auth.
+    pub username: String,
 }
 
 impl ConnectionState {
@@ -84,6 +94,11 @@ impl ConnectionState {
             vhost: DEFAULT_VHOST.to_string(),
             tx_mode: false,
             tx_buffer: Vec::new(),
+            frame_max: 131_072,
+            channel_max: 2047,
+            heartbeat: 60,
+            authenticated: false,
+            username: String::new(),
         }
     }
 }

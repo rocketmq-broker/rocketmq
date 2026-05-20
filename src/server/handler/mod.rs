@@ -1,3 +1,4 @@
+pub mod amqp_dispatch;
 pub mod batch;
 pub mod channel;
 pub mod connection;
