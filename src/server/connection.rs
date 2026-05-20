@@ -34,6 +34,7 @@ pub fn spawn(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                 id: conn_id,
                 addr,
                 tx: tx.clone(),
+                amqp_tx: None,
             },
         );
         broker

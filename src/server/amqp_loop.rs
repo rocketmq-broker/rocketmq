@@ -39,12 +39,17 @@ struct ContentState {
 pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
     tokio::spawn(async move {
         let conn_id = broker.alloc_conn_id();
+
+        // Create AMQP delivery channel — server pushes raw frame bytes here
+        let (amqp_tx, mut amqp_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
+
         broker.connections.insert(
             conn_id,
             crate::state::ConnHandle {
                 id: conn_id,
                 addr,
-                tx: tokio::sync::mpsc::channel(1).0, // placeholder, not used in AMQP mode
+                tx: tokio::sync::mpsc::channel(1).0, // legacy, unused
+                amqp_tx: Some(amqp_tx),
             },
         );
         broker.conn_state.insert(conn_id, ConnectionState::new());
@@ -96,6 +101,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                 .unwrap_or((DEFAULT_FRAME_MAX, DEFAULT_CHANNEL_MAX));
 
             tokio::select! {
+                // ── Incoming frames from client ───────
                 result = amqp_connection::read_amqp_frame(&mut reader) => {
                     let frame = match result {
                         Ok(f) => f,
@@ -222,14 +228,24 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                     }
                 }
 
+                // ── Heartbeat ─────────────────────────
                 _ = hb_ticker.tick() => {
                     if last_activity.elapsed() > heartbeat_timeout {
                         warn!(conn_id, "heartbeat timeout");
                         break;
                     }
-                    // Send heartbeat
                     let hb = encode_heartbeat();
                     if writer.write_all(&hb).await.is_err() { break; }
+                    if writer.flush().await.is_err() { break; }
+                }
+
+                // ── Outgoing delivery frames ──────────
+                Some(frame_bytes) = amqp_rx.recv() => {
+                    if writer.write_all(&frame_bytes).await.is_err() { break; }
+                    // Drain any additional queued frames without blocking
+                    while let Ok(more) = amqp_rx.try_recv() {
+                        if writer.write_all(&more).await.is_err() { break; }
+                    }
                     if writer.flush().await.is_err() { break; }
                 }
             }
@@ -241,7 +257,11 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
 }
 
 /// Send a Connection.Close frame for fatal protocol errors.
-async fn send_connection_close(writer: &mut BufWriter<tokio::net::tcp::OwnedWriteHalf>, code: u16, text: &str) {
+async fn send_connection_close(
+    writer: &mut BufWriter<tokio::net::tcp::OwnedWriteHalf>,
+    code: u16,
+    text: &str,
+) {
     let close = amqp_connection::build_connection_close(code, text, 0, 0);
     let frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
     let _ = writer.write_all(&frame).await;

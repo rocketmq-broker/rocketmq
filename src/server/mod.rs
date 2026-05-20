@@ -1,4 +1,5 @@
 pub mod amqp_connection;
+pub mod amqp_delivery;
 pub mod amqp_loop;
 pub mod connection;
 pub mod handler;

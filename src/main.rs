@@ -28,6 +28,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn background maintenance tasks (queue TTL, message TTL, dedup eviction)
     server::tasks::spawn_all(broker.clone());
 
+    // Spawn AMQP delivery pipeline (pushes messages to consumers)
+    server::amqp_delivery::spawn_delivery_task(broker.clone());
+
     // Legacy RQ protocol listener (will be removed after full migration)
     let legacy_broker = broker.clone();
     tokio::spawn(async move {

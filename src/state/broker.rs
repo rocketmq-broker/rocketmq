@@ -18,6 +18,9 @@ pub struct ConnHandle {
     pub id: u64,
     pub tx: mpsc::Sender<Frame>,
     pub addr: SocketAddr,
+    /// AMQP raw frame sender — used by the delivery pipeline
+    /// to push Basic.Deliver + content frames to consumers.
+    pub amqp_tx: Option<mpsc::Sender<Vec<u8>>>,
 }
 
 pub struct ChannelState {
@@ -280,6 +283,7 @@ mod tests {
                 id: 1,
                 tx,
                 addr: "127.0.0.1:1234".parse().unwrap(),
+                amqp_tx: None,
             },
         );
         bs.conn_state.insert(1, ConnectionState::new());
@@ -301,6 +305,7 @@ mod tests {
                 id: 1,
                 tx,
                 addr: "127.0.0.1:1234".parse().unwrap(),
+                amqp_tx: None,
             },
         );
         bs.conn_state.insert(1, ConnectionState::new());
