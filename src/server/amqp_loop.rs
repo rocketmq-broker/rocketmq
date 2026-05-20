@@ -18,6 +18,7 @@ use tracing::{debug, info, warn};
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
 use crate::core::properties::BasicProperties;
+use crate::core::validation;
 use crate::server::amqp_connection;
 use crate::server::handler::amqp_basic;
 use crate::server::handler::amqp_dispatch;
@@ -87,6 +88,13 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
 
         // ── Main frame loop ───────────────────────────
         loop {
+            // Get negotiated limits for validation
+            let (neg_frame_max, neg_channel_max) = broker
+                .conn_state
+                .get(&conn_id)
+                .map(|cs| (cs.frame_max, cs.channel_max))
+                .unwrap_or((DEFAULT_FRAME_MAX, DEFAULT_CHANNEL_MAX));
+
             tokio::select! {
                 result = amqp_connection::read_amqp_frame(&mut reader) => {
                     let frame = match result {
@@ -95,15 +103,40 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                     };
                     last_activity = Instant::now();
 
+                    // ── Frame-level validation ────────────
+                    if let Some(err) = validation::validate_frame_type(frame.frame_type) {
+                        warn!(conn_id, err, frame_type = frame.frame_type, "frame validation failed");
+                        send_connection_close(&mut writer, UNEXPECTED_FRAME, err).await;
+                        break;
+                    }
+                    if let Some(err) = validation::validate_frame_size(frame.payload.len(), neg_frame_max) {
+                        warn!(conn_id, err, "frame too large");
+                        send_connection_close(&mut writer, FRAME_ERROR, err).await;
+                        break;
+                    }
+                    if let Some(err) = validation::validate_channel_number(frame.channel, neg_channel_max) {
+                        warn!(conn_id, err, channel = frame.channel, "channel number invalid");
+                        send_connection_close(&mut writer, CHANNEL_ERROR, err).await;
+                        break;
+                    }
+
                     match frame.frame_type {
                         FRAME_METHOD => {
                             let method = match decode_method(&frame.payload) {
                                 Ok(m) => m,
                                 Err(e) => {
                                     warn!(conn_id, error = %e, "bad method frame");
+                                    send_connection_close(&mut writer, SYNTAX_ERROR, "bad method frame").await;
                                     break;
                                 }
                             };
+
+                            // Validate channel/class relationship
+                            if let Some(err) = validation::validate_channel(frame.channel, method.class_id) {
+                                warn!(conn_id, err, channel = frame.channel, class_id = method.class_id, "channel/class mismatch");
+                                send_connection_close(&mut writer, COMMAND_INVALID, err).await;
+                                break;
+                            }
 
                             // Basic.Publish is special: it starts content framing
                             if method.class_id == CLASS_BASIC && method.method_id == METHOD_BASIC_PUBLISH {
@@ -175,6 +208,11 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                         }
 
                         FRAME_HEARTBEAT => {
+                            if let Some(err) = validation::validate_heartbeat(frame.channel, frame.payload.len()) {
+                                warn!(conn_id, err, "invalid heartbeat");
+                                send_connection_close(&mut writer, FRAME_ERROR, err).await;
+                                break;
+                            }
                             debug!(conn_id, "heartbeat received");
                         }
 
@@ -200,6 +238,14 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
         broker.remove_connection(conn_id);
         info!(conn_id, "AMQP connection closed");
     });
+}
+
+/// Send a Connection.Close frame for fatal protocol errors.
+async fn send_connection_close(writer: &mut BufWriter<tokio::net::tcp::OwnedWriteHalf>, code: u16, text: &str) {
+    let close = amqp_connection::build_connection_close(code, text, 0, 0);
+    let frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
+    let _ = writer.write_all(&frame).await;
+    let _ = writer.flush().await;
 }
 
 #[cfg(test)]
