@@ -3,6 +3,10 @@ pub mod connection;
 pub mod exchange;
 pub mod message;
 pub mod queue;
+pub mod transaction;
+
+#[cfg(test)]
+mod tests;
 
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -52,6 +56,10 @@ pub async fn dispatch(
         Event::ConfirmSelect => channel::confirm_select(conn_id, tx, broker).await,
         Event::ChannelFlow => channel::channel_flow(conn_id, header.channel_id, tx, broker, body).await,
         Event::BasicCancel => queue::basic_cancel(conn_id, tx, broker, body).await,
+        Event::VHostOpen => connection::vhost_open(conn_id, tx, broker, body).await,
+        Event::TxSelect => transaction::tx_select(conn_id, tx, broker).await,
+        Event::TxCommit => transaction::tx_commit(conn_id, tx, broker).await,
+        Event::TxRollback => transaction::tx_rollback(conn_id, tx, broker).await,
         other => warn!(conn_id, ?other, "unexpected event"),
     }
 }

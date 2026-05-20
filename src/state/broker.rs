@@ -11,6 +11,7 @@ use dashmap::DashMap;
 use crate::core::protocol::Frame;
 use crate::queue::{DelayQueue, QueueOptions, QueueState};
 use crate::routing::exchange::{Binding, Exchange, create_default_exchanges};
+use crate::state::vhost::{VHost, DEFAULT_VHOST};
 
 #[derive(Clone)]
 pub struct ConnHandle {
@@ -48,10 +49,30 @@ impl ChannelState {
     }
 }
 
+/// A pending operation buffered during a transaction.
+#[derive(Clone, Debug)]
+pub enum PendingOp {
+    Publish {
+        exchange: String,
+        routing_key: String,
+        headers: Vec<u8>,
+        body: Vec<u8>,
+    },
+    Ack {
+        msg_id: u64,
+    },
+}
+
 pub struct ConnectionState {
     pub channels: HashMap<u16, ChannelState>,
     pub confirm_mode: bool,
     pub next_delivery_tag: u64,
+    /// Which vhost this connection is on.
+    pub vhost: String,
+    /// Whether this connection is in transaction mode.
+    pub tx_mode: bool,
+    /// Buffered operations for the current transaction.
+    pub tx_buffer: Vec<PendingOp>,
 }
 
 impl ConnectionState {
@@ -60,6 +81,9 @@ impl ConnectionState {
             channels: HashMap::new(),
             confirm_mode: false,
             next_delivery_tag: 1,
+            vhost: DEFAULT_VHOST.to_string(),
+            tx_mode: false,
+            tx_buffer: Vec::new(),
         }
     }
 }
@@ -80,6 +104,8 @@ pub struct BrokerState {
     pub dedup_cache: DashMap<String, Instant>,
     /// Delayed message delivery buffer.
     pub delay_queue: DelayQueue,
+    /// Virtual hosts for namespace isolation.
+    pub vhosts: DashMap<String, VHost>,
 }
 
 impl BrokerState {
@@ -94,6 +120,11 @@ impl BrokerState {
             wal: OnceLock::new(),
             dedup_cache: DashMap::new(),
             delay_queue: DelayQueue::new(),
+            vhosts: {
+                let map = DashMap::new();
+                map.insert(DEFAULT_VHOST.to_string(), VHost::new(DEFAULT_VHOST.to_string()));
+                map
+            },
         }
     }
 
@@ -266,5 +297,315 @@ mod tests {
 
         bs.remove_connection(1);
         assert!(!bs.queues.contains_key("excl"));
+    }
+
+    // ──────────────────────────────────────────────
+    // Virtual Host tests
+    // ──────────────────────────────────────────────
+
+    #[test]
+    fn broker_has_default_vhost() {
+        let bs = BrokerState::new();
+        assert!(bs.vhosts.contains_key("/"));
+        assert_eq!(bs.vhosts.len(), 1);
+    }
+
+    #[test]
+    fn broker_create_vhost() {
+        let bs = BrokerState::new();
+        bs.vhosts
+            .insert("/staging".to_string(), VHost::new("/staging".to_string()));
+        assert!(bs.vhosts.contains_key("/staging"));
+        assert_eq!(bs.vhosts.len(), 2);
+    }
+
+    #[test]
+    fn broker_delete_vhost() {
+        let bs = BrokerState::new();
+        bs.vhosts
+            .insert("/temp".to_string(), VHost::new("/temp".to_string()));
+        assert_eq!(bs.vhosts.len(), 2);
+        bs.vhosts.remove("/temp");
+        assert_eq!(bs.vhosts.len(), 1);
+        assert!(!bs.vhosts.contains_key("/temp"));
+    }
+
+    #[test]
+    fn broker_cannot_delete_nonexistent_vhost() {
+        let bs = BrokerState::new();
+        let removed = bs.vhosts.remove("nonexistent");
+        assert!(removed.is_none());
+    }
+
+    #[tokio::test]
+    async fn vhost_has_own_exchanges() {
+        let bs = BrokerState::new();
+        bs.vhosts
+            .insert("/prod".to_string(), VHost::new("/prod".to_string()));
+
+        let vh = bs.vhosts.get("/prod").unwrap();
+        let ex = vh.exchanges.read().await;
+        // Each vhost gets its own set of default exchanges
+        assert_eq!(ex.len(), 5);
+    }
+
+    #[test]
+    fn vhost_queues_are_isolated() {
+        let bs = BrokerState::new();
+        bs.vhosts
+            .insert("/a".to_string(), VHost::new("/a".to_string()));
+        bs.vhosts
+            .insert("/b".to_string(), VHost::new("/b".to_string()));
+
+        // Add queue to vhost /a
+        bs.vhosts
+            .get("/a")
+            .unwrap()
+            .queues
+            .insert("q1".into(), QueueState::new());
+
+        // vhost /a has q1, vhost /b does not
+        assert!(bs.vhosts.get("/a").unwrap().queues.contains_key("q1"));
+        assert!(!bs.vhosts.get("/b").unwrap().queues.contains_key("q1"));
+    }
+
+    #[test]
+    fn connection_state_defaults_to_root_vhost() {
+        let cs = ConnectionState::new();
+        assert_eq!(cs.vhost, "/");
+    }
+
+    #[test]
+    fn connection_state_vhost_can_be_changed() {
+        let mut cs = ConnectionState::new();
+        cs.vhost = "/production".to_string();
+        assert_eq!(cs.vhost, "/production");
+    }
+
+    #[test]
+    fn connection_vhost_tracks_per_connection() {
+        let bs = BrokerState::new();
+        bs.conn_state.insert(1, ConnectionState::new());
+        bs.conn_state.insert(2, ConnectionState::new());
+
+        // Connection 1 uses default
+        assert_eq!(bs.conn_state.get(&1).unwrap().vhost, "/");
+
+        // Connection 2 switches to different vhost
+        bs.conn_state.get_mut(&2).unwrap().vhost = "/staging".to_string();
+        assert_eq!(bs.conn_state.get(&2).unwrap().vhost, "/staging");
+        // Connection 1 unaffected
+        assert_eq!(bs.conn_state.get(&1).unwrap().vhost, "/");
+    }
+
+    // ──────────────────────────────────────────────
+    // Transaction tests
+    // ──────────────────────────────────────────────
+
+    #[test]
+    fn connection_state_defaults_no_tx() {
+        let cs = ConnectionState::new();
+        assert!(!cs.tx_mode);
+        assert!(cs.tx_buffer.is_empty());
+    }
+
+    #[test]
+    fn tx_mode_enable() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+        assert!(cs.tx_mode);
+    }
+
+    #[test]
+    fn tx_buffer_publish_op() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: "".to_string(),
+            routing_key: "q1".to_string(),
+            headers: vec![],
+            body: b"hello".to_vec(),
+        });
+        assert_eq!(cs.tx_buffer.len(), 1);
+        match &cs.tx_buffer[0] {
+            PendingOp::Publish { routing_key, body, .. } => {
+                assert_eq!(routing_key, "q1");
+                assert_eq!(body, b"hello");
+            }
+            _ => panic!("expected Publish"),
+        }
+    }
+
+    #[test]
+    fn tx_buffer_ack_op() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+        cs.tx_buffer.push(PendingOp::Ack { msg_id: 42 });
+        assert_eq!(cs.tx_buffer.len(), 1);
+        match &cs.tx_buffer[0] {
+            PendingOp::Ack { msg_id } => assert_eq!(*msg_id, 42),
+            _ => panic!("expected Ack"),
+        }
+    }
+
+    #[test]
+    fn tx_buffer_mixed_ops() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: "ex1".to_string(),
+            routing_key: "q1".to_string(),
+            headers: b"h:v\r\n".to_vec(),
+            body: b"msg1".to_vec(),
+        });
+        cs.tx_buffer.push(PendingOp::Ack { msg_id: 1 });
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: "".to_string(),
+            routing_key: "q2".to_string(),
+            headers: vec![],
+            body: b"msg2".to_vec(),
+        });
+        assert_eq!(cs.tx_buffer.len(), 3);
+    }
+
+    #[test]
+    fn tx_rollback_clears_buffer() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: "".to_string(),
+            routing_key: "q1".to_string(),
+            headers: vec![],
+            body: b"data".to_vec(),
+        });
+        cs.tx_buffer.push(PendingOp::Ack { msg_id: 5 });
+
+        // Simulate rollback
+        cs.tx_buffer.clear();
+        assert!(cs.tx_buffer.is_empty());
+        // tx_mode stays on after rollback (per AMQP spec)
+        assert!(cs.tx_mode);
+    }
+
+    #[test]
+    fn tx_commit_drains_buffer() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: "".to_string(),
+            routing_key: "q1".to_string(),
+            headers: vec![],
+            body: b"data".to_vec(),
+        });
+
+        // Simulate commit: take buffer
+        let ops = std::mem::take(&mut cs.tx_buffer);
+        assert_eq!(ops.len(), 1);
+        assert!(cs.tx_buffer.is_empty());
+    }
+
+    #[test]
+    fn tx_commit_applies_publish_to_queue() {
+        let bs = BrokerState::new();
+        bs.queues.insert("q1".into(), QueueState::new());
+
+        // Simulate a commit with a Publish op
+        let op = PendingOp::Publish {
+            exchange: "".to_string(),
+            routing_key: "q1".to_string(),
+            headers: vec![],
+            body: b"committed".to_vec(),
+        };
+
+        // Apply the op
+        match &op {
+            PendingOp::Publish { routing_key, body, .. } => {
+                let msg_id = bs.alloc_msg_id();
+                if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
+                    let msg = crate::queue::Message::new(msg_id, Vec::new(), body.clone());
+                    queue.messages.push_back(msg);
+                }
+            }
+            _ => {}
+        }
+
+        let q = bs.queues.get("q1").unwrap();
+        assert_eq!(q.messages.len(), 1);
+    }
+
+    #[test]
+    fn tx_commit_applies_ack_removes_inflight() {
+        let bs = BrokerState::new();
+        bs.queues.insert("q1".into(), QueueState::new());
+
+        // Put a message in inflight
+        let msg = crate::queue::Message::new(42, vec![], b"test".to_vec());
+        bs.queues.get_mut("q1").unwrap().inflight.insert(42, msg);
+
+        // Simulate ack op
+        let op = PendingOp::Ack { msg_id: 42 };
+        match &op {
+            PendingOp::Ack { msg_id } => {
+                for mut entry in bs.queues.iter_mut() {
+                    if entry.value_mut().inflight.remove(msg_id).is_some() {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        let q = bs.queues.get("q1").unwrap();
+        assert!(q.inflight.is_empty());
+    }
+
+    #[test]
+    fn tx_multiple_commits_independent() {
+        let mut cs = ConnectionState::new();
+        cs.tx_mode = true;
+
+        // First transaction
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: "".to_string(),
+            routing_key: "q1".to_string(),
+            headers: vec![],
+            body: b"tx1".to_vec(),
+        });
+        let ops1 = std::mem::take(&mut cs.tx_buffer);
+        assert_eq!(ops1.len(), 1);
+
+        // Second transaction (buffer was cleared after commit)
+        cs.tx_buffer.push(PendingOp::Ack { msg_id: 10 });
+        cs.tx_buffer.push(PendingOp::Ack { msg_id: 20 });
+        let ops2 = std::mem::take(&mut cs.tx_buffer);
+        assert_eq!(ops2.len(), 2);
+        assert!(cs.tx_buffer.is_empty());
+    }
+
+    #[test]
+    fn pending_op_clone() {
+        let op = PendingOp::Publish {
+            exchange: "ex".to_string(),
+            routing_key: "rk".to_string(),
+            headers: vec![1, 2],
+            body: vec![3, 4],
+        };
+        let cloned = op.clone();
+        match cloned {
+            PendingOp::Publish { exchange, routing_key, headers, body } => {
+                assert_eq!(exchange, "ex");
+                assert_eq!(routing_key, "rk");
+                assert_eq!(headers, vec![1, 2]);
+                assert_eq!(body, vec![3, 4]);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn pending_op_debug() {
+        let op = PendingOp::Ack { msg_id: 99 };
+        let debug_str = format!("{:?}", op);
+        assert!(debug_str.contains("99"));
     }
 }

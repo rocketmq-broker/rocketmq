@@ -48,6 +48,18 @@ pub enum Event {
     // Consumer management
     BasicCancel = 0x40,
     BasicCancelOk = 0x41,
+
+    // Virtual host
+    VHostOpen = 0x30,
+    VHostOpenOk = 0x31,
+
+    // Transactions
+    TxSelect = 0x32,
+    TxSelectOk = 0x33,
+    TxCommit = 0x34,
+    TxCommitOk = 0x35,
+    TxRollback = 0x36,
+    TxRollbackOk = 0x37,
 }
 
 impl TryFrom<u8> for Event {
@@ -87,6 +99,14 @@ impl TryFrom<u8> for Event {
             0x2F => Ok(Self::ChannelFlowOk),
             0x40 => Ok(Self::BasicCancel),
             0x41 => Ok(Self::BasicCancelOk),
+            0x30 => Ok(Self::VHostOpen),
+            0x31 => Ok(Self::VHostOpenOk),
+            0x32 => Ok(Self::TxSelect),
+            0x33 => Ok(Self::TxSelectOk),
+            0x34 => Ok(Self::TxCommit),
+            0x35 => Ok(Self::TxCommitOk),
+            0x36 => Ok(Self::TxRollback),
+            0x37 => Ok(Self::TxRollbackOk),
             _ => Err(Error::BadPayload),
         }
     }
@@ -320,6 +340,14 @@ mod tests {
             (0x2D, Event::PublishNack),
             (0x2E, Event::ChannelFlow),
             (0x2F, Event::ChannelFlowOk),
+            (0x30, Event::VHostOpen),
+            (0x31, Event::VHostOpenOk),
+            (0x32, Event::TxSelect),
+            (0x33, Event::TxSelectOk),
+            (0x34, Event::TxCommit),
+            (0x35, Event::TxCommitOk),
+            (0x36, Event::TxRollback),
+            (0x37, Event::TxRollbackOk),
             (0x40, Event::BasicCancel),
             (0x41, Event::BasicCancelOk),
         ];
