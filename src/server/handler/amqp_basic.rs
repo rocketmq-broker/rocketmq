@@ -60,6 +60,9 @@ pub async fn handle_publish(
         return;
     }
 
+    // Allocate confirm delivery tag if channel is in confirm mode
+    let confirm_tag = alloc_confirm_tag(conn_id, channel, broker);
+
     let priority = properties.priority.unwrap_or(0);
     let per_msg_ttl = properties
         .expiration
@@ -74,6 +77,10 @@ pub async fn handle_publish(
             Some(ex) => ex,
             None => {
                 warn!(conn_id, exchange = exchange_name, "exchange not found");
+                // Still ack in confirm mode (message was processed, just unroutable)
+                if let Some(tag) = confirm_tag {
+                    send_confirm_ack(channel, tag, writer).await;
+                }
                 return;
             }
         };
@@ -111,6 +118,10 @@ pub async fn handle_publish(
             routing_key,
             "no matching bindings"
         );
+        // Confirm ack even for unroutable messages (per AMQP spec)
+        if let Some(tag) = confirm_tag {
+            send_confirm_ack(channel, tag, writer).await;
+        }
         return;
     }
 
@@ -166,6 +177,36 @@ pub async fn handle_publish(
             "queued via AMQP"
         );
     }
+
+    // Send confirm ack after all queues received the message
+    if let Some(tag) = confirm_tag {
+        send_confirm_ack(channel, tag, writer).await;
+    }
+}
+
+// ─── Publisher Confirm Helpers ────────────────────────
+
+/// Allocate a delivery tag if the channel is in confirm mode.
+/// Returns Some(tag) if confirms are active, None otherwise.
+fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64> {
+    let mut cs = broker.conn_state.get_mut(&conn_id)?;
+    let ch = cs.channels.get_mut(&channel)?;
+    if !ch.confirm_mode {
+        return None;
+    }
+    let tag = ch.next_delivery_tag;
+    ch.next_delivery_tag += 1;
+    Some(tag)
+}
+
+/// Send Basic.Ack from broker to publisher (confirm mode).
+async fn send_confirm_ack(channel: u16, delivery_tag: u64, writer: &mut BufWriter<OwnedWriteHalf>) {
+    let mut args = Vec::new();
+    write_longlong(&mut args, delivery_tag).unwrap();
+    write_octet(&mut args, 0).unwrap(); // multiple = false
+    let frame = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_ACK, &args);
+    let _ = writer.write_all(&frame).await;
+    let _ = writer.flush().await;
 }
 
 // ─── Basic.Return ─────────────────────────────────────
