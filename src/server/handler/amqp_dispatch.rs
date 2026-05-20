@@ -129,6 +129,26 @@ pub async fn dispatch_method(
             true
         }
 
+        // ── Tx class ──────────────────────────────────
+        (CLASS_TX, METHOD_TX_SELECT) => {
+            super::amqp_tx::handle_tx_select(conn_id, channel, writer, broker).await;
+            true
+        }
+        (CLASS_TX, METHOD_TX_COMMIT) => {
+            super::amqp_tx::handle_tx_commit(conn_id, channel, writer, broker).await;
+            true
+        }
+        (CLASS_TX, METHOD_TX_ROLLBACK) => {
+            super::amqp_tx::handle_tx_rollback(conn_id, channel, writer, broker).await;
+            true
+        }
+
+        // ── Confirm class ─────────────────────────────
+        (CLASS_CONFIRM, METHOD_CONFIRM_SELECT) => {
+            super::amqp_tx::handle_confirm_select(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+
         // ── Unknown ───────────────────────────────────
         _ => {
             warn!(
