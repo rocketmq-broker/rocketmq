@@ -196,7 +196,7 @@ fn queue_state_no_listeners() {
 #[test]
 fn consumer_tag_auto_generated() {
     let mut q = QueueState::new();
-    let tag = q.add_consumer(10, 1, None);
+    let tag = q.add_consumer(10, 1, None, None);
     assert_eq!(tag, "ctag-10-1");
     assert_eq!(q.listeners.len(), 1);
     assert_eq!(q.consumer_count, 1);
@@ -205,7 +205,7 @@ fn consumer_tag_auto_generated() {
 #[test]
 fn consumer_tag_custom() {
     let mut q = QueueState::new();
-    let tag = q.add_consumer(10, 1, Some("my-worker".to_string()));
+    let tag = q.add_consumer(10, 1, Some("my-worker".to_string()), None);
     assert_eq!(tag, "my-worker");
     assert!(q.consumer_tags.contains_key("my-worker"));
 }
@@ -213,8 +213,8 @@ fn consumer_tag_custom() {
 #[test]
 fn consumer_cancel_by_tag() {
     let mut q = QueueState::new();
-    q.add_consumer(10, 1, Some("worker-1".to_string()));
-    q.add_consumer(20, 1, Some("worker-2".to_string()));
+    q.add_consumer(10, 1, Some("worker-1".to_string()), None);
+    q.add_consumer(20, 1, Some("worker-2".to_string()), None);
     assert_eq!(q.listeners.len(), 2);
 
     assert!(q.cancel_consumer("worker-1"));
@@ -229,8 +229,8 @@ fn consumer_cancel_by_tag() {
 #[test]
 fn consumer_add_idempotent() {
     let mut q = QueueState::new();
-    q.add_consumer(10, 1, Some("tag-a".to_string()));
-    q.add_consumer(10, 1, Some("tag-b".to_string()));
+    q.add_consumer(10, 1, Some("tag-a".to_string()), None);
+    q.add_consumer(10, 1, Some("tag-b".to_string()), None);
     // Same conn_id+channel_id should not duplicate in listeners
     assert_eq!(q.listeners.len(), 1);
     // But both tags should be tracked
@@ -288,4 +288,217 @@ fn priority_queue_peek_front() {
     pq.push_back(Message::new(1, vec![], b"a".to_vec()));
     assert_eq!(pq.peek_front().unwrap().body, b"a");
     assert_eq!(pq.len(), 1); // peek doesn't remove
+}
+
+// ──────────────────────────────────────────────
+// Consumer Group tests (3.2)
+// ──────────────────────────────────────────────
+
+use super::state::ConsumerGroup;
+
+#[test]
+fn consumer_group_add_member() {
+    let mut g = ConsumerGroup::new("workers".to_string());
+    assert!(g.add_member(1, 1));
+    assert_eq!(g.members.len(), 1);
+}
+
+#[test]
+fn consumer_group_add_duplicate_rejected() {
+    let mut g = ConsumerGroup::new("workers".to_string());
+    assert!(g.add_member(1, 1));
+    assert!(!g.add_member(1, 1)); // duplicate
+    assert_eq!(g.members.len(), 1);
+}
+
+#[test]
+fn consumer_group_remove_member() {
+    let mut g = ConsumerGroup::new("workers".to_string());
+    g.add_member(1, 1);
+    g.add_member(2, 1);
+    assert!(g.remove_member(1, 1));
+    assert_eq!(g.members.len(), 1);
+    assert_eq!(g.members[0], (2, 1));
+}
+
+#[test]
+fn consumer_group_remove_nonexistent() {
+    let mut g = ConsumerGroup::new("workers".to_string());
+    assert!(!g.remove_member(99, 1));
+}
+
+#[test]
+fn queue_add_consumer_with_group() {
+    let mut q = QueueState::new();
+    let tag = q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
+    assert_eq!(tag, "w1");
+    assert!(q.groups.contains_key("workers"));
+    assert_eq!(q.groups["workers"].members.len(), 1);
+}
+
+#[test]
+fn queue_multiple_consumers_same_group() {
+    let mut q = QueueState::new();
+    q.add_consumer(1, 1, Some("w1".to_string()), Some("g1".to_string()));
+    q.add_consumer(2, 1, Some("w2".to_string()), Some("g1".to_string()));
+    assert_eq!(q.groups.len(), 1);
+    assert_eq!(q.groups["g1"].members.len(), 2);
+}
+
+#[test]
+fn queue_multiple_groups() {
+    let mut q = QueueState::new();
+    q.add_consumer(1, 1, Some("a".to_string()), Some("g1".to_string()));
+    q.add_consumer(2, 1, Some("b".to_string()), Some("g2".to_string()));
+    assert_eq!(q.groups.len(), 2);
+}
+
+#[test]
+fn queue_cancel_consumer_removes_from_group() {
+    let mut q = QueueState::new();
+    q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
+    q.add_consumer(2, 1, Some("w2".to_string()), Some("workers".to_string()));
+
+    q.cancel_consumer("w1");
+    assert_eq!(q.groups["workers"].members.len(), 1);
+}
+
+#[test]
+fn queue_cancel_last_consumer_removes_group() {
+    let mut q = QueueState::new();
+    q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
+
+    q.cancel_consumer("w1");
+    // Empty group should be cleaned up
+    assert!(q.groups.is_empty());
+}
+
+#[test]
+fn queue_consumer_no_group() {
+    let mut q = QueueState::new();
+    q.add_consumer(1, 1, Some("solo".to_string()), None);
+    assert!(q.groups.is_empty());
+}
+
+// ──────────────────────────────────────────────
+// Token Bucket / Rate Limiting tests (3.5)
+// ──────────────────────────────────────────────
+
+use super::state::TokenBucket;
+
+#[test]
+fn token_bucket_initial_full() {
+    let tb = TokenBucket::new(100);
+    assert_eq!(tb.rate, 100);
+    assert_eq!(tb.tokens, 100.0);
+}
+
+#[test]
+fn token_bucket_consume() {
+    let mut tb = TokenBucket::new(10);
+    assert!(tb.try_consume());
+    assert!(tb.tokens < 10.0);
+}
+
+#[test]
+fn token_bucket_exhaustion() {
+    let mut tb = TokenBucket::new(2);
+    tb.tokens = 0.5; // Simulate exhausted
+    tb.last_refill = std::time::Instant::now(); // No time to refill
+    assert!(!tb.try_consume());
+}
+
+#[test]
+fn token_bucket_refill() {
+    let mut tb = TokenBucket::new(1000);
+    tb.tokens = 0.0;
+    tb.last_refill = std::time::Instant::now() - Duration::from_secs(1);
+    tb.refill();
+    assert!(tb.tokens >= 999.0); // ~1000 tokens refilled in 1 second
+}
+
+#[test]
+fn token_bucket_caps_at_rate() {
+    let mut tb = TokenBucket::new(10);
+    tb.tokens = 10.0;
+    tb.last_refill = std::time::Instant::now() - Duration::from_secs(100);
+    tb.refill();
+    assert!(tb.tokens <= 10.0); // Capped
+}
+
+#[test]
+fn queue_rate_limit_from_options() {
+    let mut opts = QueueOptions::default();
+    opts.rate_limit = Some(100);
+    let mut q = QueueState::with_options(opts);
+    assert!(q.rate_limiter.is_some());
+    assert!(q.check_rate_limit()); // Should pass (full bucket)
+}
+
+#[test]
+fn queue_no_rate_limit() {
+    let q = QueueState::new();
+    assert!(q.rate_limiter.is_none());
+}
+
+#[test]
+fn queue_check_rate_limit_no_limiter() {
+    let mut q = QueueState::new();
+    assert!(q.check_rate_limit()); // Always true when no limiter
+}
+
+// ──────────────────────────────────────────────
+// Stream Mode tests (3.6)
+// ──────────────────────────────────────────────
+
+#[test]
+fn stream_mode_default_off() {
+    let q = QueueState::new();
+    assert!(!q.stream_mode);
+    assert_eq!(q.stream_offset, 0);
+}
+
+#[test]
+fn stream_mode_from_options() {
+    let mut opts = QueueOptions::default();
+    opts.stream_mode = true;
+    let q = QueueState::with_options(opts);
+    assert!(q.stream_mode);
+}
+
+#[test]
+fn stream_mode_from_headers() {
+    let input = "name:events\r\nx-queue-type:stream\r\n";
+    let (name, opts) = QueueOptions::from_headers(input);
+    assert_eq!(name, "events");
+    assert!(opts.stream_mode);
+}
+
+#[test]
+fn stream_offset_tracking() {
+    let mut q = QueueState::new();
+    q.stream_mode = true;
+    q.stream_offset = 42;
+    assert_eq!(q.stream_offset, 42);
+    q.stream_offset += 1;
+    assert_eq!(q.stream_offset, 43);
+}
+
+// ──────────────────────────────────────────────
+// Options parsing for new fields
+// ──────────────────────────────────────────────
+
+#[test]
+fn options_rate_limit_from_headers() {
+    let input = "name:q1\r\nx-rate-limit:500\r\n";
+    let (name, opts) = QueueOptions::from_headers(input);
+    assert_eq!(name, "q1");
+    assert_eq!(opts.rate_limit, Some(500));
+}
+
+#[test]
+fn options_stream_type_non_stream() {
+    let input = "name:q1\r\nx-queue-type:classic\r\n";
+    let (_, opts) = QueueOptions::from_headers(input);
+    assert!(!opts.stream_mode);
 }

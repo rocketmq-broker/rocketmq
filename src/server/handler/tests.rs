@@ -436,4 +436,106 @@ mod tests {
 
         assert_eq!(broker.queues.get("q1").unwrap().messages.len(), 2);
     }
+
+    // ──────────────────────────────────────────────
+    // Batch Publish handler tests (3.3)
+    // ──────────────────────────────────────────────
+
+    use crate::server::handler::batch;
+
+    fn build_batch_payload(messages: &[&[u8]]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(messages.len() as u16).to_be_bytes());
+        for msg in messages {
+            buf.extend_from_slice(&(msg.len() as u32).to_be_bytes());
+            buf.extend_from_slice(msg);
+        }
+        buf
+    }
+
+    #[tokio::test]
+    async fn batch_publish_single_message() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        broker.queues.insert("q1".into(), QueueState::new());
+
+        let payload = build_batch_payload(&[b"queue:q1\r\nhello"]);
+        batch::batch_publish(conn_id, &broker, &payload).await;
+
+        assert_eq!(broker.queues.get("q1").unwrap().messages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn batch_publish_multiple_messages() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        broker.queues.insert("q1".into(), QueueState::new());
+
+        let payload = build_batch_payload(&[
+            b"queue:q1\r\nmsg1",
+            b"queue:q1\r\nmsg2",
+            b"queue:q1\r\nmsg3",
+        ]);
+        batch::batch_publish(conn_id, &broker, &payload).await;
+
+        assert_eq!(broker.queues.get("q1").unwrap().messages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn batch_publish_multi_queue() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        broker.queues.insert("q1".into(), QueueState::new());
+        broker.queues.insert("q2".into(), QueueState::new());
+
+        let payload = build_batch_payload(&[
+            b"queue:q1\r\nfirst",
+            b"queue:q2\r\nsecond",
+        ]);
+        batch::batch_publish(conn_id, &broker, &payload).await;
+
+        assert_eq!(broker.queues.get("q1").unwrap().messages.len(), 1);
+        assert_eq!(broker.queues.get("q2").unwrap().messages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn batch_publish_empty() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        let payload = build_batch_payload(&[]);
+        batch::batch_publish(conn_id, &broker, &payload).await;
+        // No crash, no messages
+    }
+
+    #[tokio::test]
+    async fn batch_publish_too_short() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        batch::batch_publish(conn_id, &broker, &[]).await;
+        // Should not panic
+    }
+
+    #[tokio::test]
+    async fn batch_publish_truncated_length() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        // Count says 1 message but no length bytes
+        let payload = vec![0x00, 0x01];
+        batch::batch_publish(conn_id, &broker, &payload).await;
+        // Should not panic
+    }
+
+    #[tokio::test]
+    async fn batch_publish_nonexistent_queue() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        // q_missing doesn't exist
+        let payload = build_batch_payload(&[b"queue:q_missing\r\ndata"]);
+        batch::batch_publish(conn_id, &broker, &payload).await;
+        // No crash, message silently dropped
+    }
+
+    #[tokio::test]
+    async fn batch_publish_routing_key() {
+        let (broker, conn_id, _tx, _rx) = setup_broker_with_conn();
+        broker.queues.insert("rk1".into(), QueueState::new());
+
+        let payload = build_batch_payload(&[b"routing_key:rk1\r\ndata"]);
+        batch::batch_publish(conn_id, &broker, &payload).await;
+
+        assert_eq!(broker.queues.get("rk1").unwrap().messages.len(), 1);
+    }
 }

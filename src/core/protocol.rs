@@ -60,6 +60,10 @@ pub enum Event {
     TxCommitOk = 0x35,
     TxRollback = 0x36,
     TxRollbackOk = 0x37,
+
+    // Batch operations
+    BatchPublish = 0x38,
+    BatchDeliver = 0x39,
 }
 
 impl TryFrom<u8> for Event {
@@ -107,6 +111,8 @@ impl TryFrom<u8> for Event {
             0x35 => Ok(Self::TxCommitOk),
             0x36 => Ok(Self::TxRollback),
             0x37 => Ok(Self::TxRollbackOk),
+            0x38 => Ok(Self::BatchPublish),
+            0x39 => Ok(Self::BatchDeliver),
             _ => Err(Error::BadPayload),
         }
     }
@@ -348,6 +354,8 @@ mod tests {
             (0x35, Event::TxCommitOk),
             (0x36, Event::TxRollback),
             (0x37, Event::TxRollbackOk),
+            (0x38, Event::BatchPublish),
+            (0x39, Event::BatchDeliver),
             (0x40, Event::BasicCancel),
             (0x41, Event::BasicCancelOk),
         ];

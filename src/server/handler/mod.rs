@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod channel;
 pub mod connection;
 pub mod exchange;
@@ -60,6 +61,7 @@ pub async fn dispatch(
         Event::TxSelect => transaction::tx_select(conn_id, tx, broker).await,
         Event::TxCommit => transaction::tx_commit(conn_id, tx, broker).await,
         Event::TxRollback => transaction::tx_rollback(conn_id, tx, broker).await,
+        Event::BatchPublish => batch::batch_publish(conn_id, broker, body).await,
         other => warn!(conn_id, ?other, "unexpected event"),
     }
 }

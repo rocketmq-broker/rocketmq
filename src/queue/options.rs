@@ -18,6 +18,10 @@ pub struct QueueOptions {
     pub retry_delay_ms: Option<u64>,
     /// Retry delay multiplier for exponential backoff.
     pub retry_multiplier: Option<f64>,
+    /// Rate limit: max messages per second accepted into this queue.
+    pub rate_limit: Option<u32>,
+    /// Stream mode: append-only log, messages not removed on ack.
+    pub stream_mode: bool,
 }
 
 impl QueueOptions {
@@ -50,6 +54,12 @@ impl QueueOptions {
                     "x-max-retries" => opts.max_retries = v.parse().ok(),
                     "x-retry-delay" => opts.retry_delay_ms = v.parse().ok(),
                     "x-retry-multiplier" => opts.retry_multiplier = v.parse().ok(),
+                    "x-rate-limit" => opts.rate_limit = v.parse().ok(),
+                    "x-queue-type" => {
+                        if v == "stream" {
+                            opts.stream_mode = true;
+                        }
+                    }
                     _ => {}
                 }
             }

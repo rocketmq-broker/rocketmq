@@ -65,9 +65,10 @@ pub async fn listen(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, bro
         }
     };
 
-    // Parse queue name and optional consumer_tag from headers
+    // Parse queue name, optional consumer_tag, and optional group from headers
     let mut qname = body_str;
     let mut consumer_tag: Option<String> = None;
+    let mut group: Option<String> = None;
 
     if body_str.contains("\r\n") {
         for line in body_str.split("\r\n") {
@@ -78,6 +79,7 @@ pub async fn listen(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, bro
                 match k {
                     "queue" => qname = v,
                     "consumer_tag" => consumer_tag = Some(v.to_string()),
+                    "group" => group = Some(v.to_string()),
                     _ => {}
                 }
             } else if qname == body_str {
@@ -88,7 +90,7 @@ pub async fn listen(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, bro
     }
 
     let assigned_tag = match broker.queues.get_mut(qname) {
-        Some(mut queue) => queue.add_consumer(conn_id, channel_id, consumer_tag),
+        Some(mut queue) => queue.add_consumer(conn_id, channel_id, consumer_tag, group),
         None => {
             warn!(conn_id, queue = qname, "queue does not exist");
             return;
