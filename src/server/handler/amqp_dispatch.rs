@@ -53,10 +53,51 @@ pub async fn dispatch_method(
             true
         }
 
+        // ── Exchange class ────────────────────────────
+        (CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE) => {
+            super::amqp_exchange::handle_declare(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_EXCHANGE, METHOD_EXCHANGE_DELETE) => {
+            super::amqp_exchange::handle_delete(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_EXCHANGE, METHOD_EXCHANGE_BIND) => {
+            super::amqp_exchange::handle_bind(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_EXCHANGE, METHOD_EXCHANGE_UNBIND) => {
+            super::amqp_exchange::handle_unbind(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+
+        // ── Queue class ───────────────────────────────
+        (CLASS_QUEUE, METHOD_QUEUE_DECLARE) => {
+            super::amqp_queue::handle_declare(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_QUEUE, METHOD_QUEUE_DELETE) => {
+            super::amqp_queue::handle_delete(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_QUEUE, METHOD_QUEUE_PURGE) => {
+            super::amqp_queue::handle_purge(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_QUEUE, METHOD_QUEUE_BIND) => {
+            super::amqp_queue::handle_bind(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_QUEUE, METHOD_QUEUE_UNBIND) => {
+            super::amqp_queue::handle_unbind(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+
         // ── Unknown ───────────────────────────────────
         _ => {
             warn!(
-                conn_id, channel,
+                conn_id,
+                channel,
                 class_id = method.class_id,
                 method_id = method.method_id,
                 "unhandled AMQP method"

@@ -52,4 +52,12 @@ impl PriorityQueue {
         let key = *self.buckets.keys().next_back()?;
         self.buckets.get(&key)?.front()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.buckets.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.buckets.clear();
+    }
 }
