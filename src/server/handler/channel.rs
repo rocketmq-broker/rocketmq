@@ -83,3 +83,17 @@ pub async fn confirm_select(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Bro
     info!(conn_id, "confirm mode enabled");
     let _ = tx.send(Frame::empty(Event::ConfirmSelectOk)).await;
 }
+
+pub async fn channel_flow(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, broker: &Broker, body: &[u8]) {
+    let active = body.first().copied().unwrap_or(1) != 0;
+
+    if let Some(mut conn_state) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = conn_state.channels.get_mut(&channel_id) {
+            ch.flow_active = active;
+        }
+    }
+
+    info!(conn_id, channel_id, active, "channel flow set");
+    let reply = if active { vec![1] } else { vec![0] };
+    let _ = tx.send(Frame::with_body(Event::ChannelFlowOk, reply)).await;
+}

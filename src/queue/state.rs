@@ -11,6 +11,8 @@ pub struct QueueState {
     pub inflight: HashMap<u64, Message>,
     pub next_listener: usize,
     pub consumer_count: usize,
+    /// Maps consumer_tag → (conn_id, channel_id)
+    pub consumer_tags: HashMap<String, (u64, u16)>,
 }
 
 impl QueueState {
@@ -27,6 +29,29 @@ impl QueueState {
             inflight: HashMap::new(),
             next_listener: 0,
             consumer_count: 0,
+            consumer_tags: HashMap::new(),
+        }
+    }
+
+    /// Add a consumer with an optional tag. Returns the assigned tag.
+    pub fn add_consumer(&mut self, conn_id: u64, channel_id: u16, tag: Option<String>) -> String {
+        let tag = tag.unwrap_or_else(|| format!("ctag-{}-{}", conn_id, channel_id));
+        if !self.listeners.contains(&(conn_id, channel_id)) {
+            self.listeners.push((conn_id, channel_id));
+        }
+        self.consumer_tags.insert(tag.clone(), (conn_id, channel_id));
+        self.consumer_count = self.listeners.len();
+        tag
+    }
+
+    /// Cancel a consumer by tag. Returns true if found.
+    pub fn cancel_consumer(&mut self, tag: &str) -> bool {
+        if let Some((conn_id, channel_id)) = self.consumer_tags.remove(tag) {
+            self.listeners.retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
+            self.consumer_count = self.listeners.len();
+            true
+        } else {
+            false
         }
     }
 

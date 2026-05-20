@@ -21,6 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize WAL and replay any existing entries (crash recovery)
     let wal = storage::init_with_recovery(&broker)?;
+
     // Store WAL handle in broker for handlers to use
     broker.set_wal(wal);
 

@@ -42,6 +42,12 @@ pub enum Event {
     ConfirmSelectOk = 0x2B,
     PublishAck = 0x2C,
     PublishNack = 0x2D,
+    ChannelFlow = 0x2E,
+    ChannelFlowOk = 0x2F,
+
+    // Consumer management
+    BasicCancel = 0x40,
+    BasicCancelOk = 0x41,
 }
 
 impl TryFrom<u8> for Event {
@@ -77,6 +83,10 @@ impl TryFrom<u8> for Event {
             0x2B => Ok(Self::ConfirmSelectOk),
             0x2C => Ok(Self::PublishAck),
             0x2D => Ok(Self::PublishNack),
+            0x2E => Ok(Self::ChannelFlow),
+            0x2F => Ok(Self::ChannelFlowOk),
+            0x40 => Ok(Self::BasicCancel),
+            0x41 => Ok(Self::BasicCancelOk),
             _ => Err(Error::BadPayload),
         }
     }
@@ -308,6 +318,10 @@ mod tests {
             (0x2B, Event::ConfirmSelectOk),
             (0x2C, Event::PublishAck),
             (0x2D, Event::PublishNack),
+            (0x2E, Event::ChannelFlow),
+            (0x2F, Event::ChannelFlowOk),
+            (0x40, Event::BasicCancel),
+            (0x41, Event::BasicCancelOk),
         ];
 
         for (byte, expected) in known {

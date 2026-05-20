@@ -190,3 +190,48 @@ fn queue_state_no_listeners() {
     let bs = crate::state::BrokerState::new();
     assert_eq!(q.next_target(&bs.into()), None);
 }
+
+#[test]
+fn consumer_tag_auto_generated() {
+    let mut q = QueueState::new();
+    let tag = q.add_consumer(10, 1, None);
+    assert_eq!(tag, "ctag-10-1");
+    assert_eq!(q.listeners.len(), 1);
+    assert_eq!(q.consumer_count, 1);
+}
+
+#[test]
+fn consumer_tag_custom() {
+    let mut q = QueueState::new();
+    let tag = q.add_consumer(10, 1, Some("my-worker".to_string()));
+    assert_eq!(tag, "my-worker");
+    assert!(q.consumer_tags.contains_key("my-worker"));
+}
+
+#[test]
+fn consumer_cancel_by_tag() {
+    let mut q = QueueState::new();
+    q.add_consumer(10, 1, Some("worker-1".to_string()));
+    q.add_consumer(20, 1, Some("worker-2".to_string()));
+    assert_eq!(q.listeners.len(), 2);
+
+    assert!(q.cancel_consumer("worker-1"));
+    assert_eq!(q.listeners.len(), 1);
+    assert_eq!(q.listeners[0], (20, 1));
+    assert_eq!(q.consumer_count, 1);
+
+    // Cancel unknown tag returns false
+    assert!(!q.cancel_consumer("nonexistent"));
+}
+
+#[test]
+fn consumer_add_idempotent() {
+    let mut q = QueueState::new();
+    q.add_consumer(10, 1, Some("tag-a".to_string()));
+    q.add_consumer(10, 1, Some("tag-b".to_string()));
+    // Same conn_id+channel_id should not duplicate in listeners
+    assert_eq!(q.listeners.len(), 1);
+    // But both tags should be tracked
+    assert!(q.consumer_tags.contains_key("tag-a"));
+    assert!(q.consumer_tags.contains_key("tag-b"));
+}

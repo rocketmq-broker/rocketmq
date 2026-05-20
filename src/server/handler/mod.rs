@@ -50,6 +50,8 @@ pub async fn dispatch(
         Event::ChannelClose => channel::channel_close(conn_id, tx, broker, body).await,
         Event::Qos => channel::qos(conn_id, tx, broker, body).await,
         Event::ConfirmSelect => channel::confirm_select(conn_id, tx, broker).await,
+        Event::ChannelFlow => channel::channel_flow(conn_id, header.channel_id, tx, broker, body).await,
+        Event::BasicCancel => queue::basic_cancel(conn_id, tx, broker, body).await,
         other => warn!(conn_id, ?other, "unexpected event"),
     }
 }

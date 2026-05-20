@@ -1,8 +1,8 @@
 pub mod wal;
 
-use std::collections::HashMap;
+
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::state::BrokerState;
 use crate::queue::{Message, QueueOptions, QueueState};

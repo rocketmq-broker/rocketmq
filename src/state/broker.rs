@@ -1,9 +1,8 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc};
 
 use dashmap::DashMap;
@@ -25,6 +24,7 @@ pub struct ChannelState {
     pub unacked_count: u16,
     pub confirm_mode: bool,
     pub next_delivery_tag: u64,
+    pub flow_active: bool,
 }
 
 impl ChannelState {
@@ -35,10 +35,14 @@ impl ChannelState {
             unacked_count: 0,
             confirm_mode: false,
             next_delivery_tag: 1,
+            flow_active: true,
         }
     }
 
     pub fn can_deliver(&self) -> bool {
+        if !self.flow_active {
+            return false;
+        }
         self.prefetch_count == 0 || self.unacked_count < self.prefetch_count
     }
 }
@@ -169,6 +173,27 @@ mod tests {
         assert!(ch.can_deliver());
         ch.unacked_count = 2;
         assert!(!ch.can_deliver());
+    }
+
+    #[test]
+    fn channel_state_flow_control() {
+        let mut ch = ChannelState::new(1);
+        assert!(ch.can_deliver()); // flow_active defaults to true
+
+        ch.flow_active = false;
+        assert!(!ch.can_deliver()); // paused by flow control
+
+        ch.flow_active = true;
+        assert!(ch.can_deliver()); // resumed
+    }
+
+    #[test]
+    fn channel_state_flow_overrides_prefetch() {
+        let mut ch = ChannelState::new(1);
+        ch.prefetch_count = 10; // plenty of room
+        ch.unacked_count = 0;
+        ch.flow_active = false;
+        assert!(!ch.can_deliver()); // flow takes precedence
     }
 
     #[test]

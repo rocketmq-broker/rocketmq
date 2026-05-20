@@ -18,6 +18,11 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 const CHANNEL_CAPACITY: usize = 64;
 
+/// When mpsc capacity drops below this fraction of CHANNEL_CAPACITY, pause delivery.
+const BACKPRESSURE_LOW_WATERMARK: usize = 8;
+/// When mpsc capacity recovers above this fraction, resume delivery.
+const BACKPRESSURE_HIGH_WATERMARK: usize = 32;
+
 pub fn spawn(stream: TcpStream, addr: SocketAddr, broker: Broker) {
     tokio::spawn(async move {
         let (tx, rx) = mpsc::channel::<Frame>(CHANNEL_CAPACITY);
@@ -74,8 +79,33 @@ async fn reader_task(
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     heartbeat.tick().await;
     let mut last_activity = Instant::now();
+    let mut flow_paused = false;
 
     loop {
+        // Check backpressure on every iteration
+        let capacity = tx.capacity();
+        if !flow_paused && capacity <= BACKPRESSURE_LOW_WATERMARK {
+            flow_paused = true;
+            set_all_channels_flow(&broker, conn_id, false);
+            debug!(conn_id, capacity, "backpressure: pausing flow");
+            let _ = tx
+                .send(Frame::with_body(
+                    crate::core::protocol::Event::ChannelFlow,
+                    vec![0],
+                ))
+                .await;
+        } else if flow_paused && capacity >= BACKPRESSURE_HIGH_WATERMARK {
+            flow_paused = false;
+            set_all_channels_flow(&broker, conn_id, true);
+            debug!(conn_id, capacity, "backpressure: resuming flow");
+            let _ = tx
+                .send(Frame::with_body(
+                    crate::core::protocol::Event::ChannelFlow,
+                    vec![1],
+                ))
+                .await;
+        }
+
         tokio::select! {
             result = read_frame(&mut reader) => {
                 match result {
@@ -95,6 +125,15 @@ async fn reader_task(
                     break;
                 }
             }
+        }
+    }
+}
+
+/// Toggle `flow_active` on all channels belonging to a connection.
+fn set_all_channels_flow(broker: &Broker, conn_id: u64, active: bool) {
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        for ch in cs.channels.values_mut() {
+            ch.flow_active = active;
         }
     }
 }

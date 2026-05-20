@@ -57,7 +57,7 @@ pub async fn assert_queue(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Broke
 }
 
 pub async fn listen(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, broker: &Broker, body: &[u8]) {
-    let qname = match std::str::from_utf8(body) {
+    let body_str = match std::str::from_utf8(body) {
         Ok(s) => s,
         Err(_) => {
             warn!(conn_id, "invalid queue name encoding");
@@ -65,20 +65,78 @@ pub async fn listen(conn_id: u64, channel_id: u16, tx: &mpsc::Sender<Frame>, bro
         }
     };
 
-    match broker.queues.get_mut(qname) {
-        Some(mut queue) => {
-            if !queue.listeners.contains(&(conn_id, channel_id)) {
-                queue.listeners.push((conn_id, channel_id));
+    // Parse queue name and optional consumer_tag from headers
+    let mut qname = body_str;
+    let mut consumer_tag: Option<String> = None;
+
+    if body_str.contains("\r\n") {
+        for line in body_str.split("\r\n") {
+            if line.is_empty() {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once(':') {
+                match k {
+                    "queue" => qname = v,
+                    "consumer_tag" => consumer_tag = Some(v.to_string()),
+                    _ => {}
+                }
+            } else if qname == body_str {
+                // bare queue name as first line
+                qname = line;
             }
         }
+    }
+
+    let assigned_tag = match broker.queues.get_mut(qname) {
+        Some(mut queue) => queue.add_consumer(conn_id, channel_id, consumer_tag),
         None => {
             warn!(conn_id, queue = qname, "queue does not exist");
             return;
         }
+    };
+
+    info!(conn_id, channel_id, queue = qname, consumer_tag = assigned_tag.as_str(), "listening");
+    let reply = format!("consumer_tag:{}\r\n", assigned_tag);
+    let _ = tx
+        .send(Frame::with_body(Event::ListenOk, reply.into_bytes()))
+        .await;
+}
+
+pub async fn basic_cancel(conn_id: u64, tx: &mpsc::Sender<Frame>, broker: &Broker, body: &[u8]) {
+    let body_str = match std::str::from_utf8(body) {
+        Ok(s) => s,
+        Err(_) => {
+            warn!(conn_id, "invalid cancel body");
+            return;
+        }
+    };
+
+    // Parse consumer_tag
+    let mut consumer_tag = body_str.trim();
+    for line in body_str.split("\r\n") {
+        if let Some((k, v)) = line.split_once(':') {
+            if k == "consumer_tag" {
+                consumer_tag = v;
+            }
+        }
     }
 
-    info!(conn_id, channel_id, queue = qname, "listening");
+    let mut cancelled = false;
+    for mut entry in broker.queues.iter_mut() {
+        if entry.value_mut().cancel_consumer(consumer_tag) {
+            cancelled = true;
+            break;
+        }
+    }
+
+    if cancelled {
+        info!(conn_id, consumer_tag, "consumer cancelled");
+    } else {
+        warn!(conn_id, consumer_tag, "cancel: consumer tag not found");
+    }
+
+    let reply = format!("consumer_tag:{}\r\n", consumer_tag);
     let _ = tx
-        .send(Frame::with_body(Event::ListenOk, b"listen.ok".to_vec()))
+        .send(Frame::with_body(Event::BasicCancelOk, reply.into_bytes()))
         .await;
 }
