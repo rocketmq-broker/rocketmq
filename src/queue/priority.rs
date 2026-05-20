@@ -46,4 +46,10 @@ impl PriorityQueue {
     pub fn len(&self) -> usize {
         self.buckets.values().map(|q| q.len()).sum()
     }
+
+    /// Peek at the highest-priority front message without removing it.
+    pub fn peek_front(&self) -> Option<&Message> {
+        let key = *self.buckets.keys().next_back()?;
+        self.buckets.get(&key)?.front()
+    }
 }

@@ -20,6 +20,7 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
     let mut priority: u8 = 0;
     let mut per_msg_ttl: Option<Duration> = None;
     let mut user_headers = Vec::new();
+    let mut message_id: Option<String> = None;
 
     for line in headers_str.split("\r\n") {
         if line.is_empty() {
@@ -39,12 +40,27 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
                 "expiration" => {
                     per_msg_ttl = v.parse::<u64>().ok().map(Duration::from_millis);
                 }
+                "message-id" => message_id = Some(v.to_string()),
                 _ => {
                     user_headers.extend_from_slice(line.as_bytes());
                     user_headers.extend_from_slice(b"\r\n");
                 }
             }
         }
+    }
+
+    // Deduplication check
+    if let Some(ref mid) = message_id {
+        if broker.dedup_cache.contains_key(mid) {
+            debug!(
+                conn_id,
+                message_id = mid.as_str(),
+                "duplicate message skipped"
+            );
+            send_confirm(conn_id, broker, true).await;
+            return;
+        }
+        broker.dedup_cache.insert(mid.clone(), Instant::now());
     }
 
     // Route through exchange (read lock on exchanges only)
@@ -132,7 +148,11 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
                 priority: effective_priority,
                 expiration,
                 redelivered: false,
+                delivery_count: 0,
             };
+
+            // Touch queue activity timestamp
+            queue.last_activity = Instant::now();
 
             match queue.next_target(broker) {
                 None => {
@@ -143,7 +163,12 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
                 Some((target_id, target_channel_id)) => {
                     queue.inflight.insert(msg_id, msg);
                     let msg_ref = queue.inflight.get(&msg_id).unwrap();
-                    let frame = Frame::with_deliver(target_channel_id, msg_id, &msg_ref.headers, &msg_ref.body);
+                    let frame = Frame::with_deliver(
+                        target_channel_id,
+                        msg_id,
+                        &msg_ref.headers,
+                        &msg_ref.body,
+                    );
 
                     if let Some(mut cs) = broker.conn_state.get_mut(&target_id) {
                         if let Some(ch) = cs.channels.get_mut(&target_channel_id) {
@@ -173,7 +198,13 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
 
         if let Some((msg_id, frame, handle, target_channel_id)) = delivery {
             let _ = handle.tx.send(frame).await;
-            info!(conn_id, msg_id, target = handle.id, target_channel_id, "delivered");
+            info!(
+                conn_id,
+                msg_id,
+                target = handle.id,
+                target_channel_id,
+                "delivered"
+            );
         }
     }
 
@@ -262,7 +293,27 @@ pub async fn nack(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[u8]
     };
 
     if requeue {
+        msg.delivery_count += 1;
         msg.redelivered = true;
+
+        // Check max_retries: if exceeded, route to DLX instead of requeuing
+        let max_retries = broker
+            .queues
+            .get(&qname)
+            .and_then(|q| q.options.max_retries);
+        if let Some(max) = max_retries {
+            if msg.delivery_count > max {
+                info!(
+                    conn_id,
+                    msg_id,
+                    delivery_count = msg.delivery_count,
+                    "max retries exceeded, dead-lettering"
+                );
+                dead_letter_sync(broker, &qname, msg).await;
+                return;
+            }
+        }
+
         let new_id = broker.alloc_msg_id();
 
         let redelivery = {
@@ -278,7 +329,12 @@ pub async fn nack(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[u8]
                         requeued.id = new_id;
                         queue.inflight.insert(new_id, requeued);
                         let msg_ref = queue.inflight.get(&new_id).unwrap();
-                        let frame = Frame::with_deliver(target_channel_id, new_id, &msg_ref.headers, &msg_ref.body);
+                        let frame = Frame::with_deliver(
+                            target_channel_id,
+                            new_id,
+                            &msg_ref.headers,
+                            &msg_ref.body,
+                        );
 
                         if let Some(mut cs) = broker.conn_state.get_mut(&target_id) {
                             if let Some(ch) = cs.channels.get_mut(&target_channel_id) {
@@ -299,7 +355,14 @@ pub async fn nack(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[u8]
 
         if let Some((new_id, frame, handle, target_channel_id)) = redelivery {
             let _ = handle.tx.send(frame).await;
-            info!(conn_id, msg_id, new_id, target = handle.id, target_channel_id, "redelivered");
+            info!(
+                conn_id,
+                msg_id,
+                new_id,
+                target = handle.id,
+                target_channel_id,
+                "redelivered"
+            );
         }
     } else {
         // Dead-letter

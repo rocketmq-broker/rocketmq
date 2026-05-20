@@ -10,6 +10,14 @@ pub struct QueueOptions {
     pub max_length: Option<usize>,
     pub dead_letter_exchange: Option<String>,
     pub dead_letter_routing_key: Option<String>,
+    /// Queue auto-expires after being idle for this duration (no consumers, no activity).
+    pub expires: Option<Duration>,
+    /// Maximum delivery attempts before routing to DLX.
+    pub max_retries: Option<u32>,
+    /// Base retry delay in milliseconds.
+    pub retry_delay_ms: Option<u64>,
+    /// Retry delay multiplier for exponential backoff.
+    pub retry_multiplier: Option<f64>,
 }
 
 impl QueueOptions {
@@ -36,6 +44,12 @@ impl QueueOptions {
                     "x-dead-letter-routing-key" => {
                         opts.dead_letter_routing_key = Some(v.to_string())
                     }
+                    "x-expires" => {
+                        opts.expires = v.parse::<u64>().ok().map(Duration::from_millis)
+                    }
+                    "x-max-retries" => opts.max_retries = v.parse().ok(),
+                    "x-retry-delay" => opts.retry_delay_ms = v.parse().ok(),
+                    "x-retry-multiplier" => opts.retry_multiplier = v.parse().ok(),
                     _ => {}
                 }
             }

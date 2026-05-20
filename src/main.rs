@@ -25,6 +25,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Store WAL handle in broker for handlers to use
     broker.set_wal(wal);
 
+    // Spawn background maintenance tasks (queue TTL, message TTL, dedup eviction)
+    server::tasks::spawn_all(broker.clone());
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
     info!("listening on 127.0.0.1:8080");
 

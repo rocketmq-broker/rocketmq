@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 use super::options::QueueOptions;
 use super::priority::PriorityQueue;
 use super::message::Message;
@@ -13,6 +14,8 @@ pub struct QueueState {
     pub consumer_count: usize,
     /// Maps consumer_tag → (conn_id, channel_id)
     pub consumer_tags: HashMap<String, (u64, u16)>,
+    /// Last time this queue had activity (publish, consume, listen).
+    pub last_activity: Instant,
 }
 
 impl QueueState {
@@ -30,6 +33,7 @@ impl QueueState {
             next_listener: 0,
             consumer_count: 0,
             consumer_tags: HashMap::new(),
+            last_activity: Instant::now(),
         }
     }
 

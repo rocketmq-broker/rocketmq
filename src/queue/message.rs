@@ -7,6 +7,7 @@ pub struct Message {
     pub priority: u8,
     pub expiration: Option<Instant>,
     pub redelivered: bool,
+    pub delivery_count: u32,
 }
 
 impl Message {
@@ -18,6 +19,7 @@ impl Message {
             priority: 0,
             expiration: None,
             redelivered: false,
+            delivery_count: 0,
         }
     }
 

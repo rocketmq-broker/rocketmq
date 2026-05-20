@@ -65,6 +65,7 @@ fn message_expired() {
         priority: 0,
         expiration: Some(Instant::now() - Duration::from_secs(1)),
         redelivered: false,
+        delivery_count: 0,
     };
     assert!(msg.is_expired());
 }
@@ -78,6 +79,7 @@ fn message_not_expired() {
         priority: 0,
         expiration: Some(Instant::now() + Duration::from_secs(60)),
         redelivered: false,
+        delivery_count: 0,
     };
     assert!(!msg.is_expired());
 }

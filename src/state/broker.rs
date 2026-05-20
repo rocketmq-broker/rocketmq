@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 use tokio::sync::{RwLock, mpsc};
 
 use dashmap::DashMap;
@@ -75,6 +76,8 @@ pub struct BrokerState {
     pub connections: DashMap<u64, ConnHandle>,
     pub conn_state: DashMap<u64, ConnectionState>,
     wal: OnceLock<Arc<crate::storage::wal::Wal>>,
+    /// Deduplication cache: message-id → timestamp of first seen.
+    pub dedup_cache: DashMap<String, Instant>,
 }
 
 impl BrokerState {
@@ -87,6 +90,7 @@ impl BrokerState {
             connections: DashMap::new(),
             conn_state: DashMap::new(),
             wal: OnceLock::new(),
+            dedup_cache: DashMap::new(),
         }
     }
 
