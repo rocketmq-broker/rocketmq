@@ -1,6 +1,6 @@
-use std::time::{Duration, Instant};
-use super::{DelayQueue, Message, QueueOptions, QueueState};
 use super::priority::PriorityQueue;
+use super::{DelayQueue, Message, QueueOptions, QueueState};
+use std::time::{Duration, Instant};
 
 #[test]
 fn queue_options_from_headers_full() {
@@ -149,41 +149,101 @@ fn queue_state_round_robin() {
     let mut q = QueueState::new();
     let bs = crate::state::BrokerState::new();
     // Since cs.channels.get returns none for nonexistent, we need to populate connection state for tests to pass prefetch check
-    bs.conn_state.insert(10, crate::state::ConnectionState::new());
-    bs.conn_state.insert(20, crate::state::ConnectionState::new());
-    bs.conn_state.insert(30, crate::state::ConnectionState::new());
-    bs.conn_state.get_mut(&10).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs.conn_state.get_mut(&20).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs.conn_state.get_mut(&30).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    
+    bs.conn_state
+        .insert(10, crate::state::ConnectionState::new());
+    bs.conn_state
+        .insert(20, crate::state::ConnectionState::new());
+    bs.conn_state
+        .insert(30, crate::state::ConnectionState::new());
+    bs.conn_state
+        .get_mut(&10)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs.conn_state
+        .get_mut(&20)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs.conn_state
+        .get_mut(&30)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+
     q.listeners = vec![(10, 1), (20, 1), (30, 1)];
     assert_eq!(q.next_target(&bs.into()), Some((10, 1)));
-    
+
     let bs2 = crate::state::BrokerState::new();
-    bs2.conn_state.insert(10, crate::state::ConnectionState::new());
-    bs2.conn_state.insert(20, crate::state::ConnectionState::new());
-    bs2.conn_state.insert(30, crate::state::ConnectionState::new());
-    bs2.conn_state.get_mut(&10).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs2.conn_state.get_mut(&20).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs2.conn_state.get_mut(&30).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
+    bs2.conn_state
+        .insert(10, crate::state::ConnectionState::new());
+    bs2.conn_state
+        .insert(20, crate::state::ConnectionState::new());
+    bs2.conn_state
+        .insert(30, crate::state::ConnectionState::new());
+    bs2.conn_state
+        .get_mut(&10)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs2.conn_state
+        .get_mut(&20)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs2.conn_state
+        .get_mut(&30)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
     assert_eq!(q.next_target(&bs2.into()), Some((20, 1)));
-    
+
     let bs3 = crate::state::BrokerState::new();
-    bs3.conn_state.insert(10, crate::state::ConnectionState::new());
-    bs3.conn_state.insert(20, crate::state::ConnectionState::new());
-    bs3.conn_state.insert(30, crate::state::ConnectionState::new());
-    bs3.conn_state.get_mut(&10).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs3.conn_state.get_mut(&20).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs3.conn_state.get_mut(&30).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
+    bs3.conn_state
+        .insert(10, crate::state::ConnectionState::new());
+    bs3.conn_state
+        .insert(20, crate::state::ConnectionState::new());
+    bs3.conn_state
+        .insert(30, crate::state::ConnectionState::new());
+    bs3.conn_state
+        .get_mut(&10)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs3.conn_state
+        .get_mut(&20)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs3.conn_state
+        .get_mut(&30)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
     assert_eq!(q.next_target(&bs3.into()), Some((30, 1)));
-    
+
     let bs4 = crate::state::BrokerState::new();
-    bs4.conn_state.insert(10, crate::state::ConnectionState::new());
-    bs4.conn_state.insert(20, crate::state::ConnectionState::new());
-    bs4.conn_state.insert(30, crate::state::ConnectionState::new());
-    bs4.conn_state.get_mut(&10).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs4.conn_state.get_mut(&20).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
-    bs4.conn_state.get_mut(&30).unwrap().channels.insert(1, crate::state::ChannelState::new(1));
+    bs4.conn_state
+        .insert(10, crate::state::ConnectionState::new());
+    bs4.conn_state
+        .insert(20, crate::state::ConnectionState::new());
+    bs4.conn_state
+        .insert(30, crate::state::ConnectionState::new());
+    bs4.conn_state
+        .get_mut(&10)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs4.conn_state
+        .get_mut(&20)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
+    bs4.conn_state
+        .get_mut(&30)
+        .unwrap()
+        .channels
+        .insert(1, crate::state::ChannelState::new(1));
     assert_eq!(q.next_target(&bs4.into()), Some((10, 1)));
 }
 

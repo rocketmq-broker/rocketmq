@@ -48,9 +48,7 @@ impl QueueOptions {
                     "x-dead-letter-routing-key" => {
                         opts.dead_letter_routing_key = Some(v.to_string())
                     }
-                    "x-expires" => {
-                        opts.expires = v.parse::<u64>().ok().map(Duration::from_millis)
-                    }
+                    "x-expires" => opts.expires = v.parse::<u64>().ok().map(Duration::from_millis),
                     "x-max-retries" => opts.max_retries = v.parse().ok(),
                     "x-retry-delay" => opts.retry_delay_ms = v.parse().ok(),
                     "x-retry-multiplier" => opts.retry_multiplier = v.parse().ok(),

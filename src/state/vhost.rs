@@ -3,9 +3,9 @@
 //! Each VHost has its own set of exchanges, queues, and bindings.
 //! The default vhost "/" is always present.
 
+use dashmap::DashMap;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use dashmap::DashMap;
 
 use crate::queue::QueueState;
 use crate::routing::exchange::{Exchange, create_default_exchanges};
@@ -82,7 +82,8 @@ mod tests {
 
         // Declare queue
         let opts = QueueOptions::default();
-        vh.queues.insert("q1".into(), QueueState::with_options(opts));
+        vh.queues
+            .insert("q1".into(), QueueState::with_options(opts));
         assert!(vh.queues.contains_key("q1"));
 
         // Delete queue

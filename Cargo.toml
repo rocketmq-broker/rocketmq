@@ -10,3 +10,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dashmap = "6"
 crc32fast = "1"
 byteorder = "1"
+bcrypt = "0.17"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

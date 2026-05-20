@@ -1,12 +1,11 @@
 pub mod wal;
 
-
 use std::sync::Arc;
 use tracing::info;
 
-use crate::state::BrokerState;
 use crate::queue::{Message, QueueOptions, QueueState};
 use crate::routing::exchange::{Binding, Exchange, ExchangeType};
+use crate::state::BrokerState;
 use crate::storage::wal::{EntryType, Wal, WalEntry};
 
 const WAL_PATH: &str = "data/broker.wal";

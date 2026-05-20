@@ -14,8 +14,11 @@ use crate::state::Broker;
 /// Exchange.Declare: exchange(shortstr) type(shortstr) passive(bit) durable(bit)
 ///   auto_delete(bit) internal(bit) no_wait(bit) arguments(table)
 pub async fn handle_declare(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -29,21 +32,57 @@ pub async fn handle_declare(
     let no_wait = flags & 0x10 != 0;
     let _arguments = read_field_table(&mut r).unwrap_or_default();
 
+    // Permission check: configure permission needed for declare (skip for passive)
+    if !passive {
+        if super::auth_check::check_configure(
+            conn_id,
+            channel,
+            &name,
+            CLASS_EXCHANGE,
+            METHOD_EXCHANGE_DECLARE,
+            writer,
+            broker,
+        )
+        .await
+        {
+            return;
+        }
+    }
+
     if passive {
         let exists = broker.exchanges.read().await.contains_key(&name);
         if !exists {
-            let close = build_channel_close(NOT_FOUND, "NOT_FOUND - no such exchange", CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE);
-            let _ = writer.write_all(&encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close)).await;
+            let close = build_channel_close(
+                NOT_FOUND,
+                "NOT_FOUND - no such exchange",
+                CLASS_EXCHANGE,
+                METHOD_EXCHANGE_DECLARE,
+            );
+            let _ = writer
+                .write_all(&encode_method_frame(
+                    channel,
+                    CLASS_CHANNEL,
+                    METHOD_CHANNEL_CLOSE,
+                    &close,
+                ))
+                .await;
             let _ = writer.flush().await;
             return;
         }
     } else {
         let kind = ExchangeType::from_str(&kind_str).unwrap_or(ExchangeType::Direct);
         let mut exchanges = broker.exchanges.write().await;
-        exchanges.entry(name.clone()).or_insert_with(|| Exchange::new(name.clone(), kind, durable));
+        exchanges
+            .entry(name.clone())
+            .or_insert_with(|| Exchange::new(name.clone(), kind, durable));
     }
 
-    info!(conn_id, channel, exchange = name.as_str(), "exchange declared");
+    info!(
+        conn_id,
+        channel,
+        exchange = name.as_str(),
+        "exchange declared"
+    );
     if !no_wait {
         let reply = encode_method_frame(channel, CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE_OK, &[]);
         let _ = writer.write_all(&reply).await;
@@ -53,8 +92,11 @@ pub async fn handle_declare(
 
 /// Exchange.Delete: exchange(shortstr) if_unused(bit) no_wait(bit)
 pub async fn handle_delete(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -64,14 +106,31 @@ pub async fn handle_delete(
     let no_wait = flags & 0x02 != 0;
 
     if name.starts_with("amq.") {
-        let close = build_channel_close(ACCESS_REFUSED, "ACCESS_REFUSED - cannot delete default exchange", CLASS_EXCHANGE, METHOD_EXCHANGE_DELETE);
-        let _ = writer.write_all(&encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close)).await;
+        let close = build_channel_close(
+            ACCESS_REFUSED,
+            "ACCESS_REFUSED - cannot delete default exchange",
+            CLASS_EXCHANGE,
+            METHOD_EXCHANGE_DELETE,
+        );
+        let _ = writer
+            .write_all(&encode_method_frame(
+                channel,
+                CLASS_CHANNEL,
+                METHOD_CHANNEL_CLOSE,
+                &close,
+            ))
+            .await;
         let _ = writer.flush().await;
         return;
     }
 
     broker.exchanges.write().await.remove(&name);
-    info!(conn_id, channel, exchange = name.as_str(), "exchange deleted");
+    info!(
+        conn_id,
+        channel,
+        exchange = name.as_str(),
+        "exchange deleted"
+    );
     if !no_wait {
         let reply = encode_method_frame(channel, CLASS_EXCHANGE, METHOD_EXCHANGE_DELETE_OK, &[]);
         let _ = writer.write_all(&reply).await;
@@ -81,8 +140,11 @@ pub async fn handle_delete(
 
 /// Exchange.Bind (RabbitMQ extension)
 pub async fn handle_bind(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     // Not to be confused with Queue.Bind — this is exchange-to-exchange binding
     let mut r = Cursor::new(args);
@@ -105,7 +167,12 @@ pub async fn handle_bind(
         }
     }
 
-    info!(conn_id, source = source.as_str(), dest = destination.as_str(), "exchange bound");
+    info!(
+        conn_id,
+        source = source.as_str(),
+        dest = destination.as_str(),
+        "exchange bound"
+    );
     if !no_wait {
         let reply = encode_method_frame(channel, CLASS_EXCHANGE, METHOD_EXCHANGE_BIND_OK, &[]);
         let _ = writer.write_all(&reply).await;
@@ -115,8 +182,11 @@ pub async fn handle_bind(
 
 /// Exchange.Unbind
 pub async fn handle_unbind(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -131,7 +201,12 @@ pub async fn handle_unbind(
         }
     }
 
-    info!(conn_id, source = source.as_str(), dest = destination.as_str(), "exchange unbound");
+    info!(
+        conn_id,
+        source = source.as_str(),
+        dest = destination.as_str(),
+        "exchange unbound"
+    );
     let reply = encode_method_frame(channel, CLASS_EXCHANGE, METHOD_EXCHANGE_UNBIND_OK, &[]);
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
@@ -180,7 +255,12 @@ mod tests {
 
     #[test]
     fn channel_close_error_builds() {
-        let args = build_channel_close(NOT_FOUND, "NOT_FOUND", CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE);
+        let args = build_channel_close(
+            NOT_FOUND,
+            "NOT_FOUND",
+            CLASS_EXCHANGE,
+            METHOD_EXCHANGE_DECLARE,
+        );
         let mut r = Cursor::new(&args);
         assert_eq!(read_short(&mut r).unwrap(), 404);
         assert_eq!(read_shortstr(&mut r).unwrap(), "NOT_FOUND");

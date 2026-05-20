@@ -55,41 +55,68 @@ pub async fn dispatch_method(
 
         // ── Exchange class ────────────────────────────
         (CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE) => {
-            super::amqp_exchange::handle_declare(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_exchange::handle_declare(
+                conn_id,
+                channel,
+                &method.arguments,
+                writer,
+                broker,
+            )
+            .await;
             true
         }
         (CLASS_EXCHANGE, METHOD_EXCHANGE_DELETE) => {
-            super::amqp_exchange::handle_delete(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_exchange::handle_delete(
+                conn_id,
+                channel,
+                &method.arguments,
+                writer,
+                broker,
+            )
+            .await;
             true
         }
         (CLASS_EXCHANGE, METHOD_EXCHANGE_BIND) => {
-            super::amqp_exchange::handle_bind(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_exchange::handle_bind(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_EXCHANGE, METHOD_EXCHANGE_UNBIND) => {
-            super::amqp_exchange::handle_unbind(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_exchange::handle_unbind(
+                conn_id,
+                channel,
+                &method.arguments,
+                writer,
+                broker,
+            )
+            .await;
             true
         }
 
         // ── Queue class ───────────────────────────────
         (CLASS_QUEUE, METHOD_QUEUE_DECLARE) => {
-            super::amqp_queue::handle_declare(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_queue::handle_declare(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_QUEUE, METHOD_QUEUE_DELETE) => {
-            super::amqp_queue::handle_delete(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_queue::handle_delete(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_QUEUE, METHOD_QUEUE_PURGE) => {
-            super::amqp_queue::handle_purge(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_queue::handle_purge(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_QUEUE, METHOD_QUEUE_BIND) => {
-            super::amqp_queue::handle_bind(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_queue::handle_bind(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_QUEUE, METHOD_QUEUE_UNBIND) => {
-            super::amqp_queue::handle_unbind(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_queue::handle_unbind(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
 
@@ -97,11 +124,13 @@ pub async fn dispatch_method(
         // Note: Basic.Publish is handled via content framing in the connection loop,
         // not here. The connection reads method+header+body then calls handle_publish.
         (CLASS_BASIC, METHOD_BASIC_CONSUME) => {
-            super::amqp_basic::handle_consume(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_basic::handle_consume(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_BASIC, METHOD_BASIC_CANCEL) => {
-            super::amqp_basic::handle_cancel(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_basic::handle_cancel(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_BASIC, METHOD_BASIC_ACK) => {
@@ -117,15 +146,18 @@ pub async fn dispatch_method(
             true
         }
         (CLASS_BASIC, METHOD_BASIC_GET) => {
-            super::amqp_basic::handle_get(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_basic::handle_get(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_BASIC, METHOD_BASIC_QOS) => {
-            super::amqp_basic::handle_qos(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_basic::handle_qos(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
         (CLASS_BASIC, METHOD_BASIC_RECOVER | METHOD_BASIC_RECOVER_ASYNC) => {
-            super::amqp_basic::handle_recover(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_basic::handle_recover(conn_id, channel, &method.arguments, writer, broker)
+                .await;
             true
         }
 
@@ -145,7 +177,14 @@ pub async fn dispatch_method(
 
         // ── Confirm class ─────────────────────────────
         (CLASS_CONFIRM, METHOD_CONFIRM_SELECT) => {
-            super::amqp_tx::handle_confirm_select(conn_id, channel, &method.arguments, writer, broker).await;
+            super::amqp_tx::handle_confirm_select(
+                conn_id,
+                channel,
+                &method.arguments,
+                writer,
+                broker,
+            )
+            .await;
             true
         }
 

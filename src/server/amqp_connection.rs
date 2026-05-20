@@ -9,6 +9,7 @@
 //! Also handles Connection.Close/CloseOk.
 
 use std::io::Cursor;
+use std::net::SocketAddr;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::tcp::OwnedWriteHalf;
@@ -19,14 +20,11 @@ use crate::core::method::*;
 use crate::core::types::*;
 use crate::state::Broker;
 
-/// Default credentials (configurable in future).
-const DEFAULT_USER: &str = "guest";
-const DEFAULT_PASS: &str = "guest";
-
 /// Perform the AMQP 0-9-1 handshake on a raw TCP stream.
 /// Returns Ok(()) if handshake succeeds, Err if the connection should be dropped.
 pub async fn perform_handshake(
     conn_id: u64,
+    peer_addr: SocketAddr,
     reader: &mut (impl AsyncReadExt + Unpin),
     writer: &mut BufWriter<OwnedWriteHalf>,
     broker: &Broker,
@@ -67,7 +65,23 @@ pub async fn perform_handshake(
         return Err(());
     }
 
-    let (username, _password) = parse_start_ok(&method.arguments)?;
+    let (username, password) = parse_start_ok_credentials(&method.arguments)?;
+
+    // Authenticate via the auth backend (bcrypt verification + localhost check)
+    if let Err(reason) = broker.auth.authenticate(&username, &password, peer_addr) {
+        warn!(conn_id, user = username.as_str(), %reason, "authentication failed");
+        let close = build_connection_close(
+            ACCESS_REFUSED,
+            &format!("ACCESS_REFUSED - {}", reason),
+            CLASS_CONNECTION,
+            METHOD_CONNECTION_START_OK,
+        );
+        let close_frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
+        let _ = writer.write_all(&close_frame).await;
+        let _ = writer.flush().await;
+        return Err(());
+    }
+
     info!(
         conn_id,
         user = username.as_str(),
@@ -76,7 +90,7 @@ pub async fn perform_handshake(
 
     // Store auth info
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
-        cs.username = username;
+        cs.username = username.clone();
         cs.authenticated = true;
     }
 
@@ -123,6 +137,31 @@ pub async fn perform_handshake(
         let close = build_connection_close(
             NOT_ALLOWED,
             "NOT_ALLOWED - vhost not found",
+            CLASS_CONNECTION,
+            METHOD_CONNECTION_OPEN,
+        );
+        let close_frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
+        let _ = writer.write_all(&close_frame).await;
+        let _ = writer.flush().await;
+        return Err(());
+    }
+
+    // Check user has access to this vhost
+    let username = broker
+        .conn_state
+        .get(&conn_id)
+        .map(|cs| cs.username.clone())
+        .unwrap_or_default();
+    if !broker.auth.check_vhost_access(&username, &vhost) {
+        warn!(
+            conn_id,
+            user = username.as_str(),
+            vhost = vhost.as_str(),
+            "vhost access denied"
+        );
+        let close = build_connection_close(
+            ACCESS_REFUSED,
+            "ACCESS_REFUSED - no access to vhost",
             CLASS_CONNECTION,
             METHOD_CONNECTION_OPEN,
         );
@@ -229,7 +268,9 @@ fn build_connection_open_ok() -> Vec<u8> {
     buf
 }
 
-fn parse_start_ok(args: &[u8]) -> Result<(String, String), ()> {
+/// Parse Connection.StartOk to extract credentials.
+/// Does NOT validate — that's the AuthBackend's job.
+fn parse_start_ok_credentials(args: &[u8]) -> Result<(String, String), ()> {
     let mut r = Cursor::new(args);
 
     // client-properties (field-table) — read and discard
@@ -250,13 +291,10 @@ fn parse_start_ok(args: &[u8]) -> Result<(String, String), ()> {
         if parts.len() >= 3 {
             let user = String::from_utf8_lossy(parts[1]).to_string();
             let pass = String::from_utf8_lossy(parts[2]).to_string();
-            // Validate credentials
-            if user == DEFAULT_USER && pass == DEFAULT_PASS {
-                return Ok((user, pass));
-            }
-            warn!(user = user.as_str(), "authentication failed");
-            return Err(());
+            return Ok((user, pass));
         }
+        warn!("malformed SASL PLAIN response");
+        return Err(());
     } else if mechanism == "AMQPLAIN" {
         // AMQPLAIN: field-table with LOGIN and PASSWORD
         let mut table_r = Cursor::new(&response);
@@ -269,11 +307,9 @@ fn parse_start_ok(args: &[u8]) -> Result<(String, String), ()> {
                 Some(FieldValue::LongString(s)) => String::from_utf8_lossy(s).to_string(),
                 _ => String::new(),
             };
-            if login == DEFAULT_USER && password == DEFAULT_PASS {
-                return Ok((login, password));
-            }
+            return Ok((login, password));
         }
-        warn!("AMQPLAIN authentication failed");
+        warn!("malformed AMQPLAIN response");
         return Err(());
     }
 
@@ -422,18 +458,22 @@ mod tests {
         // locale
         write_shortstr(&mut buf, "en_US").unwrap();
 
-        let (user, _pass) = parse_start_ok(&buf).unwrap();
+        let (user, pass) = parse_start_ok_credentials(&buf).unwrap();
         assert_eq!(user, "guest");
+        assert_eq!(pass, "guest");
     }
 
     #[test]
-    fn plain_auth_wrong_password() {
+    fn plain_auth_extracts_any_credentials() {
+        // parse_start_ok_credentials no longer validates — it just extracts
         let mut buf = Vec::new();
         write_field_table(&mut buf, &FieldTable::new()).unwrap();
         write_shortstr(&mut buf, "PLAIN").unwrap();
-        write_longstr(&mut buf, b"\x00guest\x00wrong").unwrap();
+        write_longstr(&mut buf, b"\x00alice\x00s3cret").unwrap();
         write_shortstr(&mut buf, "en_US").unwrap();
-        assert!(parse_start_ok(&buf).is_err());
+        let (user, pass) = parse_start_ok_credentials(&buf).unwrap();
+        assert_eq!(user, "alice");
+        assert_eq!(pass, "s3cret");
     }
 
     #[test]
@@ -443,7 +483,7 @@ mod tests {
         write_shortstr(&mut buf, "EXTERNAL").unwrap();
         write_longstr(&mut buf, b"").unwrap();
         write_shortstr(&mut buf, "en_US").unwrap();
-        assert!(parse_start_ok(&buf).is_err());
+        assert!(parse_start_ok_credentials(&buf).is_err());
     }
 
     #[test]

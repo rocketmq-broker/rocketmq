@@ -45,6 +45,21 @@ pub async fn handle_publish(
     writer: &mut BufWriter<OwnedWriteHalf>,
     broker: &Broker,
 ) {
+    // Permission check: write permission needed to publish to an exchange
+    if super::auth_check::check_write(
+        conn_id,
+        channel,
+        exchange_name,
+        CLASS_BASIC,
+        METHOD_BASIC_PUBLISH,
+        writer,
+        broker,
+    )
+    .await
+    {
+        return;
+    }
+
     let priority = properties.priority.unwrap_or(0);
     let per_msg_ttl = properties
         .expiration
@@ -206,6 +221,21 @@ pub async fn handle_consume(
     } else {
         Some(consumer_tag_arg)
     };
+
+    // Permission check: read permission needed to consume from a queue
+    if super::auth_check::check_read(
+        conn_id,
+        channel,
+        &queue_name,
+        CLASS_BASIC,
+        METHOD_BASIC_CONSUME,
+        writer,
+        broker,
+    )
+    .await
+    {
+        return;
+    }
 
     // Check exclusive
     if exclusive {

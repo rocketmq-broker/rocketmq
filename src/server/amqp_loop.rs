@@ -60,7 +60,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
         let mut writer = BufWriter::new(writer);
 
         // Handshake
-        if amqp_connection::perform_handshake(conn_id, &mut reader, &mut writer, &broker)
+        if amqp_connection::perform_handshake(conn_id, addr, &mut reader, &mut writer, &broker)
             .await
             .is_err()
         {

@@ -72,8 +72,7 @@ async fn message_ttl_task(broker: Broker) {
             if expired_count > 0 {
                 debug!(
                     queue = entry.key().as_str(),
-                    expired_count,
-                    "expired messages removed"
+                    expired_count, "expired messages removed"
                 );
             }
         }

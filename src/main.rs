@@ -1,3 +1,4 @@
+mod auth;
 mod core;
 mod queue;
 mod routing;

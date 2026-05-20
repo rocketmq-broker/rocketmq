@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, VecDeque};
 use super::message::Message;
+use std::collections::{BTreeMap, VecDeque};
 
 pub struct PriorityQueue {
     buckets: BTreeMap<u8, VecDeque<Message>>,

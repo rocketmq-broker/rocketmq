@@ -1,16 +1,16 @@
+use super::message::Message;
+use super::options::QueueOptions;
+use super::priority::PriorityQueue;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use super::options::QueueOptions;
-use super::priority::PriorityQueue;
-use super::message::Message;
 
 /// Global atomic counter for unique consumer tag generation.
 static CONSUMER_TAG_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Simple token-bucket rate limiter.
 pub struct TokenBucket {
-    pub rate: u32,         // tokens per second
+    pub rate: u32, // tokens per second
     pub tokens: f64,
     pub last_refill: Instant,
 }
@@ -72,7 +72,8 @@ impl ConsumerGroup {
     /// Remove a member. Returns true if found.
     pub fn remove_member(&mut self, conn_id: u64, channel_id: u16) -> bool {
         let before = self.members.len();
-        self.members.retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
+        self.members
+            .retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
         self.members.len() != before
     }
 
@@ -169,7 +170,8 @@ impl QueueState {
         if !self.listeners.contains(&(conn_id, channel_id)) {
             self.listeners.push((conn_id, channel_id));
         }
-        self.consumer_tags.insert(tag.clone(), (conn_id, channel_id));
+        self.consumer_tags
+            .insert(tag.clone(), (conn_id, channel_id));
         self.consumer_count = self.listeners.len();
 
         // Add to consumer group if specified
@@ -186,7 +188,8 @@ impl QueueState {
     /// Cancel a consumer by tag. Returns true if found.
     pub fn cancel_consumer(&mut self, tag: &str) -> bool {
         if let Some((conn_id, channel_id)) = self.consumer_tags.remove(tag) {
-            self.listeners.retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
+            self.listeners
+                .retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
             self.consumer_count = self.listeners.len();
             // Remove from all groups
             self.groups.values_mut().for_each(|g| {

@@ -13,8 +13,10 @@ use crate::state::broker::PendingOp;
 // ─── Tx.Select ────────────────────────────────────────
 
 pub async fn handle_tx_select(
-    conn_id: u64, channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
         cs.tx_mode = true;
@@ -29,16 +31,30 @@ pub async fn handle_tx_select(
 // ─── Tx.Commit ────────────────────────────────────────
 
 pub async fn handle_tx_commit(
-    conn_id: u64, channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let ops = {
         match broker.conn_state.get_mut(&conn_id) {
             Some(mut cs) => {
                 if !cs.tx_mode {
                     warn!(conn_id, "tx_commit without tx_select");
-                    let close = build_channel_close(PRECONDITION_FAILED, "PRECONDITION_FAILED - not in tx mode", CLASS_TX, METHOD_TX_COMMIT);
-                    let _ = writer.write_all(&encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close)).await;
+                    let close = build_channel_close(
+                        PRECONDITION_FAILED,
+                        "PRECONDITION_FAILED - not in tx mode",
+                        CLASS_TX,
+                        METHOD_TX_COMMIT,
+                    );
+                    let _ = writer
+                        .write_all(&encode_method_frame(
+                            channel,
+                            CLASS_CHANNEL,
+                            METHOD_CHANNEL_CLOSE,
+                            &close,
+                        ))
+                        .await;
                     let _ = writer.flush().await;
                     return;
                 }
@@ -50,7 +66,9 @@ pub async fn handle_tx_commit(
 
     for op in &ops {
         match op {
-            PendingOp::Publish { routing_key, body, .. } => {
+            PendingOp::Publish {
+                routing_key, body, ..
+            } => {
                 let msg_id = broker.alloc_msg_id();
                 if let Some(mut queue) = broker.queues.get_mut(routing_key.as_str()) {
                     let msg = crate::queue::Message::new(msg_id, Vec::new(), body.clone());
@@ -60,7 +78,9 @@ pub async fn handle_tx_commit(
             PendingOp::Ack { msg_id } => {
                 for mut entry in broker.queues.iter_mut() {
                     if entry.value_mut().inflight.remove(msg_id).is_some() {
-                        if let Some(wal) = broker.wal() { let _ = wal.log_ack(*msg_id); }
+                        if let Some(wal) = broker.wal() {
+                            let _ = wal.log_ack(*msg_id);
+                        }
                         break;
                     }
                 }
@@ -77,16 +97,30 @@ pub async fn handle_tx_commit(
 // ─── Tx.Rollback ──────────────────────────────────────
 
 pub async fn handle_tx_rollback(
-    conn_id: u64, channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let discarded = {
         match broker.conn_state.get_mut(&conn_id) {
             Some(mut cs) => {
                 if !cs.tx_mode {
                     warn!(conn_id, "tx_rollback without tx_select");
-                    let close = build_channel_close(PRECONDITION_FAILED, "PRECONDITION_FAILED - not in tx mode", CLASS_TX, METHOD_TX_ROLLBACK);
-                    let _ = writer.write_all(&encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close)).await;
+                    let close = build_channel_close(
+                        PRECONDITION_FAILED,
+                        "PRECONDITION_FAILED - not in tx mode",
+                        CLASS_TX,
+                        METHOD_TX_ROLLBACK,
+                    );
+                    let _ = writer
+                        .write_all(&encode_method_frame(
+                            channel,
+                            CLASS_CHANNEL,
+                            METHOD_CHANNEL_CLOSE,
+                            &close,
+                        ))
+                        .await;
                     let _ = writer.flush().await;
                     return;
                 }
@@ -107,8 +141,11 @@ pub async fn handle_tx_rollback(
 // ─── Confirm.Select ───────────────────────────────────
 
 pub async fn handle_confirm_select(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let no_wait = args.first().copied().unwrap_or(0) & 0x01 != 0;
 

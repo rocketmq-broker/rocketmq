@@ -8,9 +8,10 @@ use tokio::sync::{RwLock, mpsc};
 
 use dashmap::DashMap;
 
+use crate::auth::AuthBackend;
 use crate::queue::{DelayQueue, QueueState};
 use crate::routing::exchange::{Binding, Exchange, create_default_exchanges};
-use crate::state::vhost::{VHost, DEFAULT_VHOST};
+use crate::state::vhost::{DEFAULT_VHOST, VHost};
 
 #[derive(Clone)]
 pub struct ConnHandle {
@@ -122,10 +123,19 @@ pub struct BrokerState {
     pub delay_queue: DelayQueue,
     /// Virtual hosts for namespace isolation.
     pub vhosts: DashMap<String, VHost>,
+    /// Authentication and authorization backend.
+    pub auth: AuthBackend,
 }
 
 impl BrokerState {
     pub fn new() -> Self {
+        let auth = AuthBackend::new();
+        // Load persisted user database if it exists
+        let user_db = std::path::Path::new("data/users.json");
+        if let Err(e) = auth.load_from_file(user_db) {
+            tracing::warn!(error = %e, "failed to load user database, using defaults");
+        }
+
         Self {
             next_conn_id: AtomicU64::new(1),
             next_msg_id: AtomicU64::new(1),
@@ -138,9 +148,13 @@ impl BrokerState {
             delay_queue: DelayQueue::new(),
             vhosts: {
                 let map = DashMap::new();
-                map.insert(DEFAULT_VHOST.to_string(), VHost::new(DEFAULT_VHOST.to_string()));
+                map.insert(
+                    DEFAULT_VHOST.to_string(),
+                    VHost::new(DEFAULT_VHOST.to_string()),
+                );
                 map
             },
+            auth,
         }
     }
 
@@ -170,7 +184,9 @@ impl BrokerState {
             queue.listeners.retain(|&(id, _)| id != conn_id);
 
             // Clean up consumer_tags belonging to this connection
-            queue.consumer_tags.retain(|_tag, &mut (cid, _)| cid != conn_id);
+            queue
+                .consumer_tags
+                .retain(|_tag, &mut (cid, _)| cid != conn_id);
             queue.consumer_count = queue.listeners.len();
 
             if queue.options.exclusive && queue.owner_conn_id == Some(conn_id) {
@@ -223,8 +239,6 @@ pub type Broker = Arc<BrokerState>;
 mod tests {
     use super::*;
     use crate::queue::QueueOptions;
-
-
 
     #[test]
     fn channel_state_prefetch_gating() {
@@ -450,7 +464,9 @@ mod tests {
         });
         assert_eq!(cs.tx_buffer.len(), 1);
         match &cs.tx_buffer[0] {
-            PendingOp::Publish { routing_key, body, .. } => {
+            PendingOp::Publish {
+                routing_key, body, ..
+            } => {
                 assert_eq!(routing_key, "q1");
                 assert_eq!(body, b"hello");
             }
@@ -541,7 +557,9 @@ mod tests {
 
         // Apply the op
         match &op {
-            PendingOp::Publish { routing_key, body, .. } => {
+            PendingOp::Publish {
+                routing_key, body, ..
+            } => {
                 let msg_id = bs.alloc_msg_id();
                 if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
                     let msg = crate::queue::Message::new(msg_id, Vec::new(), body.clone());
@@ -614,7 +632,12 @@ mod tests {
         };
         let cloned = op.clone();
         match cloned {
-            PendingOp::Publish { exchange, routing_key, headers, body } => {
+            PendingOp::Publish {
+                exchange,
+                routing_key,
+                headers,
+                body,
+            } => {
                 assert_eq!(exchange, "ex");
                 assert_eq!(routing_key, "rk");
                 assert_eq!(headers, vec![1, 2]);
