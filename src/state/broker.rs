@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, mpsc};
 use dashmap::DashMap;
 
 use crate::core::protocol::Frame;
-use crate::queue::{QueueOptions, QueueState};
+use crate::queue::{DelayQueue, QueueOptions, QueueState};
 use crate::routing::exchange::{Binding, Exchange, create_default_exchanges};
 
 #[derive(Clone)]
@@ -78,6 +78,8 @@ pub struct BrokerState {
     wal: OnceLock<Arc<crate::storage::wal::Wal>>,
     /// Deduplication cache: message-id → timestamp of first seen.
     pub dedup_cache: DashMap<String, Instant>,
+    /// Delayed message delivery buffer.
+    pub delay_queue: DelayQueue,
 }
 
 impl BrokerState {
@@ -91,6 +93,7 @@ impl BrokerState {
             conn_state: DashMap::new(),
             wal: OnceLock::new(),
             dedup_cache: DashMap::new(),
+            delay_queue: DelayQueue::new(),
         }
     }
 

@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use super::{Message, QueueOptions, PriorityQueue, QueueState};
+use super::{DelayQueue, Message, QueueOptions, PriorityQueue, QueueState};
 
 #[test]
 fn queue_options_from_headers_full() {
@@ -236,4 +236,56 @@ fn consumer_add_idempotent() {
     // But both tags should be tracked
     assert!(q.consumer_tags.contains_key("tag-a"));
     assert!(q.consumer_tags.contains_key("tag-b"));
+}
+
+#[test]
+fn delay_queue_schedule_and_drain() {
+    let dq = DelayQueue::new();
+    let msg = Message::new(1, vec![], b"delayed".to_vec());
+    dq.schedule("q1".to_string(), msg, Duration::from_millis(1));
+    assert_eq!(dq.len(), 1);
+
+    // Not ready yet (might be, but let's test drain_ready logic)
+    std::thread::sleep(Duration::from_millis(5));
+    let ready = dq.drain_ready();
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].queue_name, "q1");
+    assert_eq!(ready[0].message.body, b"delayed");
+    assert_eq!(dq.len(), 0);
+}
+
+#[test]
+fn delay_queue_future_not_drained() {
+    let dq = DelayQueue::new();
+    let msg = Message::new(1, vec![], b"future".to_vec());
+    dq.schedule("q1".to_string(), msg, Duration::from_secs(60));
+    let ready = dq.drain_ready();
+    assert!(ready.is_empty());
+    assert_eq!(dq.len(), 1);
+}
+
+#[test]
+fn queue_options_parses_new_fields() {
+    let input = "name:q1\r\nx-expires:30000\r\nx-max-retries:5\r\nx-retry-delay:1000\r\nx-retry-multiplier:2.0\r\n";
+    let (name, opts) = QueueOptions::from_headers(input);
+    assert_eq!(name, "q1");
+    assert_eq!(opts.expires, Some(Duration::from_millis(30000)));
+    assert_eq!(opts.max_retries, Some(5));
+    assert_eq!(opts.retry_delay_ms, Some(1000));
+    assert_eq!(opts.retry_multiplier, Some(2.0));
+}
+
+#[test]
+fn message_delivery_count_default() {
+    let msg = Message::new(1, vec![], vec![]);
+    assert_eq!(msg.delivery_count, 0);
+}
+
+#[test]
+fn priority_queue_peek_front() {
+    let mut pq = PriorityQueue::new();
+    assert!(pq.peek_front().is_none());
+    pq.push_back(Message::new(1, vec![], b"a".to_vec()));
+    assert_eq!(pq.peek_front().unwrap().body, b"a");
+    assert_eq!(pq.len(), 1); // peek doesn't remove
 }

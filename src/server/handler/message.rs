@@ -21,6 +21,7 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
     let mut per_msg_ttl: Option<Duration> = None;
     let mut user_headers = Vec::new();
     let mut message_id: Option<String> = None;
+    let mut delay_ms: Option<u64> = None;
 
     for line in headers_str.split("\r\n") {
         if line.is_empty() {
@@ -41,6 +42,7 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
                     per_msg_ttl = v.parse::<u64>().ok().map(Duration::from_millis);
                 }
                 "message-id" => message_id = Some(v.to_string()),
+                "x-delay" => delay_ms = v.parse().ok(),
                 _ => {
                     user_headers.extend_from_slice(line.as_bytes());
                     user_headers.extend_from_slice(b"\r\n");
@@ -93,6 +95,27 @@ pub async fn publish(conn_id: u64, channel_id: u16, broker: &Broker, headers: &[
             routing_key,
             "no matching bindings"
         );
+        send_confirm(conn_id, broker, true).await;
+        return;
+    }
+
+    // Delayed delivery: schedule to delay buffer instead of immediate routing
+    if let Some(delay) = delay_ms {
+        let delay_dur = Duration::from_millis(delay);
+        for queue_name in &target_queues {
+            let msg_id = broker.alloc_msg_id();
+            let msg = Message {
+                id: msg_id,
+                headers: user_headers.clone(),
+                body: body.to_vec(),
+                priority,
+                expiration: per_msg_ttl.map(|ttl| Instant::now() + delay_dur + ttl),
+                redelivered: false,
+                delivery_count: 0,
+            };
+            broker.delay_queue.schedule(queue_name.clone(), msg, delay_dur);
+            info!(conn_id, msg_id, queue = queue_name.as_str(), delay, "scheduled for delayed delivery");
+        }
         send_confirm(conn_id, broker, true).await;
         return;
     }

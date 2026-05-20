@@ -17,7 +17,8 @@ const DEDUP_WINDOW: Duration = Duration::from_secs(300);
 pub fn spawn_all(broker: Broker) {
     tokio::spawn(queue_ttl_task(broker.clone()));
     tokio::spawn(message_ttl_task(broker.clone()));
-    tokio::spawn(dedup_eviction_task(broker));
+    tokio::spawn(dedup_eviction_task(broker.clone()));
+    tokio::spawn(delay_flush_task(broker));
 }
 
 /// Periodically remove queues that have exceeded their x-expires TTL.
@@ -95,6 +96,29 @@ async fn dedup_eviction_task(broker: Broker) {
         let evicted = before - broker.dedup_cache.len();
         if evicted > 0 {
             debug!(evicted, "dedup cache entries evicted");
+        }
+    }
+}
+
+/// Flush delayed messages that are ready for delivery.
+async fn delay_flush_task(broker: Broker) {
+    let mut interval = tokio::time::interval(Duration::from_millis(100));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+
+        let ready = broker.delay_queue.drain_ready();
+        for delayed in ready {
+            if let Some(mut queue) = broker.queues.get_mut(&delayed.queue_name) {
+                let msg_id = delayed.message.id;
+                queue.messages.push_back(delayed.message);
+                queue.last_activity = Instant::now();
+                debug!(
+                    queue = delayed.queue_name.as_str(),
+                    msg_id, "delayed message enqueued"
+                );
+            }
         }
     }
 }
