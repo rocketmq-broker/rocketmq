@@ -35,23 +35,41 @@ impl AuthBackend {
         };
 
         // Seed default guest user (like RabbitMQ)
-        let guest = UserEntry::new("guest", "guest", vec![UserTag::Administrator]);
-        backend.users.insert("guest".to_string(), guest);
+        let guest = UserEntry::new(
+            crate::config::DEFAULT_GUEST_USER,
+            crate::config::DEFAULT_GUEST_PASS,
+            vec![UserTag::Administrator],
+        );
+        backend
+            .users
+            .insert(crate::config::DEFAULT_GUEST_USER.to_string(), guest);
 
         // Grant guest full access to default vhost "/"
         backend.permissions.insert(
-            ("guest".to_string(), "/".to_string()),
-            Permission::full_access("guest", "/"),
+            (
+                crate::config::DEFAULT_GUEST_USER.to_string(),
+                "/".to_string(),
+            ),
+            Permission::full_access(crate::config::DEFAULT_GUEST_USER, "/"),
         );
 
         // Seed admin user
-        let admin = UserEntry::new("admin", "1234", vec![UserTag::Administrator]);
-        backend.users.insert("admin".to_string(), admin);
+        let admin = UserEntry::new(
+            crate::config::DEFAULT_ADMIN_USER,
+            crate::config::DEFAULT_ADMIN_PASS,
+            vec![UserTag::Administrator],
+        );
+        backend
+            .users
+            .insert(crate::config::DEFAULT_ADMIN_USER.to_string(), admin);
 
         // Grant admin full access to default vhost "/"
         backend.permissions.insert(
-            ("admin".to_string(), "/".to_string()),
-            Permission::full_access("admin", "/"),
+            (
+                crate::config::DEFAULT_ADMIN_USER.to_string(),
+                "/".to_string(),
+            ),
+            Permission::full_access(crate::config::DEFAULT_ADMIN_USER, "/"),
         );
 
         backend
@@ -73,8 +91,11 @@ impl AuthBackend {
             .ok_or_else(|| format!("user '{}' not found", username))?;
 
         // RabbitMQ rule: guest can only connect from localhost
-        if username == "guest" && !is_loopback(&peer_addr) {
-            return Err("user 'guest' can only connect via localhost".to_string());
+        if username == crate::config::DEFAULT_GUEST_USER && !is_loopback(&peer_addr) {
+            return Err(format!(
+                "user '{}' can only connect via localhost",
+                crate::config::DEFAULT_GUEST_USER
+            ));
         }
 
         if !entry.verify_password(password) {
@@ -149,7 +170,7 @@ impl AuthBackend {
 
     /// Delete a user and all their permissions.
     pub fn delete_user(&self, username: &str) -> Result<(), String> {
-        if username == "guest" {
+        if username == crate::config::DEFAULT_GUEST_USER {
             return Err("cannot delete the default guest user".to_string());
         }
         self.users

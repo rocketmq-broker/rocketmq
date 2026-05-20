@@ -1,6 +1,8 @@
 #[allow(dead_code)]
 mod auth;
 #[allow(dead_code)]
+mod config;
+#[allow(dead_code)]
 mod core;
 #[allow(dead_code)]
 mod queue;
@@ -16,12 +18,14 @@ mod storage;
 use std::sync::Arc;
 use tracing::info;
 
+use config::*;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "rocketmq=info".parse().unwrap()),
+                .unwrap_or_else(|_| DEFAULT_LOG_FILTER.parse().unwrap()),
         )
         .init();
 
@@ -40,8 +44,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     server::amqp_delivery::spawn_delivery_task(broker.clone());
 
     // AMQP 0-9-1 listener on standard port
-    let amqp_listener = tokio::net::TcpListener::bind("127.0.0.1:5672").await?;
-    info!("AMQP 0-9-1 on 127.0.0.1:5672");
+    let amqp_listener = tokio::net::TcpListener::bind(AMQP_LISTEN_ADDR).await?;
+    info!("AMQP 0-9-1 on {}", AMQP_LISTEN_ADDR);
 
     loop {
         let (stream, addr) = amqp_listener.accept().await?;

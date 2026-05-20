@@ -5,13 +5,10 @@
 //! - Message TTL expiration (message_ttl / per-message expiration)
 //! - Deduplication cache eviction
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{debug, info};
 
 use crate::state::Broker;
-
-/// Default dedup window: 5 minutes.
-const DEDUP_WINDOW: Duration = Duration::from_secs(300);
 
 /// Spawn all background maintenance tasks.
 pub fn spawn_all(broker: Broker) {
@@ -25,7 +22,7 @@ pub fn spawn_all(broker: Broker) {
 /// A queue expires when it has no consumers, no messages, and has been idle
 /// longer than `options.expires`.
 async fn queue_ttl_task(broker: Broker) {
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    let mut interval = tokio::time::interval(crate::config::QUEUE_TTL_CHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -51,7 +48,7 @@ async fn queue_ttl_task(broker: Broker) {
 
 /// Periodically sweep queues and discard expired messages (message_ttl).
 async fn message_ttl_task(broker: Broker) {
-    let mut interval = tokio::time::interval(Duration::from_millis(500));
+    let mut interval = tokio::time::interval(crate::config::MESSAGE_TTL_CHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -81,7 +78,7 @@ async fn message_ttl_task(broker: Broker) {
 
 /// Periodically evict stale entries from the dedup cache.
 async fn dedup_eviction_task(broker: Broker) {
-    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    let mut interval = tokio::time::interval(crate::config::DEDUP_EVICTION_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -91,7 +88,7 @@ async fn dedup_eviction_task(broker: Broker) {
         let before = broker.dedup_cache.len();
         broker
             .dedup_cache
-            .retain(|_, ts| now.duration_since(*ts) < DEDUP_WINDOW);
+            .retain(|_, ts| now.duration_since(*ts) < crate::config::DEDUP_WINDOW);
         let evicted = before - broker.dedup_cache.len();
         if evicted > 0 {
             debug!(evicted, "dedup cache entries evicted");
@@ -101,7 +98,7 @@ async fn dedup_eviction_task(broker: Broker) {
 
 /// Flush delayed messages that are ready for delivery.
 async fn delay_flush_task(broker: Broker) {
-    let mut interval = tokio::time::interval(Duration::from_millis(100));
+    let mut interval = tokio::time::interval(crate::config::DELAY_FLUSH_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {

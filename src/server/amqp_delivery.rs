@@ -2,7 +2,7 @@
 //! Basic.Deliver + Content-Header + Content-Body frames over the
 //! AMQP connection's delivery channel.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{debug, warn};
 
 use crate::core::amqp_codec::*;
@@ -14,7 +14,7 @@ use crate::state::Broker;
 /// Spawn the AMQP delivery task. Runs on a fast tick to achieve low latency.
 pub fn spawn_delivery_task(broker: Broker) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(5));
+        let mut interval = tokio::time::interval(crate::config::DELIVERY_POLL_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut round = 0u64;
 

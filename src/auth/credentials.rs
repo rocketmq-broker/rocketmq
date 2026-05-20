@@ -74,8 +74,7 @@ pub struct UserStore {
 }
 
 fn hash_password(password: &str) -> String {
-    // Cost factor 10 is the standard default (fast enough for auth, slow enough for brute-force)
-    bcrypt::hash(password, 10).expect("bcrypt hash should not fail")
+    bcrypt::hash(password, crate::config::BCRYPT_COST).expect("bcrypt hash should not fail")
 }
 
 #[cfg(test)]
