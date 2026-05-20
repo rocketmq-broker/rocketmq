@@ -27,6 +27,16 @@ impl ExchangeType {
             Self::Headers => "headers",
         }
     }
+
+    /// Serialize to a single byte for WAL persistence.
+    pub fn to_byte(&self) -> u8 {
+        match self {
+            Self::Direct => 0x00,
+            Self::Fanout => 0x01,
+            Self::Topic => 0x02,
+            Self::Headers => 0x03,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

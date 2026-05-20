@@ -125,8 +125,11 @@ pub async fn handle_publish(
         return;
     }
 
+    let is_persistent = properties.delivery_mode == Some(2);
+
     for queue_name in &target_queues {
         let msg_id = broker.alloc_msg_id();
+
         let mut queue_ref = match broker.queues.get_mut(queue_name.as_str()) {
             Some(q) => q,
             None => continue,
@@ -157,6 +160,13 @@ pub async fn handle_publish(
         // Encode properties back to bytes for storage
         let mut prop_bytes = Vec::new();
         properties.encode(&mut prop_bytes).unwrap_or_default();
+
+        // WAL: persist message before enqueueing (durable queue + delivery_mode=2)
+        if queue.options.durable && is_persistent {
+            if let Some(wal) = broker.wal() {
+                let _ = wal.log_enqueue(queue_name, msg_id, &prop_bytes, body);
+            }
+        }
 
         let msg = Message {
             id: msg_id,

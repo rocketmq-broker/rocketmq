@@ -44,6 +44,12 @@ pub const WAL_PATH: &str = "data/broker.wal";
 /// Path to the user/permissions database.
 pub const USER_DB_PATH: &str = "data/users.json";
 
+/// How often to check if WAL compaction is needed.
+pub const WAL_COMPACT_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Minimum number of WAL entries before compaction is triggered.
+pub const WAL_COMPACT_THRESHOLD: u64 = 1000;
+
 // ─── Authentication ────────────────────────────────────
 
 /// bcrypt cost factor. 10 is the industry-standard default:

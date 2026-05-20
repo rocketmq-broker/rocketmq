@@ -71,10 +71,19 @@ pub async fn handle_declare(
         }
     } else {
         let kind = ExchangeType::from_str(&kind_str).unwrap_or(ExchangeType::Direct);
+        let kind_byte = kind.to_byte();
         let mut exchanges = broker.exchanges.write().await;
+        let is_new = !exchanges.contains_key(&name);
         exchanges
             .entry(name.clone())
             .or_insert_with(|| Exchange::new(name.clone(), kind, durable));
+
+        // WAL: persist durable exchange declarations
+        if durable && is_new {
+            if let Some(wal) = broker.wal() {
+                let _ = wal.log_declare_exchange(&name, kind_byte, true);
+            }
+        }
     }
 
     info!(

@@ -121,6 +121,7 @@ pub async fn handle_declare(
         opts.dead_letter_exchange = Some(String::from_utf8_lossy(v).to_string());
     }
 
+    let is_new = !broker.queues.contains_key(&name);
     broker.queues.entry(name.clone()).or_insert_with(|| {
         let mut q = QueueState::with_options(opts);
         if exclusive {
@@ -130,6 +131,13 @@ pub async fn handle_declare(
     });
 
     broker.auto_bind_default_exchange(&name);
+
+    // WAL: persist durable queue declarations
+    if durable && is_new {
+        if let Some(wal) = broker.wal() {
+            let _ = wal.log_declare_queue(&name, true);
+        }
+    }
 
     info!(conn_id, channel, queue = name.as_str(), "queue declared");
     if !no_wait {
@@ -310,6 +318,12 @@ pub async fn handle_bind(
         routing_key = routing_key.as_str(),
         "queue bound"
     );
+
+    // WAL: persist binding
+    if let Some(wal) = broker.wal() {
+        let _ = wal.log_bind(&exchange, &queue, &routing_key);
+    }
+
     if !no_wait {
         let reply = encode_method_frame(channel, CLASS_QUEUE, METHOD_QUEUE_BIND_OK, &[]);
         let _ = writer.write_all(&reply).await;
