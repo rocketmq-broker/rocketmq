@@ -44,6 +44,16 @@ impl AuthBackend {
             Permission::full_access("guest", "/"),
         );
 
+        // Seed admin user
+        let admin = UserEntry::new("admin", "1234", vec![UserTag::Administrator]);
+        backend.users.insert("admin".to_string(), admin);
+
+        // Grant admin full access to default vhost "/"
+        backend.permissions.insert(
+            ("admin".to_string(), "/".to_string()),
+            Permission::full_access("admin", "/"),
+        );
+
         backend
     }
 
@@ -321,12 +331,11 @@ mod tests {
     #[test]
     fn add_user_and_auth() {
         let auth = AuthBackend::new();
-        auth.add_user("admin", "s3cret", vec![UserTag::Administrator])
+        auth.add_user("ops", "s3cret", vec![UserTag::Administrator])
             .unwrap();
-        auth.set_permissions("admin", "/", ".*", ".*", ".*")
-            .unwrap();
-        assert!(auth.authenticate("admin", "s3cret", remote()).is_ok());
-        assert!(auth.check_vhost_access("admin", "/"));
+        auth.set_permissions("ops", "/", ".*", ".*", ".*").unwrap();
+        assert!(auth.authenticate("ops", "s3cret", remote()).is_ok());
+        assert!(auth.check_vhost_access("ops", "/"));
     }
 
     #[test]
@@ -378,7 +387,7 @@ mod tests {
         auth.add_user("alice", "pass", vec![UserTag::Monitoring])
             .unwrap();
         let users = auth.list_users();
-        assert_eq!(users.len(), 2); // guest + alice
+        assert_eq!(users.len(), 3); // guest + admin + alice
     }
 
     #[test]

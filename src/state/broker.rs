@@ -130,10 +130,14 @@ pub struct BrokerState {
 impl BrokerState {
     pub fn new() -> Self {
         let auth = AuthBackend::new();
-        // Load persisted user database if it exists
+        // Load persisted user database if it exists; otherwise save defaults
         let user_db = std::path::Path::new("data/users.json");
         if let Err(e) = auth.load_from_file(user_db) {
             tracing::warn!(error = %e, "failed to load user database, using defaults");
+        }
+        // Persist current state (creates file on first run)
+        if let Err(e) = auth.save_to_file(user_db) {
+            tracing::warn!(error = %e, "failed to save user database");
         }
 
         Self {
