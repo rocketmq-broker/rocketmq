@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use super::options::QueueOptions;
 use super::priority::PriorityQueue;
 use super::message::Message;
+
+/// Global atomic counter for unique consumer tag generation.
+static CONSUMER_TAG_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Simple token-bucket rate limiter.
 pub struct TokenBucket {
@@ -158,7 +162,10 @@ impl QueueState {
         tag: Option<String>,
         group: Option<String>,
     ) -> String {
-        let tag = tag.unwrap_or_else(|| format!("ctag-{}-{}", conn_id, channel_id));
+        let tag = tag.unwrap_or_else(|| {
+            let seq = CONSUMER_TAG_COUNTER.fetch_add(1, Ordering::Relaxed);
+            format!("ctag-{}-{}", conn_id, seq)
+        });
         if !self.listeners.contains(&(conn_id, channel_id)) {
             self.listeners.push((conn_id, channel_id));
         }

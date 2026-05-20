@@ -47,12 +47,8 @@ pub async fn perform_handshake(
 
     // ── Step 2: Send Connection.Start ─────────────────
     let start_args = build_connection_start();
-    let start_frame = encode_method_frame(
-        0,
-        CLASS_CONNECTION,
-        METHOD_CONNECTION_START,
-        &start_args,
-    );
+    let start_frame =
+        encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_START, &start_args);
     if writer.write_all(&start_frame).await.is_err() {
         return Err(());
     }
@@ -62,12 +58,21 @@ pub async fn perform_handshake(
     let frame = read_amqp_frame(reader).await?;
     let method = decode_method(&frame.payload).map_err(|_| ())?;
     if method.class_id != CLASS_CONNECTION || method.method_id != METHOD_CONNECTION_START_OK {
-        warn!(conn_id, class = method.class_id, method = method.method_id, "expected Connection.StartOk");
+        warn!(
+            conn_id,
+            class = method.class_id,
+            method = method.method_id,
+            "expected Connection.StartOk"
+        );
         return Err(());
     }
 
     let (username, _password) = parse_start_ok(&method.arguments)?;
-    info!(conn_id, user = username.as_str(), "SASL PLAIN authenticated");
+    info!(
+        conn_id,
+        user = username.as_str(),
+        "SASL PLAIN authenticated"
+    );
 
     // Store auth info
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
@@ -76,13 +81,9 @@ pub async fn perform_handshake(
     }
 
     // ── Step 4: Send Connection.Tune ──────────────────
-    let tune_args = build_connection_tune(DEFAULT_CHANNEL_MAX, DEFAULT_FRAME_MAX, DEFAULT_HEARTBEAT);
-    let tune_frame = encode_method_frame(
-        0,
-        CLASS_CONNECTION,
-        METHOD_CONNECTION_TUNE,
-        &tune_args,
-    );
+    let tune_args =
+        build_connection_tune(DEFAULT_CHANNEL_MAX, DEFAULT_FRAME_MAX, DEFAULT_HEARTBEAT);
+    let tune_frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_TUNE, &tune_args);
     if writer.write_all(&tune_frame).await.is_err() {
         return Err(());
     }
@@ -102,7 +103,10 @@ pub async fn perform_handshake(
         cs.frame_max = frame_max;
         cs.heartbeat = heartbeat;
     }
-    info!(conn_id, channel_max, frame_max, heartbeat, "tune negotiated");
+    info!(
+        conn_id,
+        channel_max, frame_max, heartbeat, "tune negotiated"
+    );
 
     // ── Step 6: Read Connection.Open ──────────────────
     let frame = read_amqp_frame(reader).await?;
@@ -116,7 +120,12 @@ pub async fn perform_handshake(
     // Validate vhost exists
     if !broker.vhosts.contains_key(&vhost) {
         warn!(conn_id, vhost = vhost.as_str(), "vhost not found");
-        let close = build_connection_close(NOT_ALLOWED, "NOT_ALLOWED - vhost not found", CLASS_CONNECTION, METHOD_CONNECTION_OPEN);
+        let close = build_connection_close(
+            NOT_ALLOWED,
+            "NOT_ALLOWED - vhost not found",
+            CLASS_CONNECTION,
+            METHOD_CONNECTION_OPEN,
+        );
         let close_frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
         let _ = writer.write_all(&close_frame).await;
         let _ = writer.flush().await;
@@ -145,7 +154,12 @@ pub async fn perform_handshake(
 }
 
 /// Build Connection.Close method frame arguments.
-pub fn build_connection_close(reply_code: u16, reply_text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
+pub fn build_connection_close(
+    reply_code: u16,
+    reply_text: &str,
+    class_id: u16,
+    method_id: u16,
+) -> Vec<u8> {
     let mut buf = Vec::new();
     write_short(&mut buf, reply_code).unwrap();
     write_shortstr(&mut buf, reply_text).unwrap();
@@ -169,9 +183,15 @@ fn build_connection_start() -> Vec<u8> {
 
     // server-properties (field-table)
     let mut props = FieldTable::new();
-    props.insert("product".into(), FieldValue::LongString(b"RocketMQ".to_vec()));
+    props.insert(
+        "product".into(),
+        FieldValue::LongString(b"RocketMQ".to_vec()),
+    );
     props.insert("version".into(), FieldValue::LongString(b"0.1.0".to_vec()));
-    props.insert("platform".into(), FieldValue::LongString(b"Rust/Tokio".to_vec()));
+    props.insert(
+        "platform".into(),
+        FieldValue::LongString(b"Rust/Tokio".to_vec()),
+    );
     props.insert(
         "capabilities".into(),
         FieldValue::FieldTable({
@@ -290,9 +310,7 @@ fn parse_connection_open(args: &[u8]) -> Result<String, ()> {
 }
 
 /// Read a single AMQP frame from the async reader.
-pub async fn read_amqp_frame(
-    reader: &mut (impl AsyncReadExt + Unpin),
-) -> Result<AmqpFrame, ()> {
+pub async fn read_amqp_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Result<AmqpFrame, ()> {
     // Read 7-byte header
     let mut header = [0u8; 7];
     reader.read_exact(&mut header).await.map_err(|_| ())?;
@@ -382,7 +400,8 @@ mod tests {
 
     #[test]
     fn connection_close_builds() {
-        let args = build_connection_close(NOT_FOUND, "NOT-FOUND", CLASS_QUEUE, METHOD_QUEUE_DECLARE);
+        let args =
+            build_connection_close(NOT_FOUND, "NOT-FOUND", CLASS_QUEUE, METHOD_QUEUE_DECLARE);
         let mut r = Cursor::new(&args);
         assert_eq!(read_short(&mut r).unwrap(), NOT_FOUND);
         let text = read_shortstr(&mut r).unwrap();

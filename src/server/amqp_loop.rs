@@ -107,6 +107,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                         Err(_) => break,
                     };
                     last_activity = Instant::now();
+                    debug!(conn_id, frame_type = frame.frame_type, channel = frame.channel, payload_len = frame.payload.len(), "FRAME_IN");
 
                     // ── Frame-level validation ────────────
                     if let Some(err) = validation::validate_frame_type(frame.frame_type) {
@@ -147,6 +148,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                             if method.class_id == CLASS_BASIC && method.method_id == METHOD_BASIC_PUBLISH {
                                 let (exchange, routing_key, mandatory, _immediate) =
                                     amqp_basic::parse_publish_args(&method.arguments);
+                                debug!(conn_id, exchange = exchange.as_str(), routing_key = routing_key.as_str(), "publish method received, waiting for content");
                                 content_state = Some(ContentState {
                                     exchange,
                                     routing_key,
@@ -170,6 +172,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
                             if let Some(ref mut cs) = content_state {
                                 match decode_content_header(&frame.payload) {
                                     Ok(header) => {
+                                        debug!(conn_id, body_size = header.body_size, "header frame received");
                                         cs.body_size = header.body_size;
                                         cs.properties = header.properties;
                                         cs.body_received.reserve(header.body_size as usize);

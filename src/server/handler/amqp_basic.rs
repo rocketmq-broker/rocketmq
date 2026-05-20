@@ -35,13 +35,20 @@ pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
 /// Handle a fully assembled publish (method args + content header + body).
 /// Called after content framing is complete.
 pub async fn handle_publish(
-    conn_id: u64, channel: u16,
-    exchange_name: &str, routing_key: &str, mandatory: bool,
-    properties: &BasicProperties, body: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    exchange_name: &str,
+    routing_key: &str,
+    mandatory: bool,
+    properties: &BasicProperties,
+    body: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let priority = properties.priority.unwrap_or(0);
-    let per_msg_ttl = properties.expiration.as_ref()
+    let per_msg_ttl = properties
+        .expiration
+        .as_ref()
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_millis);
 
@@ -55,17 +62,40 @@ pub async fn handle_publish(
                 return;
             }
         };
-        let msg_headers: HashMap<String, String> = properties.headers.as_ref()
-            .map(|h| h.iter().map(|(k, v)| (k.clone(), format!("{:?}", v))).collect())
+        let msg_headers: HashMap<String, String> = properties
+            .headers
+            .as_ref()
+            .map(|h| {
+                h.iter()
+                    .map(|(k, v)| (k.clone(), format!("{:?}", v)))
+                    .collect()
+            })
             .unwrap_or_default();
-        exchange.route(routing_key, &msg_headers)
+        let targets = exchange.route(routing_key, &msg_headers);
+        debug!(conn_id, exchange = exchange_name, routing_key, targets = ?targets, "routed");
+        targets
     };
 
     if target_queues.is_empty() {
         if mandatory {
-            send_basic_return(channel, NO_ROUTE, "NO_ROUTE", exchange_name, routing_key, properties, body, writer).await;
+            send_basic_return(
+                channel,
+                NO_ROUTE,
+                "NO_ROUTE",
+                exchange_name,
+                routing_key,
+                properties,
+                body,
+                writer,
+            )
+            .await;
         }
-        debug!(conn_id, exchange = exchange_name, routing_key, "no matching bindings");
+        warn!(
+            conn_id,
+            exchange = exchange_name,
+            routing_key,
+            "no matching bindings"
+        );
         return;
     }
 
@@ -85,12 +115,16 @@ pub async fn handle_publish(
 
         let effective_priority = if queue.options.max_priority > 0 {
             priority.min(queue.options.max_priority)
-        } else { 0 };
+        } else {
+            0
+        };
 
         // Overflow eviction
         if let Some(max_len) = queue.options.max_length {
             while queue.messages.len() >= max_len {
-                if queue.messages.pop_oldest().is_none() { break; }
+                if queue.messages.pop_oldest().is_none() {
+                    break;
+                }
             }
         }
 
@@ -110,16 +144,25 @@ pub async fn handle_publish(
 
         queue.last_activity = Instant::now();
         queue.messages.push_back(msg);
-        debug!(conn_id, msg_id, queue = queue_name.as_str(), "queued via AMQP");
+        debug!(
+            conn_id,
+            msg_id,
+            queue = queue_name.as_str(),
+            "queued via AMQP"
+        );
     }
 }
 
 // ─── Basic.Return ─────────────────────────────────────
 
 async fn send_basic_return(
-    channel: u16, reply_code: u16, reply_text: &str,
-    exchange: &str, routing_key: &str,
-    properties: &BasicProperties, body: &[u8],
+    channel: u16,
+    reply_code: u16,
+    reply_text: &str,
+    exchange: &str,
+    routing_key: &str,
+    properties: &BasicProperties,
+    body: &[u8],
     writer: &mut BufWriter<OwnedWriteHalf>,
 ) {
     let mut args = Vec::new();
@@ -142,8 +185,11 @@ async fn send_basic_return(
 // ─── Basic.Consume ────────────────────────────────────
 
 pub async fn handle_consume(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -165,8 +211,20 @@ pub async fn handle_consume(
     if exclusive {
         if let Some(q) = broker.queues.get(&queue_name) {
             if !q.consumer_tags.is_empty() {
-                let close = build_channel_close(ACCESS_REFUSED, "ACCESS_REFUSED - exclusive consumer exists", CLASS_BASIC, METHOD_BASIC_CONSUME);
-                let _ = writer.write_all(&encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close)).await;
+                let close = build_channel_close(
+                    ACCESS_REFUSED,
+                    "ACCESS_REFUSED - exclusive consumer exists",
+                    CLASS_BASIC,
+                    METHOD_BASIC_CONSUME,
+                );
+                let _ = writer
+                    .write_all(&encode_method_frame(
+                        channel,
+                        CLASS_CHANNEL,
+                        METHOD_CHANNEL_CLOSE,
+                        &close,
+                    ))
+                    .await;
                 let _ = writer.flush().await;
                 return;
             }
@@ -176,14 +234,32 @@ pub async fn handle_consume(
     let assigned_tag = match broker.queues.get_mut(&queue_name) {
         Some(mut queue) => queue.add_consumer(conn_id, channel, consumer_tag, None),
         None => {
-            let close = build_channel_close(NOT_FOUND, "NOT_FOUND - no such queue", CLASS_BASIC, METHOD_BASIC_CONSUME);
-            let _ = writer.write_all(&encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close)).await;
+            let close = build_channel_close(
+                NOT_FOUND,
+                "NOT_FOUND - no such queue",
+                CLASS_BASIC,
+                METHOD_BASIC_CONSUME,
+            );
+            let _ = writer
+                .write_all(&encode_method_frame(
+                    channel,
+                    CLASS_CHANNEL,
+                    METHOD_CHANNEL_CLOSE,
+                    &close,
+                ))
+                .await;
             let _ = writer.flush().await;
             return;
         }
     };
 
-    info!(conn_id, channel, queue = queue_name.as_str(), tag = assigned_tag.as_str(), "consumer started");
+    info!(
+        conn_id,
+        channel,
+        queue = queue_name.as_str(),
+        tag = assigned_tag.as_str(),
+        "consumer started"
+    );
     if !no_wait {
         let mut reply_args = Vec::new();
         write_shortstr(&mut reply_args, &assigned_tag).unwrap();
@@ -196,8 +272,11 @@ pub async fn handle_consume(
 // ─── Basic.Cancel ─────────────────────────────────────
 
 pub async fn handle_cancel(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let consumer_tag = read_shortstr(&mut r).unwrap_or_default();
@@ -210,7 +289,12 @@ pub async fn handle_cancel(
         }
     }
 
-    info!(conn_id, channel, tag = consumer_tag.as_str(), "consumer cancelled");
+    info!(
+        conn_id,
+        channel,
+        tag = consumer_tag.as_str(),
+        "consumer cancelled"
+    );
     if !no_wait {
         let mut reply_args = Vec::new();
         write_shortstr(&mut reply_args, &consumer_tag).unwrap();
@@ -222,9 +306,7 @@ pub async fn handle_cancel(
 
 // ─── Basic.Ack ────────────────────────────────────────
 
-pub async fn handle_ack(
-    conn_id: u64, channel: u16, args: &[u8], broker: &Broker,
-) {
+pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
     let flags = read_octet(&mut r).unwrap_or(0);
@@ -232,13 +314,17 @@ pub async fn handle_ack(
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
         if let Some(ch) = cs.channels.get_mut(&channel) {
-            if ch.unacked_count > 0 { ch.unacked_count -= 1; }
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
         }
     }
 
     for mut entry in broker.queues.iter_mut() {
         if entry.value_mut().inflight.remove(&delivery_tag).is_some() {
-            if let Some(wal) = broker.wal() { let _ = wal.log_ack(delivery_tag); }
+            if let Some(wal) = broker.wal() {
+                let _ = wal.log_ack(delivery_tag);
+            }
             info!(conn_id, delivery_tag, "acked");
             return;
         }
@@ -248,9 +334,7 @@ pub async fn handle_ack(
 
 // ─── Basic.Reject ─────────────────────────────────────
 
-pub async fn handle_reject(
-    conn_id: u64, channel: u16, args: &[u8], broker: &Broker,
-) {
+pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
     let flags = read_octet(&mut r).unwrap_or(0);
@@ -258,7 +342,9 @@ pub async fn handle_reject(
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
         if let Some(ch) = cs.channels.get_mut(&channel) {
-            if ch.unacked_count > 0 { ch.unacked_count -= 1; }
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
         }
     }
 
@@ -280,9 +366,7 @@ pub async fn handle_reject(
 
 // ─── Basic.Nack ───────────────────────────────────────
 
-pub async fn handle_nack(
-    conn_id: u64, channel: u16, args: &[u8], broker: &Broker,
-) {
+pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
     let flags = read_octet(&mut r).unwrap_or(0);
@@ -291,7 +375,9 @@ pub async fn handle_nack(
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
         if let Some(ch) = cs.channels.get_mut(&channel) {
-            if ch.unacked_count > 0 { ch.unacked_count -= 1; }
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
         }
     }
 
@@ -314,8 +400,11 @@ pub async fn handle_nack(
 // ─── Basic.Get ────────────────────────────────────────
 
 pub async fn handle_get(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -323,14 +412,19 @@ pub async fn handle_get(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_ack = flags & 0x01 != 0;
 
-    let msg = broker.queues.get_mut(&queue_name)
+    let msg = broker
+        .queues
+        .get_mut(&queue_name)
         .and_then(|mut q| q.value_mut().messages.pop_front());
 
     match msg {
         Some(msg) => {
             let delivery_tag = msg.id;
-            let msg_count = broker.queues.get(&queue_name)
-                .map(|q| q.messages.len() as u32).unwrap_or(0);
+            let msg_count = broker
+                .queues
+                .get(&queue_name)
+                .map(|q| q.messages.len() as u32)
+                .unwrap_or(0);
 
             // Basic.GetOk args
             let mut reply_args = Vec::new();
@@ -340,7 +434,8 @@ pub async fn handle_get(
             write_shortstr(&mut reply_args, "").unwrap(); // routing_key
             write_long(&mut reply_args, msg_count).unwrap();
 
-            let method = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_OK, &reply_args);
+            let method =
+                encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_OK, &reply_args);
             let props = BasicProperties::default();
             let header = encode_content_header(channel, CLASS_BASIC, msg.body.len() as u64, &props);
 
@@ -362,7 +457,8 @@ pub async fn handle_get(
             // Basic.GetEmpty
             let mut reply_args = Vec::new();
             write_shortstr(&mut reply_args, "").unwrap(); // cluster-id (deprecated)
-            let reply = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_EMPTY, &reply_args);
+            let reply =
+                encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_EMPTY, &reply_args);
             let _ = writer.write_all(&reply).await;
             let _ = writer.flush().await;
         }
@@ -372,8 +468,11 @@ pub async fn handle_get(
 // ─── Basic.Qos ────────────────────────────────────────
 
 pub async fn handle_qos(
-    conn_id: u64, channel: u16, args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
     let _prefetch_size = read_long(&mut r).unwrap_or(0);
@@ -383,7 +482,9 @@ pub async fn handle_qos(
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
         if global {
-            for ch in cs.channels.values_mut() { ch.prefetch_count = prefetch_count; }
+            for ch in cs.channels.values_mut() {
+                ch.prefetch_count = prefetch_count;
+            }
         } else if let Some(ch) = cs.channels.get_mut(&channel) {
             ch.prefetch_count = prefetch_count;
         }
@@ -398,8 +499,11 @@ pub async fn handle_qos(
 // ─── Basic.Recover ────────────────────────────────────
 
 pub async fn handle_recover(
-    conn_id: u64, channel: u16, _args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>, _broker: &Broker,
+    conn_id: u64,
+    channel: u16,
+    _args: &[u8],
+    writer: &mut BufWriter<OwnedWriteHalf>,
+    _broker: &Broker,
 ) {
     // Requeue unacked — simplified: just send RecoverOk
     info!(conn_id, channel, "recover");
@@ -420,7 +524,13 @@ fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> 
 }
 
 /// Build a Basic.Deliver method frame (server→client).
-pub fn build_deliver_args(consumer_tag: &str, delivery_tag: u64, redelivered: bool, exchange: &str, routing_key: &str) -> Vec<u8> {
+pub fn build_deliver_args(
+    consumer_tag: &str,
+    delivery_tag: u64,
+    redelivered: bool,
+    exchange: &str,
+    routing_key: &str,
+) -> Vec<u8> {
     let mut args = Vec::new();
     write_shortstr(&mut args, consumer_tag).unwrap();
     write_longlong(&mut args, delivery_tag).unwrap();

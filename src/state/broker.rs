@@ -168,6 +168,11 @@ impl BrokerState {
         for mut entry in self.queues.iter_mut() {
             let (name, queue) = entry.pair_mut();
             queue.listeners.retain(|&(id, _)| id != conn_id);
+
+            // Clean up consumer_tags belonging to this connection
+            queue.consumer_tags.retain(|_tag, &mut (cid, _)| cid != conn_id);
+            queue.consumer_count = queue.listeners.len();
+
             if queue.options.exclusive && queue.owner_conn_id == Some(conn_id) {
                 queues_to_remove.push(name.clone());
             }

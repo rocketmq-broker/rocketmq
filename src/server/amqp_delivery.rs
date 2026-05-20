@@ -16,9 +16,28 @@ pub fn spawn_delivery_task(broker: Broker) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(5));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut round = 0u64;
 
         loop {
             interval.tick().await;
+            round += 1;
+
+            // Periodic state dump (every ~1 second)
+            if round % 200 == 0 {
+                for entry in broker.queues.iter() {
+                    let (name, q) = entry.pair();
+                    if q.messages.len() > 0 || !q.consumer_tags.is_empty() {
+                        debug!(
+                            queue = name.as_str(),
+                            messages = q.messages.len(),
+                            consumers = q.consumer_tags.len(),
+                            listeners = q.listeners.len(),
+                            "delivery state"
+                        );
+                    }
+                }
+            }
+
             deliver_round(&broker).await;
         }
     });
@@ -77,9 +96,8 @@ async fn deliver_round(broker: &Broker) {
             };
 
             let delivery_tag = msg.id;
-            let body = msg.body.clone();
 
-            // Parse stored properties or use defaults
+            // Parse stored properties or use defaults (borrow msg.headers)
             let properties = if msg.headers.is_empty() {
                 BasicProperties::default()
             } else {
@@ -87,7 +105,23 @@ async fn deliver_round(broker: &Broker) {
                 BasicProperties::decode(&mut cursor).unwrap_or_default()
             };
 
-            // Move to inflight
+            // Build AMQP frames from borrowed msg — no body clone
+            let deliver_args = build_deliver_args(consumer_tag, delivery_tag, false, "", "");
+            let method_frame =
+                encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_DELIVER, &deliver_args);
+            let header_frame =
+                encode_content_header(channel, CLASS_BASIC, msg.body.len() as u64, &properties);
+
+            let mut combined =
+                Vec::with_capacity(method_frame.len() + header_frame.len() + msg.body.len() + 16);
+            combined.extend_from_slice(&method_frame);
+            combined.extend_from_slice(&header_frame);
+            if !msg.body.is_empty() {
+                let body_frame = encode_body_frame(channel, &msg.body);
+                combined.extend_from_slice(&body_frame);
+            }
+
+            // Move to inflight only after frames are built
             queue.inflight.insert(delivery_tag, msg);
             queue.last_activity = Instant::now();
 
@@ -96,20 +130,6 @@ async fn deliver_round(broker: &Broker) {
                 if let Some(ch) = cs.channels.get_mut(&channel) {
                     ch.unacked_count += 1;
                 }
-            }
-
-            // Build AMQP frames: Basic.Deliver + Content-Header + Content-Body
-            let deliver_args = build_deliver_args(consumer_tag, delivery_tag, false, "", "");
-            let method_frame = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_DELIVER, &deliver_args);
-            let header_frame = encode_content_header(channel, CLASS_BASIC, body.len() as u64, &properties);
-
-            // Combine all frames into a single buffer for atomic write
-            let mut combined = Vec::with_capacity(method_frame.len() + header_frame.len() + body.len() + 16);
-            combined.extend_from_slice(&method_frame);
-            combined.extend_from_slice(&header_frame);
-            if !body.is_empty() {
-                let body_frame = encode_body_frame(channel, &body);
-                combined.extend_from_slice(&body_frame);
             }
 
             // Send through the AMQP delivery channel
@@ -131,6 +151,17 @@ async fn deliver_round(broker: &Broker) {
                     queue = queue_name.as_str(),
                     "delivered via AMQP"
                 );
+            } else {
+                // Connection gone — requeue and skip this consumer
+                if let Some(msg) = queue.inflight.remove(&delivery_tag) {
+                    queue.messages.push_front(msg);
+                }
+                warn!(
+                    conn_id,
+                    consumer_tag = consumer_tag.as_str(),
+                    "dead consumer, requeued"
+                );
+                continue;
             }
 
             // Limit per-round to avoid holding the lock too long
@@ -142,7 +173,13 @@ async fn deliver_round(broker: &Broker) {
 }
 
 /// Build Basic.Deliver method arguments.
-fn build_deliver_args(consumer_tag: &str, delivery_tag: u64, redelivered: bool, exchange: &str, routing_key: &str) -> Vec<u8> {
+fn build_deliver_args(
+    consumer_tag: &str,
+    delivery_tag: u64,
+    redelivered: bool,
+    exchange: &str,
+    routing_key: &str,
+) -> Vec<u8> {
     let mut args = Vec::new();
     write_shortstr(&mut args, consumer_tag).unwrap();
     write_longlong(&mut args, delivery_tag).unwrap();
