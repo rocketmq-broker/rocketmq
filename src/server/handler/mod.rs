@@ -1,3 +1,4 @@
+pub mod amqp_basic;
 pub mod amqp_dispatch;
 pub mod amqp_exchange;
 pub mod amqp_queue;

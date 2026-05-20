@@ -93,6 +93,42 @@ pub async fn dispatch_method(
             true
         }
 
+        // ── Basic class ───────────────────────────────
+        // Note: Basic.Publish is handled via content framing in the connection loop,
+        // not here. The connection reads method+header+body then calls handle_publish.
+        (CLASS_BASIC, METHOD_BASIC_CONSUME) => {
+            super::amqp_basic::handle_consume(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_CANCEL) => {
+            super::amqp_basic::handle_cancel(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_ACK) => {
+            super::amqp_basic::handle_ack(conn_id, channel, &method.arguments, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_REJECT) => {
+            super::amqp_basic::handle_reject(conn_id, channel, &method.arguments, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_NACK) => {
+            super::amqp_basic::handle_nack(conn_id, channel, &method.arguments, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_GET) => {
+            super::amqp_basic::handle_get(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_QOS) => {
+            super::amqp_basic::handle_qos(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+        (CLASS_BASIC, METHOD_BASIC_RECOVER | METHOD_BASIC_RECOVER_ASYNC) => {
+            super::amqp_basic::handle_recover(conn_id, channel, &method.arguments, writer, broker).await;
+            true
+        }
+
         // ── Unknown ───────────────────────────────────
         _ => {
             warn!(
