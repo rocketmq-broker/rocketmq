@@ -7,8 +7,7 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 
 use crate::core::amqp_codec::*;
@@ -42,7 +41,7 @@ pub async fn handle_publish(
     mandatory: bool,
     properties: &BasicProperties,
     body: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     // Permission check: write permission needed to publish to an exchange
@@ -210,7 +209,7 @@ fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64>
 }
 
 /// Send Basic.Ack from broker to publisher (confirm mode).
-async fn send_confirm_ack(channel: u16, delivery_tag: u64, writer: &mut BufWriter<OwnedWriteHalf>) {
+async fn send_confirm_ack(channel: u16, delivery_tag: u64, writer: &mut crate::server::AmqpWriter) {
     let mut args = Vec::new();
     write_longlong(&mut args, delivery_tag).unwrap();
     write_octet(&mut args, 0).unwrap(); // multiple = false
@@ -229,7 +228,7 @@ async fn send_basic_return(
     routing_key: &str,
     properties: &BasicProperties,
     body: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
 ) {
     let mut args = Vec::new();
     write_short(&mut args, reply_code).unwrap();
@@ -254,7 +253,7 @@ pub async fn handle_consume(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -356,7 +355,7 @@ pub async fn handle_cancel(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -484,7 +483,7 @@ pub async fn handle_get(
     _conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -552,7 +551,7 @@ pub async fn handle_qos(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -583,7 +582,7 @@ pub async fn handle_recover(
     conn_id: u64,
     channel: u16,
     _args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     _broker: &Broker,
 ) {
     // Requeue unacked — simplified: just send RecoverOk

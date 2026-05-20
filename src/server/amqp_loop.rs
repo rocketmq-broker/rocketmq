@@ -1,12 +1,12 @@
 //! AMQP 0-9-1 connection loop with content framing state machine.
 //!
-//! This replaces the legacy RQ protocol loop. It handles:
+//! This handles:
 //! - Protocol header negotiation + handshake (via amqp_connection)
 //! - Frame reading with content framing (METHOD → HEADER → BODY*)
 //! - Heartbeat send/receive
 //! - Dispatch to AMQP method handlers
 //!
-//! Usage: call `spawn_amqp(stream, addr, broker)` instead of the old `spawn`.
+//! Accepts any async stream (plain TCP or TLS) — TLS sits below AMQP.
 
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -35,8 +35,19 @@ struct ContentState {
     channel: u16,
 }
 
-/// Spawn a new AMQP 0-9-1 connection handler.
+/// Spawn a new AMQP 0-9-1 connection handler on a plain TCP stream.
 pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
+    let boxed: Box<dyn crate::server::AsyncStream> = Box::new(stream);
+    spawn_amqp_on_stream(boxed, addr, broker);
+}
+
+/// Spawn a new AMQP 0-9-1 connection handler on any async stream.
+/// TLS connections use this after the TLS handshake completes.
+pub fn spawn_amqp_on_stream(
+    stream: Box<dyn crate::server::AsyncStream>,
+    addr: SocketAddr,
+    broker: Broker,
+) {
     tokio::spawn(async move {
         let conn_id = broker.alloc_conn_id();
 
@@ -56,7 +67,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
 
         info!(conn_id, %addr, "AMQP connection accepted");
 
-        let (reader, writer) = stream.into_split();
+        let (reader, writer) = tokio::io::split(stream);
         let mut reader = BufReader::new(reader);
         let mut writer = BufWriter::new(writer);
 
@@ -260,11 +271,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
 }
 
 /// Send a Connection.Close frame for fatal protocol errors.
-async fn send_connection_close(
-    writer: &mut BufWriter<tokio::net::tcp::OwnedWriteHalf>,
-    code: u16,
-    text: &str,
-) {
+async fn send_connection_close(writer: &mut crate::server::AmqpWriter, code: u16, text: &str) {
     let close = amqp_connection::build_connection_close(code, text, 0, 0);
     let frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
     let _ = writer.write_all(&frame).await;

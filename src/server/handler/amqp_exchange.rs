@@ -1,8 +1,7 @@
 //! AMQP 0-9-1 Exchange class handlers (class 40).
 
 use std::io::Cursor;
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 use crate::core::amqp_codec::*;
@@ -17,7 +16,7 @@ pub async fn handle_declare(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -104,7 +103,7 @@ pub async fn handle_delete(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -152,7 +151,7 @@ pub async fn handle_bind(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     // Not to be confused with Queue.Bind — this is exchange-to-exchange binding
@@ -194,7 +193,7 @@ pub async fn handle_unbind(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);

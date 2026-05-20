@@ -3,8 +3,7 @@
 //! Provides a `deny_access` helper that sends Channel.Close(403)
 //! and per-operation permission check functions.
 
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::AsyncWriteExt;
 use tracing::warn;
 
 use crate::core::amqp_codec::encode_method_frame;
@@ -20,7 +19,7 @@ pub async fn deny_access(
     operation: &str,
     class_id: u16,
     method_id: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
 ) -> bool {
     warn!(
         conn_id,
@@ -65,7 +64,7 @@ pub async fn check_configure(
     resource: &str,
     class_id: u16,
     method_id: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) -> bool {
     let (user, vhost) = get_conn_auth(broker, conn_id);
@@ -93,7 +92,7 @@ pub async fn check_write(
     resource: &str,
     class_id: u16,
     method_id: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) -> bool {
     let (user, vhost) = get_conn_auth(broker, conn_id);
@@ -115,7 +114,7 @@ pub async fn check_read(
     resource: &str,
     class_id: u16,
     method_id: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) -> bool {
     let (user, vhost) = get_conn_auth(broker, conn_id);

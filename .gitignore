@@ -2,4 +2,5 @@ target/
 data/
 .vscode/
 .zed/
+rabbitmq-server/data/tls/
 rabbitmq-server/

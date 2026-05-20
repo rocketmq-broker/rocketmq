@@ -1,7 +1,6 @@
 //! AMQP 0-9-1 Tx class (class 90) and Confirm class (class 85).
 
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 
 use crate::core::amqp_codec::*;
@@ -15,7 +14,7 @@ use crate::state::broker::PendingOp;
 pub async fn handle_tx_select(
     conn_id: u64,
     channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
@@ -33,7 +32,7 @@ pub async fn handle_tx_select(
 pub async fn handle_tx_commit(
     conn_id: u64,
     channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let ops = {
@@ -99,7 +98,7 @@ pub async fn handle_tx_commit(
 pub async fn handle_tx_rollback(
     conn_id: u64,
     channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let discarded = {
@@ -144,7 +143,7 @@ pub async fn handle_confirm_select(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let no_wait = args.first().copied().unwrap_or(0) & 0x01 != 0;

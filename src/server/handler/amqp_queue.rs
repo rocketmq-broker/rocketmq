@@ -1,8 +1,7 @@
 //! AMQP 0-9-1 Queue class handlers (class 50).
 
 use std::io::Cursor;
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 use crate::core::amqp_codec::*;
@@ -18,7 +17,7 @@ pub async fn handle_declare(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -155,7 +154,7 @@ pub async fn handle_delete(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -233,7 +232,7 @@ pub async fn handle_purge(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -271,7 +270,7 @@ pub async fn handle_bind(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -336,7 +335,7 @@ pub async fn handle_unbind(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let mut r = Cursor::new(args);
@@ -370,7 +369,7 @@ async fn send_declare_ok(
     name: &str,
     msg_count: u32,
     consumer_count: u32,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
 ) {
     let mut args = Vec::new();
     write_shortstr(&mut args, name).unwrap();

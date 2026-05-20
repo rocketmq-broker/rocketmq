@@ -10,6 +10,18 @@ use std::time::Duration;
 /// Address and port the AMQP listener binds to.
 pub const AMQP_LISTEN_ADDR: &str = "127.0.0.1:5672";
 
+/// Address and port the AMQPS (TLS) listener binds to.
+pub const AMQPS_LISTEN_ADDR: &str = "127.0.0.1:5671";
+
+// ─── TLS ───────────────────────────────────────────────
+
+/// Path to the TLS certificate PEM file.
+/// Auto-generated self-signed cert if not present.
+pub const TLS_CERT_PATH: &str = "data/tls/server.pem";
+
+/// Path to the TLS private key PEM file.
+pub const TLS_KEY_PATH: &str = "data/tls/server.key";
+
 // ─── AMQP Delivery Pipeline ───────────────────────────
 
 /// Capacity of the per-connection AMQP delivery channel.

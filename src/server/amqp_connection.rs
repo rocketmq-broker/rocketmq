@@ -11,8 +11,7 @@
 use std::io::Cursor;
 use std::net::SocketAddr;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{info, warn};
 
 use crate::core::amqp_codec::*;
@@ -26,7 +25,7 @@ pub async fn perform_handshake(
     conn_id: u64,
     peer_addr: SocketAddr,
     reader: &mut (impl AsyncReadExt + Unpin),
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) -> Result<(), ()> {
     // ── Step 1: Read protocol header ──────────────────

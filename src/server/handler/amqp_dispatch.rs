@@ -3,8 +3,7 @@
 //! Routes incoming method frames by class_id/method_id to the appropriate handler.
 
 use tokio::io::AsyncWriteExt;
-use tokio::io::BufWriter;
-use tokio::net::tcp::OwnedWriteHalf;
+// BufWriter replaced by AmqpWriter
 use tracing::{info, warn};
 
 use crate::core::amqp_codec::*;
@@ -18,7 +17,7 @@ pub async fn dispatch_method(
     conn_id: u64,
     channel: u16,
     method: &MethodFrame,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) -> bool {
     match (method.class_id, method.method_id) {
@@ -207,7 +206,7 @@ pub async fn dispatch_method(
 async fn handle_channel_open(
     conn_id: u64,
     channel: u16,
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     broker
@@ -232,7 +231,7 @@ async fn handle_channel_close(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     // Parse: reply_code(short) reply_text(shortstr) class_id(short) method_id(short)
@@ -257,7 +256,7 @@ async fn handle_channel_flow(
     conn_id: u64,
     channel: u16,
     args: &[u8],
-    writer: &mut BufWriter<OwnedWriteHalf>,
+    writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
     let active = args.first().copied().unwrap_or(1) != 0;
