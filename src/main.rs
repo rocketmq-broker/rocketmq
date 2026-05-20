@@ -31,17 +31,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn AMQP delivery pipeline (pushes messages to consumers)
     server::amqp_delivery::spawn_delivery_task(broker.clone());
 
-    // Legacy RQ protocol listener (will be removed after full migration)
-    let legacy_broker = broker.clone();
-    tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await.unwrap();
-        info!("legacy RQ protocol on 127.0.0.1:8080");
-        loop {
-            let (stream, addr) = listener.accept().await.unwrap();
-            server::connection::spawn(stream, addr, legacy_broker.clone());
-        }
-    });
-
     // AMQP 0-9-1 listener on standard port
     let amqp_listener = tokio::net::TcpListener::bind("127.0.0.1:5672").await?;
     info!("AMQP 0-9-1 on 127.0.0.1:5672");

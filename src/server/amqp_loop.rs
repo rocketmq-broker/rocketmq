@@ -48,8 +48,7 @@ pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
             crate::state::ConnHandle {
                 id: conn_id,
                 addr,
-                tx: tokio::sync::mpsc::channel(1).0, // legacy, unused
-                amqp_tx: Some(amqp_tx),
+                amqp_tx,
             },
         );
         broker.conn_state.insert(conn_id, ConnectionState::new());

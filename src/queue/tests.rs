@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
-use super::{DelayQueue, Message, QueueOptions, PriorityQueue, QueueState};
+use super::{DelayQueue, Message, QueueOptions, QueueState};
+use super::priority::PriorityQueue;
 
 #[test]
 fn queue_options_from_headers_full() {

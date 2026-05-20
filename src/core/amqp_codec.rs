@@ -9,11 +9,9 @@
 //!   3 = BODY     — content body (opaque bytes)
 //!   8 = HEARTBEAT
 
-use std::io::{self, Cursor, Read, Write};
+use std::io::{self, Cursor};
 
-use crate::core::method;
 use crate::core::properties::BasicProperties;
-use crate::core::types::*;
 
 // ─── Constants ─────────────────────────────────────────
 
@@ -230,6 +228,7 @@ pub fn split_body_frames(channel: u16, body: &[u8], frame_max: u32) -> Vec<Vec<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::method;
 
     #[test]
     fn protocol_header_correct() {

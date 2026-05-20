@@ -3,7 +3,7 @@
 //! AMQP connection's delivery channel.
 
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
@@ -114,25 +114,23 @@ async fn deliver_round(broker: &Broker) {
 
             // Send through the AMQP delivery channel
             if let Some(handle) = broker.connections.get(&conn_id) {
-                if let Some(ref amqp_tx) = handle.amqp_tx {
-                    if amqp_tx.try_send(combined).is_err() {
-                        // Channel full or closed — requeue message
-                        if let Some(msg) = queue.inflight.remove(&delivery_tag) {
-                            queue.messages.push_front(msg);
-                        }
-                        warn!(conn_id, delivery_tag, "delivery channel full, requeued");
-                        break;
+                if handle.amqp_tx.try_send(combined).is_err() {
+                    // Channel full or closed — requeue message
+                    if let Some(msg) = queue.inflight.remove(&delivery_tag) {
+                        queue.messages.push_front(msg);
                     }
-                    delivered += 1;
-                    debug!(
-                        conn_id,
-                        channel,
-                        delivery_tag,
-                        consumer_tag = consumer_tag.as_str(),
-                        queue = queue_name.as_str(),
-                        "delivered via AMQP"
-                    );
+                    warn!(conn_id, delivery_tag, "delivery channel full, requeued");
+                    break;
                 }
+                delivered += 1;
+                debug!(
+                    conn_id,
+                    channel,
+                    delivery_tag,
+                    consumer_tag = consumer_tag.as_str(),
+                    queue = queue_name.as_str(),
+                    "delivered via AMQP"
+                );
             }
 
             // Limit per-round to avoid holding the lock too long

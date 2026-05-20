@@ -8,19 +8,17 @@ use tokio::sync::{RwLock, mpsc};
 
 use dashmap::DashMap;
 
-use crate::core::protocol::Frame;
-use crate::queue::{DelayQueue, QueueOptions, QueueState};
+use crate::queue::{DelayQueue, QueueState};
 use crate::routing::exchange::{Binding, Exchange, create_default_exchanges};
 use crate::state::vhost::{VHost, DEFAULT_VHOST};
 
 #[derive(Clone)]
 pub struct ConnHandle {
     pub id: u64,
-    pub tx: mpsc::Sender<Frame>,
     pub addr: SocketAddr,
     /// AMQP raw frame sender — used by the delivery pipeline
     /// to push Basic.Deliver + content frames to consumers.
-    pub amqp_tx: Option<mpsc::Sender<Vec<u8>>>,
+    pub amqp_tx: mpsc::Sender<Vec<u8>>,
 }
 
 pub struct ChannelState {
@@ -219,6 +217,7 @@ pub type Broker = Arc<BrokerState>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::queue::QueueOptions;
 
 
 
@@ -276,14 +275,13 @@ mod tests {
     #[test]
     fn broker_state_remove_connection() {
         let bs = BrokerState::new();
-        let (tx, _rx) = mpsc::channel(1);
+        let (amqp_tx, _rx) = mpsc::channel(1);
         bs.connections.insert(
             1,
             ConnHandle {
                 id: 1,
-                tx,
                 addr: "127.0.0.1:1234".parse().unwrap(),
-                amqp_tx: None,
+                amqp_tx,
             },
         );
         bs.conn_state.insert(1, ConnectionState::new());
@@ -298,14 +296,13 @@ mod tests {
     #[test]
     fn broker_state_exclusive_queue_removed() {
         let bs = BrokerState::new();
-        let (tx, _rx) = mpsc::channel(1);
+        let (amqp_tx, _rx) = mpsc::channel(1);
         bs.connections.insert(
             1,
             ConnHandle {
                 id: 1,
-                tx,
                 addr: "127.0.0.1:1234".parse().unwrap(),
-                amqp_tx: None,
+                amqp_tx,
             },
         );
         bs.conn_state.insert(1, ConnectionState::new());

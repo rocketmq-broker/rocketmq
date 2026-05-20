@@ -1,6 +1,5 @@
 //! AMQP 0-9-1 Tx class (class 90) and Confirm class (class 85).
 
-use std::io::Cursor;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::net::tcp::OwnedWriteHalf;
 use tracing::{info, warn};

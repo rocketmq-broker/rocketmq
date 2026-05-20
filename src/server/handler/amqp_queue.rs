@@ -3,7 +3,7 @@
 use std::io::Cursor;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::net::tcp::OwnedWriteHalf;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
