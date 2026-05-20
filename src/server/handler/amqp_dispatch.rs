@@ -279,7 +279,6 @@ async fn handle_channel_flow(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn channel_open_ok_frame_valid() {

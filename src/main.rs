@@ -1,9 +1,16 @@
+#[allow(dead_code)]
 mod auth;
+#[allow(dead_code)]
 mod core;
+#[allow(dead_code)]
 mod queue;
+#[allow(dead_code)]
 mod routing;
+#[allow(dead_code)]
 mod server;
+#[allow(dead_code)]
 mod state;
+#[allow(dead_code)]
 mod storage;
 
 use std::sync::Arc;

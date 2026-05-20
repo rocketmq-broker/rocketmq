@@ -430,7 +430,7 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
 // ─── Basic.Get ────────────────────────────────────────
 
 pub async fn handle_get(
-    conn_id: u64,
+    _conn_id: u64,
     channel: u16,
     args: &[u8],
     writer: &mut BufWriter<OwnedWriteHalf>,

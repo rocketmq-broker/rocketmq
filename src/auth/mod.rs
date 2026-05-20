@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 
 use dashmap::DashMap;
-use tracing::{info, warn};
+use tracing::info;
 
 pub use credentials::{UserEntry, UserTag};
 pub use permissions::Permission;
