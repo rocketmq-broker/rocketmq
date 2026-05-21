@@ -29,24 +29,30 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
         // Health & Overview
         .route("/api/healthcheck", get(healthcheck))
         .route("/api/overview", get(overview))
-        // Queues
+        .route("/api/health/checks/alarms", get(health_alarms))
+        // Nodes
+        .route("/api/nodes", get(list_nodes))
+        // VHosts
+        .route("/api/vhosts", get(list_vhosts))
+        // Queues — vhost-scoped (RabbitMQ-compatible)
         .route("/api/queues", get(list_queues))
-        .route("/api/queues/{name}", get(get_queue))
-        .route("/api/queues/{name}", delete(delete_queue))
-        .route("/api/queues/{name}/purge", delete(purge_queue))
-        .route("/api/queues/{name}/get", post(get_messages))
-        // Exchanges
+        .route("/api/queues/{vhost}", get(list_queues_vhost))
+        .route("/api/queues/{vhost}/{name}", get(get_queue_vhost).delete(delete_queue_vhost))
+        .route("/api/queues/{vhost}/{name}/contents", delete(purge_queue_vhost))
+        .route("/api/queues/{vhost}/{name}/get", post(get_messages_vhost))
+        .route("/api/queues/{vhost}/{name}/bindings", get(queue_bindings_vhost))
+        // Exchanges — vhost-scoped (RabbitMQ-compatible)
         .route("/api/exchanges", get(list_exchanges))
-        // Bindings
+        .route("/api/exchanges/{vhost}", get(list_exchanges_vhost))
+        .route("/api/exchanges/{vhost}/{name}/publish", post(publish_message_vhost))
+        // Bindings — vhost-scoped (RabbitMQ-compatible)
         .route("/api/bindings", get(list_bindings))
-        // Publish
-        .route("/api/exchanges/{name}/publish", post(publish_message))
+        .route("/api/bindings/{vhost}", get(list_bindings_vhost))
         // Connections
         .route("/api/connections", get(list_connections))
         .route("/api/connections/{id}", delete(close_connection))
         // Users
-        .route("/api/users", get(list_users))
-        .route("/api/users", post(add_user))
+        .route("/api/users", get(list_users).post(add_user))
         .route("/api/users/{name}", delete(delete_user))
         .route("/api/users/{name}/password", put(change_password))
         // Permissions
@@ -67,48 +73,130 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
 
 #[derive(Serialize)]
 struct OverviewResponse {
+    cluster_name: String,
     node: String,
-    version: String,
-    amqp_listeners: Vec<ListenerInfo>,
-    queue_count: usize,
-    connection_count: usize,
-    exchange_count: usize,
-    message_count: usize,
+    rabbitmq_version: String,
+    management_version: String,
+    erlang_version: String,
+    product_name: String,
+    product_version: String,
+    rates_mode: String,
+    object_totals: ObjectTotals,
+    queue_totals: QueueTotals,
+    listeners: Vec<ListenerInfo>,
+    exchange_types: Vec<ExchangeTypeInfo>,
+}
+
+#[derive(Serialize)]
+struct ObjectTotals {
+    queues: usize,
+    exchanges: usize,
+    connections: usize,
+    channels: usize,
+    consumers: usize,
+}
+
+#[derive(Serialize)]
+struct QueueTotals {
+    messages: usize,
+    messages_ready: usize,
+    messages_unacknowledged: usize,
 }
 
 #[derive(Serialize)]
 struct ListenerInfo {
+    node: String,
     protocol: String,
-    address: String,
+    ip_address: String,
+    port: u16,
+}
+
+#[derive(Serialize)]
+struct ExchangeTypeInfo {
+    name: String,
+    description: String,
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+struct NodeInfo {
+    name: String,
+    running: bool,
+    #[serde(rename = "type")]
+    node_type: String,
+    mem_used: u64,
+    mem_limit: u64,
+    mem_alarm: bool,
+    disk_free: u64,
+    disk_free_limit: u64,
+    disk_free_alarm: bool,
+    fd_used: u64,
+    fd_total: u64,
+    sockets_used: u64,
+    sockets_total: u64,
+    uptime: u64,
+    processors: usize,
+    os_pid: String,
+}
+
+#[derive(Serialize)]
+struct VHostInfo {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    messages: usize,
+    messages_ready: usize,
+    messages_unacknowledged: usize,
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: String,
 }
 
 #[derive(Serialize)]
 struct QueueInfo {
     name: String,
-    messages: usize,
-    consumers: usize,
+    vhost: String,
+    #[serde(rename = "type")]
+    queue_type: String,
     durable: bool,
     exclusive: bool,
     auto_delete: bool,
-    inflight: usize,
+    messages: usize,
+    messages_ready: usize,
+    messages_unacknowledged: usize,
+    consumers: usize,
+    state: String,
+    node: String,
 }
 
 #[derive(Serialize)]
 struct ExchangeInfo {
     name: String,
+    vhost: String,
     #[serde(rename = "type")]
     kind: String,
     durable: bool,
-    bindings: usize,
+    auto_delete: bool,
+    internal: bool,
+    arguments: serde_json::Value,
 }
 
 #[derive(Serialize)]
 struct ConnectionInfo {
-    id: u64,
-    peer_address: String,
+    name: String,
+    node: String,
+    peer_host: String,
+    peer_port: u16,
     user: String,
+    vhost: String,
     channels: usize,
-    connected: bool,
+    state: String,
+    #[serde(rename = "type")]
+    conn_type: String,
+    protocol: String,
+    ssl: bool,
 }
 
 #[derive(Serialize)]
@@ -189,9 +277,12 @@ struct MessagePayload {
 #[derive(Serialize)]
 struct BindingInfo {
     source: String,
+    vhost: String,
     destination: String,
-    routing_key: String,
     destination_type: String,
+    routing_key: String,
+    arguments: serde_json::Value,
+    properties_key: String,
 }
 
 // ─── Handlers ────────────────────────────────────────
@@ -204,29 +295,114 @@ async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
     let queue_count = broker.queues.len();
     let connection_count = broker.connections.len();
     let exchange_count = broker.exchanges.read().await.len();
-    let mut message_count = 0usize;
+
+    let mut total_messages = 0usize;
+    let mut total_inflight = 0usize;
+    let mut total_consumers = 0usize;
+    let mut total_channels = 0usize;
+
     for entry in broker.queues.iter() {
-        message_count += entry.value().messages.len();
+        let q = entry.value();
+        total_messages += q.messages.len();
+        total_inflight += q.inflight.len();
+        total_consumers += q.consumer_tags.len();
+    }
+    for entry in broker.conn_state.iter() {
+        total_channels += entry.value().channels.len();
     }
 
+    let version = env!("CARGO_PKG_VERSION").to_string();
+
     Json(OverviewResponse {
+        cluster_name: "rocketmq@localhost".into(),
         node: "rocketmq@localhost".into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        amqp_listeners: vec![
+        rabbitmq_version: version.clone(),
+        management_version: version.clone(),
+        erlang_version: "rust/tokio".into(),
+        product_name: "RocketMQ".into(),
+        product_version: version,
+        rates_mode: "basic".into(),
+        object_totals: ObjectTotals {
+            queues: queue_count,
+            exchanges: exchange_count,
+            connections: connection_count,
+            channels: total_channels,
+            consumers: total_consumers,
+        },
+        queue_totals: QueueTotals {
+            messages: total_messages + total_inflight,
+            messages_ready: total_messages,
+            messages_unacknowledged: total_inflight,
+        },
+        listeners: vec![
             ListenerInfo {
+                node: "rocketmq@localhost".into(),
                 protocol: "amqp".into(),
-                address: crate::config::AMQP_LISTEN_ADDR.into(),
-            },
-            ListenerInfo {
-                protocol: "amqps".into(),
-                address: crate::config::AMQPS_LISTEN_ADDR.into(),
+                ip_address: "0.0.0.0".into(),
+                port: 5672,
             },
         ],
-        queue_count,
-        connection_count,
-        exchange_count,
-        message_count,
+        exchange_types: vec![
+            ExchangeTypeInfo { name: "direct".into(), description: "Direct exchange".into(), enabled: true },
+            ExchangeTypeInfo { name: "fanout".into(), description: "Fanout exchange".into(), enabled: true },
+            ExchangeTypeInfo { name: "topic".into(), description: "Topic exchange".into(), enabled: true },
+            ExchangeTypeInfo { name: "headers".into(), description: "Headers exchange".into(), enabled: true },
+        ],
     })
+}
+
+async fn health_alarms() -> Json<HealthResponse> {
+    Json(HealthResponse { status: "ok".into() })
+}
+
+async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
+    let connection_count = broker.connections.len();
+    let start_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    Json(vec![NodeInfo {
+        name: "rocketmq@localhost".into(),
+        running: true,
+        node_type: "disc".into(),
+        mem_used: get_process_memory(),
+        mem_limit: 4 * 1024 * 1024 * 1024, // 4 GB
+        mem_alarm: false,
+        disk_free: get_disk_free(),
+        disk_free_limit: 50 * 1024 * 1024, // 50 MB
+        disk_free_alarm: false,
+        fd_used: connection_count as u64 + 10,
+        fd_total: 65536,
+        sockets_used: connection_count as u64,
+        sockets_total: 65536,
+        uptime: start_time.saturating_sub(broker.start_time_ms()),
+        processors: num_cpus(),
+        os_pid: std::process::id().to_string(),
+    }])
+}
+
+async fn list_vhosts(State(broker): State<Broker>) -> Json<Vec<VHostInfo>> {
+    let mut total_messages = 0usize;
+    let mut total_inflight = 0usize;
+    for entry in broker.queues.iter() {
+        let q = entry.value();
+        total_messages += q.messages.len();
+        total_inflight += q.inflight.len();
+    }
+
+    let vhosts = broker.list_vhosts();
+    let list: Vec<VHostInfo> = vhosts
+        .iter()
+        .map(|name| VHostInfo {
+            name: name.clone(),
+            description: None,
+            messages: total_messages + total_inflight,
+            messages_ready: total_messages,
+            messages_unacknowledged: total_inflight,
+        })
+        .collect();
+    Json(list)
 }
 
 async fn list_queues(State(broker): State<Broker>) -> Json<Vec<QueueInfo>> {
@@ -235,15 +411,7 @@ async fn list_queues(State(broker): State<Broker>) -> Json<Vec<QueueInfo>> {
         .iter()
         .map(|entry| {
             let (name, q) = entry.pair();
-            QueueInfo {
-                name: name.clone(),
-                messages: q.messages.len(),
-                consumers: q.consumer_tags.len(),
-                durable: q.options.durable,
-                exclusive: q.options.exclusive,
-                auto_delete: q.options.auto_delete,
-                inflight: q.inflight.len(),
-            }
+            build_queue_info(name, q)
         })
         .collect();
     Json(queues)
@@ -254,19 +422,25 @@ async fn get_queue(
     Path(name): Path<String>,
 ) -> Result<Json<QueueInfo>, StatusCode> {
     match broker.queues.get(&name) {
-        Some(entry) => {
-            let q = entry.value();
-            Ok(Json(QueueInfo {
-                name: name.clone(),
-                messages: q.messages.len(),
-                consumers: q.consumer_tags.len(),
-                durable: q.options.durable,
-                exclusive: q.options.exclusive,
-                auto_delete: q.options.auto_delete,
-                inflight: q.inflight.len(),
-            }))
-        }
+        Some(entry) => Ok(Json(build_queue_info(&name, entry.value()))),
         None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+fn build_queue_info(name: &str, q: &crate::queue::QueueState) -> QueueInfo {
+    QueueInfo {
+        name: name.to_string(),
+        vhost: "/".into(),
+        queue_type: "classic".into(),
+        durable: q.options.durable,
+        exclusive: q.options.exclusive,
+        auto_delete: q.options.auto_delete,
+        messages: q.messages.len() + q.inflight.len(),
+        messages_ready: q.messages.len(),
+        messages_unacknowledged: q.inflight.len(),
+        consumers: q.consumer_tags.len(),
+        state: "running".into(),
+        node: "rocketmq@localhost".into(),
     }
 }
 
@@ -399,9 +573,12 @@ async fn list_exchanges(State(broker): State<Broker>) -> Json<Vec<ExchangeInfo>>
         .iter()
         .map(|(name, ex)| ExchangeInfo {
             name: name.clone(),
+            vhost: "/".into(),
             kind: ex.kind.as_str().to_string(),
             durable: ex.durable,
-            bindings: ex.bindings.len(),
+            auto_delete: false,
+            internal: false,
+            arguments: serde_json::json!({}),
         })
         .collect();
     Json(list)
@@ -412,11 +589,15 @@ async fn list_bindings(State(broker): State<Broker>) -> Json<Vec<BindingInfo>> {
     let mut bindings = Vec::new();
     for (name, ex) in exchanges.iter() {
         for b in &ex.bindings {
+            let rk = b.routing_key.clone();
             bindings.push(BindingInfo {
                 source: name.clone(),
+                vhost: "/".into(),
                 destination: b.queue_name.clone(),
-                routing_key: b.routing_key.clone(),
                 destination_type: "queue".into(),
+                routing_key: rk.clone(),
+                arguments: serde_json::json!({}),
+                properties_key: if rk.is_empty() { "~".into() } else { rk },
             });
         }
     }
@@ -433,17 +614,24 @@ async fn list_connections(State(broker): State<Broker>) -> Json<Vec<ConnectionIn
         .iter()
         .map(|entry| {
             let handle = entry.value();
-            let (user, channels) = broker
+            let (user, channels, vhost) = broker
                 .conn_state
                 .get(&handle.id)
-                .map(|cs| (cs.username.clone(), cs.channels.len()))
-                .unwrap_or_default();
+                .map(|cs| (cs.username.clone(), cs.channels.len(), cs.vhost.clone()))
+                .unwrap_or_else(|| (String::new(), 0, "/".into()));
+            let addr = handle.addr;
             ConnectionInfo {
-                id: handle.id,
-                peer_address: handle.addr.to_string(),
+                name: format!("{}:{} -> 5672", addr.ip(), addr.port()),
+                node: "rocketmq@localhost".into(),
+                peer_host: addr.ip().to_string(),
+                peer_port: addr.port(),
                 user,
+                vhost,
                 channels,
-                connected: true,
+                state: "running".into(),
+                conn_type: "network".into(),
+                protocol: "AMQP 0-9-1".into(),
+                ssl: false,
             }
         })
         .collect();
@@ -715,4 +903,125 @@ fn parse_user_tags(tags: &[String]) -> Vec<crate::auth::credentials::UserTag> {
             _ => None,
         })
         .collect()
+}
+
+// ─── Vhost-scoped wrappers ───────────────────────────
+// The UI sends requests like /api/queues/%2F (vhost "/"), these
+// wrappers ignore the vhost param and delegate to global handlers.
+
+async fn list_queues_vhost(
+    State(broker): State<Broker>,
+    Path(_vhost): Path<String>,
+) -> Json<Vec<QueueInfo>> {
+    list_queues(State(broker)).await
+}
+
+async fn get_queue_vhost(
+    State(broker): State<Broker>,
+    Path((_vhost, name)): Path<(String, String)>,
+) -> Result<Json<QueueInfo>, StatusCode> {
+    get_queue(State(broker), Path(name)).await
+}
+
+async fn delete_queue_vhost(
+    State(broker): State<Broker>,
+    Path((_vhost, name)): Path<(String, String)>,
+) -> StatusCode {
+    delete_queue(State(broker), Path(name)).await
+}
+
+async fn purge_queue_vhost(
+    State(broker): State<Broker>,
+    Path((_vhost, name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    purge_queue(State(broker), Path(name)).await
+}
+
+async fn get_messages_vhost(
+    State(broker): State<Broker>,
+    Path((_vhost, name)): Path<(String, String)>,
+    body: Json<GetMessagesRequest>,
+) -> Result<Json<Vec<MessagePayload>>, StatusCode> {
+    get_messages(State(broker), Path(name), body).await
+}
+
+async fn list_exchanges_vhost(
+    State(broker): State<Broker>,
+    Path(_vhost): Path<String>,
+) -> Json<Vec<ExchangeInfo>> {
+    list_exchanges(State(broker)).await
+}
+
+async fn publish_message_vhost(
+    State(broker): State<Broker>,
+    Path((_vhost, name)): Path<(String, String)>,
+    body: Json<PublishRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    publish_message(State(broker), Path(name), body).await
+}
+
+async fn list_bindings_vhost(
+    State(broker): State<Broker>,
+    Path(_vhost): Path<String>,
+) -> Json<Vec<BindingInfo>> {
+    list_bindings(State(broker)).await
+}
+
+async fn queue_bindings_vhost(
+    State(broker): State<Broker>,
+    Path((_vhost, queue_name)): Path<(String, String)>,
+) -> Json<Vec<BindingInfo>> {
+    let exchanges = broker.exchanges.read().await;
+    let mut bindings = Vec::new();
+    for (name, ex) in exchanges.iter() {
+        for b in &ex.bindings {
+            if b.queue_name == queue_name {
+                let rk = b.routing_key.clone();
+                bindings.push(BindingInfo {
+                    source: name.clone(),
+                    vhost: "/".into(),
+                    destination: b.queue_name.clone(),
+                    destination_type: "queue".into(),
+                    routing_key: rk.clone(),
+                    arguments: serde_json::json!({}),
+                    properties_key: if rk.is_empty() { "~".into() } else { rk },
+                });
+            }
+        }
+    }
+    Json(bindings)
+}
+// ─── System info helpers ─────────────────────────────
+
+fn get_process_memory() -> u64 {
+    // Read from /proc/self/statm on Linux
+    std::fs::read_to_string("/proc/self/statm")
+        .ok()
+        .and_then(|s| {
+            let rss_pages = s.split_whitespace().nth(1)?.parse::<u64>().ok()?;
+            Some(rss_pages * 4096) // page size
+        })
+        .unwrap_or(0)
+}
+
+fn get_disk_free() -> u64 {
+    // Use statvfs on the data directory
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::CString;
+        let path = CString::new(crate::config::DATA_DIR).unwrap_or_default();
+        unsafe {
+            let mut buf: libc::statvfs = std::mem::zeroed();
+            if libc::statvfs(path.as_ptr(), &mut buf) == 0 {
+                return buf.f_bavail as u64 * buf.f_frsize as u64;
+            }
+        }
+    }
+    10 * 1024 * 1024 * 1024 // fallback: 10 GB
+}
+
+fn num_cpus() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
 }

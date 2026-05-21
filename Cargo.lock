@@ -798,6 +798,7 @@ dependencies = [
  "byteorder",
  "crc32fast",
  "dashmap",
+ "libc",
  "opentelemetry",
  "opentelemetry_sdk",
  "rcgen",

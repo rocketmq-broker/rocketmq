@@ -55,6 +55,9 @@ pub const DELAY_FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 
 // ─── Persistence ───────────────────────────────────────
 
+/// Root data directory.
+pub const DATA_DIR: &str = "data";
+
 /// Path to the WAL file for crash recovery.
 pub const WAL_PATH: &str = "data/broker.wal";
 

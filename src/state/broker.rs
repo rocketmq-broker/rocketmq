@@ -126,6 +126,8 @@ pub struct BrokerState {
     /// Authentication and authorization backend.
     pub auth: AuthBackend,
     cluster: OnceLock<Arc<crate::cluster::ClusterManager>>,
+    /// Epoch ms when the broker started.
+    started_at_ms: u64,
 }
 
 impl BrokerState {
@@ -161,11 +163,25 @@ impl BrokerState {
             },
             auth,
             cluster: OnceLock::new(),
+            started_at_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
         }
     }
 
     pub fn set_cluster(&self, cluster: Arc<crate::cluster::ClusterManager>) {
         let _ = self.cluster.set(cluster);
+    }
+
+    /// Epoch milliseconds when the broker started.
+    pub fn start_time_ms(&self) -> u64 {
+        self.started_at_ms
+    }
+
+    /// List all virtual host names.
+    pub fn list_vhosts(&self) -> Vec<String> {
+        self.vhosts.iter().map(|e| e.key().clone()).collect()
     }
 
     pub fn cluster(&self) -> Option<&Arc<crate::cluster::ClusterManager>> {
