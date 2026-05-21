@@ -113,10 +113,10 @@ export default function ShovelsPage() {
                       <TableCell className="font-mono text-xs">{sh.dest_uri || 'local'}</TableCell>
                       <TableCell>
                         <Badge
-                          variant={sh.status === 'running' ? 'default' : 'secondary'}
-                          className={sh.status === 'running' ? 'bg-green-500/10 text-green-500 border-green-500/30' : ''}
+                          variant={sh.state === 'running' ? 'default' : 'secondary'}
+                          className={sh.state === 'running' ? 'bg-green-500/10 text-green-500 border-green-500/30' : ''}
                         >
-                          {sh.status}
+                          {sh.state}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{sh.timestamp || '-'}</TableCell>

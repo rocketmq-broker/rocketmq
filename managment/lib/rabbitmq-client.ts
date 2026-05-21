@@ -831,11 +831,11 @@ class RabbitMQClient {
 
   // Tracing
   async getTraces(): Promise<Trace[]> {
-    return this.getParameters('trace') as Promise<Trace[]>;
+    return this.getParameters('trace') as unknown as Promise<Trace[]>;
   }
 
   async getVHostTraces(vhost: string): Promise<Trace[]> {
-    return this.getVHostParameters('trace', vhost) as Promise<Trace[]>;
+    return this.getVHostParameters('trace', vhost) as unknown as Promise<Trace[]>;
   }
 
   async setTrace(vhost: string, name: string, options: Omit<Trace, 'name' | 'vhost'>): Promise<void> {

@@ -129,8 +129,8 @@ export default function FederationPage() {
                     links.map((link, idx) => (
                       <TableRow key={idx}>
                         <TableCell className="font-mono text-sm">{link.vhost}</TableCell>
-                        <TableCell className="font-semibold">{link.name}</TableCell>
-                        <TableCell className="font-mono text-sm">{link.resource}</TableCell>
+                        <TableCell className="font-semibold">{link.id}</TableCell>
+                        <TableCell className="font-mono text-sm">{link.exchange || link.queue || '-'}</TableCell>
                         <TableCell className="capitalize">{link.type}</TableCell>
                         <TableCell className="font-mono text-sm">{link.upstream}</TableCell>
                         <TableCell>
