@@ -43,9 +43,10 @@ fn discover_segment_ids(dir: &Path) -> io::Result<Vec<u64>> {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some(SEGMENT_EXT)
             && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                && let Ok(id) = stem.parse::<u64>() {
-                    ids.push(id);
-                }
+            && let Ok(id) = stem.parse::<u64>()
+        {
+            ids.push(id);
+        }
     }
     ids.sort_unstable();
     Ok(ids)

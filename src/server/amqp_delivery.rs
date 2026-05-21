@@ -76,9 +76,9 @@ async fn deliver_round(broker: &Broker) {
 
             // Check QoS prefetch
             let prefetch_ok = broker.conn_state.get(&conn_id).is_none_or(|cs| {
-                cs.channels.get(&channel).is_none_or(|ch| {
-                    ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count
-                })
+                cs.channels
+                    .get(&channel)
+                    .is_none_or(|ch| ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count)
             });
 
             if !prefetch_ok {
@@ -140,9 +140,10 @@ async fn deliver_round(broker: &Broker) {
 
             // Track unacked
             if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-                && let Some(ch) = cs.channels.get_mut(&channel) {
-                    ch.unacked_count += 1;
-                }
+                && let Some(ch) = cs.channels.get_mut(&channel)
+            {
+                ch.unacked_count += 1;
+            }
 
             // Send through the AMQP delivery channel
             if let Some(handle) = broker.connections.get(&conn_id) {

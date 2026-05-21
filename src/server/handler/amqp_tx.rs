@@ -151,10 +151,11 @@ pub async fn handle_confirm_select(
 
     // Enable confirm mode on the channel (per AMQP spec, confirms are per-channel)
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = cs.channels.get_mut(&channel) {
-            ch.confirm_mode = true;
-            ch.next_delivery_tag = 1; // Reset tag counter
-        }
+        && let Some(ch) = cs.channels.get_mut(&channel)
+    {
+        ch.confirm_mode = true;
+        ch.next_delivery_tag = 1; // Reset tag counter
+    }
 
     info!(conn_id, channel, "confirm mode enabled");
     if !no_wait {

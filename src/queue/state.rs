@@ -90,9 +90,10 @@ impl ConsumerGroup {
 
             if let Some(cs) = broker.conn_state.get(&conn_id)
                 && let Some(ch) = cs.channels.get(&channel_id)
-                    && ch.can_deliver() {
-                        return Some((conn_id, channel_id));
-                    }
+                && ch.can_deliver()
+            {
+                return Some((conn_id, channel_id));
+            }
         }
         None
     }
@@ -227,9 +228,10 @@ impl QueueState {
 
             if let Some(cs) = broker.conn_state.get(&target_id)
                 && let Some(ch) = cs.channels.get(&channel_id)
-                    && ch.can_deliver() {
-                        return Some((target_id, channel_id));
-                    }
+                && ch.can_deliver()
+            {
+                return Some((target_id, channel_id));
+            }
         }
         None
     }

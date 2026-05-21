@@ -166,18 +166,20 @@ pub async fn handle_publish(
 
         // WAL: persist message before enqueueing (durable queue + delivery_mode=2)
         let mut disk_ref = None;
-        if queue.options.durable && is_persistent
+        if queue.options.durable
+            && is_persistent
             && let Some(wal) = broker.wal()
-                && let Ok((seg_id, offset, length)) = wal.log_enqueue(
-                    queue_name,
-                    msg_id,
-                    exchange_name,
-                    routing_key,
-                    &prop_bytes,
-                    body,
-                ) {
-                    disk_ref = Some((seg_id, offset, length));
-                }
+            && let Ok((seg_id, offset, length)) = wal.log_enqueue(
+                queue_name,
+                msg_id,
+                exchange_name,
+                routing_key,
+                &prop_bytes,
+                body,
+            )
+        {
+            disk_ref = Some((seg_id, offset, length));
+        }
 
         let msg = if let Some((segment_id, offset, length)) = disk_ref {
             crate::queue::message::QueueMessage::Ref(crate::queue::message::MessageRef {
@@ -218,14 +220,15 @@ pub async fn handle_publish(
 
         // Background replication for non-confirm publishes
         if confirm_tag.is_none()
-            && let Some(c) = broker.cluster() {
-                let c = c.clone();
-                let q_name = queue_name.clone();
-                let body_vec = body.to_vec();
-                tokio::spawn(async move {
-                    let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
-                });
-            }
+            && let Some(c) = broker.cluster()
+        {
+            let c = c.clone();
+            let q_name = queue_name.clone();
+            let body_vec = body.to_vec();
+            tokio::spawn(async move {
+                let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
+            });
+        }
     }
 
     // Send confirm ack after all queues received the message
@@ -336,18 +339,19 @@ pub async fn handle_consume(
     // Check exclusive
     if exclusive
         && let Some(q) = broker.queues.get(&queue_name)
-            && !q.consumer_tags.is_empty() {
-                send_channel_error(
-                    writer,
-                    channel,
-                    ACCESS_REFUSED,
-                    "ACCESS_REFUSED - exclusive consumer exists",
-                    CLASS_BASIC,
-                    METHOD_BASIC_CONSUME,
-                )
-                .await;
-                return;
-            }
+        && !q.consumer_tags.is_empty()
+    {
+        send_channel_error(
+            writer,
+            channel,
+            ACCESS_REFUSED,
+            "ACCESS_REFUSED - exclusive consumer exists",
+            CLASS_BASIC,
+            METHOD_BASIC_CONSUME,
+        )
+        .await;
+        return;
+    }
 
     let assigned_tag = match broker.queues.get_mut(&queue_name) {
         Some(mut queue) => queue.add_consumer(conn_id, channel, consumer_tag, None),
@@ -426,9 +430,10 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
         && let Some(ch) = cs.channels.get_mut(&channel)
-            && ch.unacked_count > 0 {
-                ch.unacked_count -= 1;
-            }
+        && ch.unacked_count > 0
+    {
+        ch.unacked_count -= 1;
+    }
 
     for mut entry in broker.queues.iter_mut() {
         if entry.value_mut().inflight.remove(&delivery_tag).is_some() {
@@ -463,9 +468,10 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
         && let Some(ch) = cs.channels.get_mut(&channel)
-            && ch.unacked_count > 0 {
-                ch.unacked_count -= 1;
-            }
+        && ch.unacked_count > 0
+    {
+        ch.unacked_count -= 1;
+    }
 
     for mut entry in broker.queues.iter_mut() {
         if let Some(mut msg) = entry.value_mut().inflight.remove(&delivery_tag) {
@@ -497,9 +503,10 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
 
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
         && let Some(ch) = cs.channels.get_mut(&channel)
-            && ch.unacked_count > 0 {
-                ch.unacked_count -= 1;
-            }
+        && ch.unacked_count > 0
+    {
+        ch.unacked_count -= 1;
+    }
 
     for mut entry in broker.queues.iter_mut() {
         if let Some(mut msg) = entry.value_mut().inflight.remove(&delivery_tag) {
@@ -600,10 +607,9 @@ pub async fn handle_get(
             }
             let _ = writer.flush().await;
 
-            if !no_ack
-                && let Some(mut q) = broker.queues.get_mut(&queue_name) {
-                    q.inflight.insert(delivery_tag, msg);
-                }
+            if !no_ack && let Some(mut q) = broker.queues.get_mut(&queue_name) {
+                q.inflight.insert(delivery_tag, msg);
+            }
         }
         None => {
             // Basic.GetEmpty

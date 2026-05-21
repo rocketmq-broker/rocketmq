@@ -4,3 +4,5 @@ data/
 .zed/
 rabbitmq-server/data/tls/
 rabbitmq-server/
+logs/
+tsconfig.tsbuildinfo

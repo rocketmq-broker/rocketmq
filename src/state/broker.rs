@@ -241,13 +241,14 @@ impl BrokerState {
 
     pub fn auto_bind_default_exchange(&self, queue_name: &str) {
         if let Ok(mut exchanges) = self.exchanges.try_write()
-            && let Some(default_ex) = exchanges.get_mut("") {
-                default_ex.add_binding(Binding {
-                    queue_name: queue_name.to_string(),
-                    routing_key: queue_name.to_string(),
-                    headers_match: None,
-                });
-            }
+            && let Some(default_ex) = exchanges.get_mut("")
+        {
+            default_ex.add_binding(Binding {
+                queue_name: queue_name.to_string(),
+                routing_key: queue_name.to_string(),
+                headers_match: None,
+            });
+        }
     }
 
     pub fn alloc_delivery_tag(&self, conn_id: u64) -> u64 {

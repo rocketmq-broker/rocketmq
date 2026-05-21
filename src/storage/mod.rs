@@ -28,11 +28,10 @@ fn replay(broker: &Arc<BrokerState>, entries: &[WalEntry]) {
 
     // First pass: collect all acked message IDs
     for entry in entries {
-        if entry.entry_type == EntryType::Ack
-            && entry.data.len() >= 8 {
-                let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
-                acked_ids.insert(msg_id);
-            }
+        if entry.entry_type == EntryType::Ack && entry.data.len() >= 8 {
+            let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
+            acked_ids.insert(msg_id);
+        }
     }
 
     // Second pass: replay state
@@ -250,13 +249,14 @@ fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
     let routing_key = reader.read_string_u16()?;
 
     if let Ok(mut exchanges) = broker.exchanges.try_write()
-        && let Some(ex) = exchanges.get_mut(&exchange) {
-            ex.add_binding(Binding {
-                queue_name: queue,
-                routing_key,
-                headers_match: None,
-            });
-        }
+        && let Some(ex) = exchanges.get_mut(&exchange)
+    {
+        ex.add_binding(Binding {
+            queue_name: queue,
+            routing_key,
+            headers_match: None,
+        });
+    }
     Ok(())
 }
 

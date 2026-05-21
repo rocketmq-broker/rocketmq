@@ -264,9 +264,10 @@ async fn handle_channel_flow(
     let active = args.first().copied().unwrap_or(1) != 0;
 
     if let Some(mut conn_state) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = conn_state.channels.get_mut(&channel) {
-            ch.flow_active = active;
-        }
+        && let Some(ch) = conn_state.channels.get_mut(&channel)
+    {
+        ch.flow_active = active;
+    }
 
     info!(conn_id, channel, active, "channel flow");
     let mut reply_args = Vec::new();
