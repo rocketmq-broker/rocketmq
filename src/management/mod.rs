@@ -2,7 +2,6 @@
 //!
 //! Provides runtime introspection and administration.
 
-use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::State;
