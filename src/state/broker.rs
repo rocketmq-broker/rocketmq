@@ -133,8 +133,8 @@ pub struct BrokerState {
 impl BrokerState {
     pub fn new() -> Self {
         let auth = AuthBackend::new();
-        // Load persisted user database if it exists; otherwise save defaults
-        let user_db = std::path::Path::new(crate::config::USER_DB_PATH);
+        let db_path = crate::config::get_user_db_path();
+        let user_db = std::path::Path::new(&db_path);
         if let Err(e) = auth.load_from_file(user_db) {
             tracing::warn!(error = %e, "failed to load user database, using defaults");
         }

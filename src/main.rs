@@ -85,17 +85,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── AMQPS (TLS) listener (port 5671) ─────────────
     let amqps_addr = get_amqps_listen_addr();
-    let tls_acceptor = match server::tls::build_tls_acceptor(TLS_CERT_PATH, TLS_KEY_PATH) {
-        Ok(acc) => {
-            let amqps_listener = tokio::net::TcpListener::bind(&amqps_addr).await?;
-            info!("AMQPS (TLS) on {}", amqps_addr);
-            Some((amqps_listener, acc))
-        }
-        Err(e) => {
-            warn!(error = %e, "TLS setup failed — AMQPS disabled, plain AMQP only");
-            None
-        }
-    };
+    let tls_acceptor =
+        match server::tls::build_tls_acceptor(&get_tls_cert_path(), &get_tls_key_path()) {
+            Ok(acc) => {
+                let amqps_listener = tokio::net::TcpListener::bind(&amqps_addr).await?;
+                info!("AMQPS (TLS) on {}", amqps_addr);
+                Some((amqps_listener, acc))
+            }
+            Err(e) => {
+                warn!(error = %e, "TLS setup failed — AMQPS disabled, plain AMQP only");
+                None
+            }
+        };
 
     // ── Accept loop: plain + TLS ─────────────────────
     loop {

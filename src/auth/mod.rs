@@ -195,6 +195,17 @@ impl AuthBackend {
         Ok(())
     }
 
+    /// Set a user's tags.
+    pub fn set_user_tags(&self, username: &str, tags: Vec<UserTag>) -> Result<(), String> {
+        let mut entry = self
+            .users
+            .get_mut(username)
+            .ok_or_else(|| format!("user '{}' not found", username))?;
+        entry.tags = tags;
+        info!(user = username, "user tags updated");
+        Ok(())
+    }
+
     /// Set permissions for a user on a vhost.
     pub fn set_permissions(
         &self,

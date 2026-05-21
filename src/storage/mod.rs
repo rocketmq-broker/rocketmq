@@ -8,10 +8,9 @@ use crate::routing::exchange::{Binding, Exchange, ExchangeType};
 use crate::state::BrokerState;
 use crate::storage::wal::{EntryType, Wal, WalEntry};
 
-/// Initialize the WAL and replay any existing entries into the broker.
 pub fn init_with_recovery(broker: &Arc<BrokerState>) -> std::io::Result<Arc<Wal>> {
-    std::fs::create_dir_all("data")?;
-    let wal = Arc::new(Wal::open(crate::config::WAL_PATH)?);
+    std::fs::create_dir_all(&crate::config::get_data_dir())?;
+    let wal = Arc::new(Wal::open(&crate::config::get_wal_path())?);
 
     let entries = wal.read_all()?;
     if !entries.is_empty() {

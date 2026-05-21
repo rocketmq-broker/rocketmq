@@ -17,10 +17,14 @@ pub const AMQPS_LISTEN_ADDR: &str = "127.0.0.1:5671";
 
 /// Path to the TLS certificate PEM file.
 /// Auto-generated self-signed cert if not present.
-pub const TLS_CERT_PATH: &str = "data/tls/server.pem";
+pub fn get_tls_cert_path() -> String {
+    format!("{}/tls/server.pem", get_data_dir())
+}
 
 /// Path to the TLS private key PEM file.
-pub const TLS_KEY_PATH: &str = "data/tls/server.key";
+pub fn get_tls_key_path() -> String {
+    format!("{}/tls/server.key", get_data_dir())
+}
 
 // ─── Management HTTP API ──────────────────────────────
 
@@ -56,13 +60,19 @@ pub const DELAY_FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 // ─── Persistence ───────────────────────────────────────
 
 /// Root data directory.
-pub const DATA_DIR: &str = "data";
+pub fn get_data_dir() -> String {
+    std::env::var("ROCKETMQ_DATA_DIR").unwrap_or_else(|_| "data".to_string())
+}
 
 /// Path to the WAL file for crash recovery.
-pub const WAL_PATH: &str = "data/broker.wal";
+pub fn get_wal_path() -> String {
+    format!("{}/broker.wal", get_data_dir())
+}
 
 /// Path to the user/permissions database.
-pub const USER_DB_PATH: &str = "data/users.json";
+pub fn get_user_db_path() -> String {
+    format!("{}/users.json", get_data_dir())
+}
 
 /// How often to check if WAL compaction is needed.
 pub const WAL_COMPACT_INTERVAL: Duration = Duration::from_secs(60);
@@ -127,27 +137,30 @@ pub fn get_cluster_seeds() -> Vec<String> {
 
 /// Get the AMQP bind address, honoring the environment variable (ROCKETMQ_AMQP_PORT) if present.
 pub fn get_amqp_listen_addr() -> String {
+    let host = std::env::var("ROCKETMQ_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     if let Ok(port) = std::env::var("ROCKETMQ_AMQP_PORT") {
-        format!("127.0.0.1:{}", port)
+        format!("{}:{}", host, port)
     } else {
-        AMQP_LISTEN_ADDR.to_string()
+        format!("{}:5672", host)
     }
 }
 
 /// Get the AMQPS bind address, honoring the environment variable (ROCKETMQ_AMQPS_PORT) if present.
 pub fn get_amqps_listen_addr() -> String {
+    let host = std::env::var("ROCKETMQ_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     if let Ok(port) = std::env::var("ROCKETMQ_AMQPS_PORT") {
-        format!("127.0.0.1:{}", port)
+        format!("{}:{}", host, port)
     } else {
-        AMQPS_LISTEN_ADDR.to_string()
+        format!("{}:5671", host)
     }
 }
 
 /// Get the Management HTTP bind address, honoring the environment variable (ROCKETMQ_MGMT_PORT) if present.
 pub fn get_mgmt_listen_addr() -> String {
+    let host = std::env::var("ROCKETMQ_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     if let Ok(port) = std::env::var("ROCKETMQ_MGMT_PORT") {
-        format!("127.0.0.1:{}", port)
+        format!("{}:{}", host, port)
     } else {
-        MANAGEMENT_LISTEN_ADDR.to_string()
+        format!("{}:15672", host)
     }
 }
