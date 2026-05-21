@@ -41,13 +41,11 @@ fn discover_segment_ids(dir: &Path) -> io::Result<Vec<u64>> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some(SEGMENT_EXT) {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                if let Ok(id) = stem.parse::<u64>() {
+        if path.extension().and_then(|s| s.to_str()) == Some(SEGMENT_EXT)
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                && let Ok(id) = stem.parse::<u64>() {
                     ids.push(id);
                 }
-            }
-        }
     }
     ids.sort_unstable();
     Ok(ids)

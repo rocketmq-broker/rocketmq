@@ -137,11 +137,10 @@ impl ClusterManager {
             let count = entry.value().fetch_add(1, Ordering::SeqCst) + 1;
             let active_nodes = self.peers.len() as u64 + 1;
             let quorum = (active_nodes / 2) + 1;
-            if count >= quorum {
-                if let Some((_, tx)) = self.pending_replications.remove(&msg_id) {
+            if count >= quorum
+                && let Some((_, tx)) = self.pending_replications.remove(&msg_id) {
                     let _ = tx.send(true);
                 }
-            }
         }
     }
 
@@ -388,15 +387,14 @@ async fn handle_connection(
                     durable,
                 } => {
                     let mut exchanges = broker.exchanges.write().await;
-                    if !exchanges.contains_key(&name) {
-                        if let Some(k) = crate::routing::exchange::ExchangeType::from_str(&kind) {
+                    if !exchanges.contains_key(&name)
+                        && let Some(k) = crate::routing::exchange::ExchangeType::from_str(&kind) {
                             exchanges.insert(
                                 name.clone(),
                                 crate::routing::exchange::Exchange::new(name.clone(), k, durable),
                             );
                             info!("Cluster synchronized declaration of exchange '{}'", name);
                         }
-                    }
                 }
                 ClusterFrame::BindQueue {
                     exchange,

@@ -34,7 +34,7 @@ async fn queue_ttl_task(broker: Broker) {
         for entry in broker.queues.iter() {
             let (name, queue) = entry.pair();
             if let Some(ttl) = queue.options.expires {
-                let is_idle = queue.listeners.is_empty() && queue.messages.len() == 0;
+                let is_idle = queue.listeners.is_empty() && queue.messages.is_empty();
                 if is_idle && queue.last_activity.elapsed() >= ttl {
                     expired.push(name.clone());
                 }

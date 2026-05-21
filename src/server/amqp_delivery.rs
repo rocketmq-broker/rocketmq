@@ -23,10 +23,10 @@ pub fn spawn_delivery_task(broker: Broker) {
             round += 1;
 
             // Periodic state dump (every ~1 second)
-            if round % 200 == 0 {
+            if round.is_multiple_of(200) {
                 for entry in broker.queues.iter() {
                     let (name, q) = entry.pair();
-                    if q.messages.len() > 0 || !q.consumer_tags.is_empty() {
+                    if !q.messages.is_empty() || !q.consumer_tags.is_empty() {
                         debug!(
                             queue = name.as_str(),
                             messages = q.messages.len(),
@@ -49,7 +49,7 @@ async fn deliver_round(broker: &Broker) {
         let (queue_name, queue) = entry.pair_mut();
 
         // Skip if no messages or no consumers
-        if queue.messages.len() == 0 || queue.consumer_tags.is_empty() {
+        if queue.messages.is_empty() || queue.consumer_tags.is_empty() {
             continue;
         }
 
@@ -68,15 +68,15 @@ async fn deliver_round(broker: &Broker) {
         let n_consumers = consumers.len();
         let mut delivered = 0usize;
 
-        while queue.messages.len() > 0 {
+        while !queue.messages.is_empty() {
             let idx = queue.next_listener % n_consumers;
             queue.next_listener += 1;
 
             let (ref consumer_tag, conn_id, channel) = consumers[idx];
 
             // Check QoS prefetch
-            let prefetch_ok = broker.conn_state.get(&conn_id).map_or(true, |cs| {
-                cs.channels.get(&channel).map_or(true, |ch| {
+            let prefetch_ok = broker.conn_state.get(&conn_id).is_none_or(|cs| {
+                cs.channels.get(&channel).is_none_or(|ch| {
                     ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count
                 })
             });
@@ -139,11 +139,10 @@ async fn deliver_round(broker: &Broker) {
             queue.last_activity = Instant::now();
 
             // Track unacked
-            if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
-                if let Some(ch) = cs.channels.get_mut(&channel) {
+            if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
+                && let Some(ch) = cs.channels.get_mut(&channel) {
                     ch.unacked_count += 1;
                 }
-            }
 
             // Send through the AMQP delivery channel
             if let Some(handle) = broker.connections.get(&conn_id) {
@@ -158,7 +157,7 @@ async fn deliver_round(broker: &Broker) {
                     break;
                 }
                 delivered += 1;
-                crate::metrics::record_delivered(&queue_name);
+                crate::metrics::record_delivered(queue_name);
                 debug!(
                     conn_id,
                     channel,

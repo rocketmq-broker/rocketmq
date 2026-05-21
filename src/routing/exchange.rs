@@ -162,13 +162,10 @@ fn topic_match_recursive(pattern: &[&str], key: &[&str]) -> bool {
             // * matches exactly one word
             topic_match_recursive(&pattern[1..], &key[1..])
         }
-        (Some(p), Some(k)) => {
-            if p == k {
+        (Some(p), Some(k))
+            if p == k => {
                 topic_match_recursive(&pattern[1..], &key[1..])
-            } else {
-                false
             }
-        }
         _ => false,
     }
 }

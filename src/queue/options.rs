@@ -53,11 +53,10 @@ impl QueueOptions {
                     "x-retry-delay" => opts.retry_delay_ms = v.parse().ok(),
                     "x-retry-multiplier" => opts.retry_multiplier = v.parse().ok(),
                     "x-rate-limit" => opts.rate_limit = v.parse().ok(),
-                    "x-queue-type" => {
-                        if v == "stream" {
+                    "x-queue-type"
+                        if v == "stream" => {
                             opts.stream_mode = true;
                         }
-                    }
                     _ => {}
                 }
             }

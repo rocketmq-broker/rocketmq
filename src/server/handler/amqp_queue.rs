@@ -50,8 +50,8 @@ pub async fn handle_declare(
     }
 
     // Permission check: configure permission needed for declare (skip for passive)
-    if !passive {
-        if super::auth_check::check_configure(
+    if !passive
+        && super::auth_check::check_configure(
             conn_id,
             channel,
             &name,
@@ -64,7 +64,6 @@ pub async fn handle_declare(
         {
             return;
         }
-    }
 
     if passive {
         if let Some(q) = broker.queues.get(&name) {
@@ -88,8 +87,8 @@ pub async fn handle_declare(
     }
 
     // Check exclusive ownership
-    if let Some(existing) = broker.queues.get(&name) {
-        if existing.options.exclusive && existing.owner_conn_id != Some(conn_id) {
+    if let Some(existing) = broker.queues.get(&name)
+        && existing.options.exclusive && existing.owner_conn_id != Some(conn_id) {
             send_channel_error(
                 writer,
                 channel,
@@ -101,7 +100,6 @@ pub async fn handle_declare(
             .await;
             return;
         }
-    }
 
     let mut opts = QueueOptions {
         durable,
@@ -132,8 +130,8 @@ pub async fn handle_declare(
 
     broker.auto_bind_default_exchange(&name);
 
-    if is_new {
-        if let Some(c) = broker.cluster() {
+    if is_new
+        && let Some(c) = broker.cluster() {
             let c = c.clone();
             let name_clone = name.clone();
             tokio::spawn(async move {
@@ -146,14 +144,12 @@ pub async fn handle_declare(
                 .await;
             });
         }
-    }
 
     // WAL: persist durable queue declarations
-    if durable && is_new {
-        if let Some(wal) = broker.wal() {
+    if durable && is_new
+        && let Some(wal) = broker.wal() {
             let _ = wal.log_declare_queue(&name, true);
         }
-    }
 
     info!(conn_id, channel, queue = name.as_str(), "queue declared");
     if !no_wait {

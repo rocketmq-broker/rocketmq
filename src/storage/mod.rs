@@ -9,8 +9,8 @@ use crate::state::BrokerState;
 use crate::storage::wal::{EntryType, Wal, WalEntry};
 
 pub fn init_with_recovery(broker: &Arc<BrokerState>) -> std::io::Result<Arc<Wal>> {
-    std::fs::create_dir_all(&crate::config::get_data_dir())?;
-    let wal = Arc::new(Wal::open(&crate::config::get_wal_path())?);
+    std::fs::create_dir_all(crate::config::get_data_dir())?;
+    let wal = Arc::new(Wal::open(crate::config::get_wal_path())?);
 
     let entries = wal.read_all()?;
     if !entries.is_empty() {
@@ -28,12 +28,11 @@ fn replay(broker: &Arc<BrokerState>, entries: &[WalEntry]) {
 
     // First pass: collect all acked message IDs
     for entry in entries {
-        if entry.entry_type == EntryType::Ack {
-            if entry.data.len() >= 8 {
+        if entry.entry_type == EntryType::Ack
+            && entry.data.len() >= 8 {
                 let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
                 acked_ids.insert(msg_id);
             }
-        }
     }
 
     // Second pass: replay state
@@ -250,15 +249,14 @@ fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
     let queue = reader.read_string_u16()?;
     let routing_key = reader.read_string_u16()?;
 
-    if let Ok(mut exchanges) = broker.exchanges.try_write() {
-        if let Some(ex) = exchanges.get_mut(&exchange) {
+    if let Ok(mut exchanges) = broker.exchanges.try_write()
+        && let Some(ex) = exchanges.get_mut(&exchange) {
             ex.add_binding(Binding {
                 queue_name: queue,
                 routing_key,
                 headers_match: None,
             });
         }
-    }
     Ok(())
 }
 

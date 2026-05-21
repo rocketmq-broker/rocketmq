@@ -338,6 +338,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn field_value_all_types() {
         let values = vec![
             FieldValue::Boolean(false),

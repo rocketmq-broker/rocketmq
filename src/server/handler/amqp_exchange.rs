@@ -104,8 +104,8 @@ pub async fn handle_declare(
             .entry(name.clone())
             .or_insert_with(|| Exchange::new(name.clone(), kind, durable));
 
-        if is_new {
-            if let Some(c) = broker.cluster() {
+        if is_new
+            && let Some(c) = broker.cluster() {
                 let c = c.clone();
                 let name_clone = name.clone();
                 let kind_clone = kind_str.clone();
@@ -118,14 +118,12 @@ pub async fn handle_declare(
                     .await;
                 });
             }
-        }
 
         // WAL: persist durable exchange declarations
-        if durable && is_new {
-            if let Some(wal) = broker.wal() {
+        if durable && is_new
+            && let Some(wal) = broker.wal() {
                 let _ = wal.log_declare_exchange(&name, kind_byte, true);
             }
-        }
     }
 
     info!(

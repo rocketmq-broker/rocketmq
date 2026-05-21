@@ -1764,8 +1764,8 @@ async fn close_connection(State(broker): State<Broker>, Path(name): Path<String>
             })
             .map(|e| e.value().id)
     };
-    if let Some(id) = id {
-        if broker.connections.remove(&id).is_some() {
+    if let Some(id) = id
+        && broker.connections.remove(&id).is_some() {
             broker.conn_state.remove(&id);
             info!(
                 conn = name.as_str(),
@@ -1773,7 +1773,6 @@ async fn close_connection(State(broker): State<Broker>, Path(name): Path<String>
             );
             return StatusCode::NO_CONTENT;
         }
-    }
     StatusCode::NOT_FOUND
 }
 
@@ -1788,7 +1787,7 @@ async fn connection_channels(
         let conn_name = format!("{}:{} -> 5672", addr.ip(), addr.port());
         if conn_name == name {
             if let Some(cs) = broker.conn_state.get(&handle.id) {
-                for (_ch_id, ch) in &cs.channels {
+                for ch in cs.channels.values() {
                     channels.push(build_channel_info(&conn_name, &cs.vhost, &cs.username, ch));
                 }
             }
@@ -1807,7 +1806,7 @@ async fn list_channels(State(broker): State<Broker>) -> Json<Vec<ChannelInfo>> {
         let addr = handle.addr;
         let conn_name = format!("{}:{} -> 5672", addr.ip(), addr.port());
         if let Some(cs) = broker.conn_state.get(&handle.id) {
-            for (_ch_id, ch) in &cs.channels {
+            for ch in cs.channels.values() {
                 channels.push(build_channel_info(&conn_name, &cs.vhost, &cs.username, ch));
             }
         }
@@ -1967,13 +1966,12 @@ async fn whoami(
     State(broker): State<Broker>,
     headers: axum::http::HeaderMap,
 ) -> Json<serde_json::Value> {
-    if let Some(auth_header) = headers.get(axum::http::header::AUTHORIZATION) {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if auth_str.starts_with("Basic ") {
-                let encoded = &auth_str[6..];
-                if let Some(decoded_bytes) = decode_base64(encoded) {
-                    if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
-                        if let Some((username, _password)) = decoded_str.split_once(':') {
+    if let Some(auth_header) = headers.get(axum::http::header::AUTHORIZATION)
+        && let Ok(auth_str) = auth_header.to_str()
+            && let Some(encoded) = auth_str.strip_prefix("Basic ")
+                && let Some(decoded_bytes) = decode_base64(encoded)
+                    && let Ok(decoded_str) = String::from_utf8(decoded_bytes)
+                        && let Some((username, _password)) = decoded_str.split_once(':') {
                             let user_tags = broker
                                 .auth
                                 .list_users()
@@ -1992,11 +1990,6 @@ async fn whoami(
                                 "tags": user_tags
                             }));
                         }
-                    }
-                }
-            }
-        }
-    }
     Json(serde_json::json!({ "name": "guest", "tags": "administrator" }))
 }
 

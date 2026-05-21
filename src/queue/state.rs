@@ -88,13 +88,11 @@ impl ConsumerGroup {
             self.next_member += 1;
             let (conn_id, channel_id) = self.members[idx];
 
-            if let Some(cs) = broker.conn_state.get(&conn_id) {
-                if let Some(ch) = cs.channels.get(&channel_id) {
-                    if ch.can_deliver() {
+            if let Some(cs) = broker.conn_state.get(&conn_id)
+                && let Some(ch) = cs.channels.get(&channel_id)
+                    && ch.can_deliver() {
                         return Some((conn_id, channel_id));
                     }
-                }
-            }
         }
         None
     }
@@ -227,13 +225,11 @@ impl QueueState {
             self.next_listener += 1;
             let (target_id, channel_id) = self.listeners[idx];
 
-            if let Some(cs) = broker.conn_state.get(&target_id) {
-                if let Some(ch) = cs.channels.get(&channel_id) {
-                    if ch.can_deliver() {
+            if let Some(cs) = broker.conn_state.get(&target_id)
+                && let Some(ch) = cs.channels.get(&channel_id)
+                    && ch.can_deliver() {
                         return Some((target_id, channel_id));
                     }
-                }
-            }
         }
         None
     }
