@@ -54,8 +54,7 @@ impl DelayQueue {
         let remaining = inner.split_off(&split_key);
         // Everything left in `inner` is ready (deliver_at <= now)
         let ready: Vec<DelayedMessage> = std::mem::replace(&mut *inner, remaining)
-            .into_iter()
-            .map(|(_, v)| v)
+            .into_values()
             .collect();
 
         ready

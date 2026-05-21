@@ -10,6 +10,8 @@ use crate::core::types::*;
 use crate::routing::exchange::{Binding, Exchange, ExchangeType};
 use crate::state::Broker;
 
+use super::auth_check::send_channel_error;
+
 /// Exchange.Declare: exchange(shortstr) type(shortstr) passive(bit) durable(bit)
 ///   auto_delete(bit) internal(bit) no_wait(bit) arguments(table)
 pub async fn handle_declare(
@@ -31,8 +33,39 @@ pub async fn handle_declare(
     let no_wait = flags & 0x10 != 0;
     let _arguments = read_field_table(&mut r).unwrap_or_default();
 
-    // Permission check: configure permission needed for declare (skip for passive)
-    if !passive {
+    if passive {
+        // Passive declare: only assert the exchange exists, never create.
+        let exists = broker.exchanges.read().await.contains_key(&name);
+        if !exists {
+            send_channel_error(
+                writer,
+                channel,
+                NOT_FOUND,
+                "NOT_FOUND - no such exchange",
+                CLASS_EXCHANGE,
+                METHOD_EXCHANGE_DECLARE,
+            )
+            .await;
+            return;
+        }
+    } else {
+        // Active declare: validate name/type, then create if needed.
+
+        // Guard "amq." reserved namespace
+        if name.starts_with("amq.") {
+            send_channel_error(
+                writer,
+                channel,
+                ACCESS_REFUSED,
+                "ACCESS_REFUSED - exchange names starting with 'amq.' are reserved",
+                CLASS_EXCHANGE,
+                METHOD_EXCHANGE_DECLARE,
+            )
+            .await;
+            return;
+        }
+
+        // Permission check: configure permission needed for declare
         if super::auth_check::check_configure(
             conn_id,
             channel,
@@ -46,36 +79,46 @@ pub async fn handle_declare(
         {
             return;
         }
-    }
 
-    if passive {
-        let exists = broker.exchanges.read().await.contains_key(&name);
-        if !exists {
-            let close = build_channel_close(
-                NOT_FOUND,
-                "NOT_FOUND - no such exchange",
-                CLASS_EXCHANGE,
-                METHOD_EXCHANGE_DECLARE,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
+        // Validate exchange type
+        let kind = match ExchangeType::from_str(&kind_str) {
+            Some(k) => k,
+            None => {
+                send_channel_error(
+                    writer,
                     channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
+                    COMMAND_INVALID,
+                    "COMMAND_INVALID - unsupported exchange type",
+                    CLASS_EXCHANGE,
+                    METHOD_EXCHANGE_DECLARE,
+                )
                 .await;
-            let _ = writer.flush().await;
-            return;
-        }
-    } else {
-        let kind = ExchangeType::from_str(&kind_str).unwrap_or(ExchangeType::Direct);
+                return;
+            }
+        };
+
         let kind_byte = kind.to_byte();
         let mut exchanges = broker.exchanges.write().await;
         let is_new = !exchanges.contains_key(&name);
         exchanges
             .entry(name.clone())
             .or_insert_with(|| Exchange::new(name.clone(), kind, durable));
+
+        if is_new {
+            if let Some(c) = broker.cluster() {
+                let c = c.clone();
+                let name_clone = name.clone();
+                let kind_clone = kind_str.clone();
+                tokio::spawn(async move {
+                    c.broadcast(crate::cluster::ClusterFrame::DeclareExchange {
+                        name: name_clone,
+                        kind: kind_clone,
+                        durable,
+                    })
+                    .await;
+                });
+            }
+        }
 
         // WAL: persist durable exchange declarations
         if durable && is_new {
@@ -114,21 +157,15 @@ pub async fn handle_delete(
     let no_wait = flags & 0x02 != 0;
 
     if name.starts_with("amq.") {
-        let close = build_channel_close(
+        send_channel_error(
+            writer,
+            channel,
             ACCESS_REFUSED,
             "ACCESS_REFUSED - cannot delete default exchange",
             CLASS_EXCHANGE,
             METHOD_EXCHANGE_DELETE,
-        );
-        let _ = writer
-            .write_all(&encode_method_frame(
-                channel,
-                CLASS_CHANNEL,
-                METHOD_CHANNEL_CLOSE,
-                &close,
-            ))
-            .await;
-        let _ = writer.flush().await;
+        )
+        .await;
         return;
     }
 
@@ -220,15 +257,6 @@ pub async fn handle_unbind(
     let _ = writer.flush().await;
 }
 
-fn build_channel_close(reply_code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
-    let mut buf = Vec::new();
-    write_short(&mut buf, reply_code).unwrap();
-    write_shortstr(&mut buf, text).unwrap();
-    write_short(&mut buf, class_id).unwrap();
-    write_short(&mut buf, method_id).unwrap();
-    buf
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +291,7 @@ mod tests {
 
     #[test]
     fn channel_close_error_builds() {
+        use super::super::auth_check::build_channel_close;
         let args = build_channel_close(
             NOT_FOUND,
             "NOT_FOUND",

@@ -110,7 +110,9 @@ async fn delay_flush_task(broker: Broker) {
         for delayed in ready {
             if let Some(mut queue) = broker.queues.get_mut(&delayed.queue_name) {
                 let msg_id = delayed.message.id;
-                queue.messages.push_back(delayed.message);
+                queue
+                    .messages
+                    .push_back(crate::queue::message::QueueMessage::Full(delayed.message));
                 queue.last_activity = Instant::now();
                 debug!(
                     queue = delayed.queue_name.as_str(),

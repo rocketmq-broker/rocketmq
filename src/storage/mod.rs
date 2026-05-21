@@ -39,12 +39,15 @@ fn replay(broker: &Arc<BrokerState>, entries: &[WalEntry]) {
 
     // Second pass: replay state
     for entry in entries {
-        match entry.entry_type {
+        let res = match entry.entry_type {
             EntryType::DeclareQueue => replay_declare_queue(broker, &entry.data),
             EntryType::Enqueue => replay_enqueue(broker, &entry.data, &acked_ids),
-            EntryType::Ack => {} // Already processed in first pass
+            EntryType::Ack => Ok(()), // Already processed in first pass
             EntryType::DeclareExchange => replay_declare_exchange(broker, &entry.data),
             EntryType::Bind => replay_bind(broker, &entry.data),
+        };
+        if let Err(err) = res {
+            tracing::warn!(?entry.entry_type, %err, "Failed to replay WAL entry");
         }
     }
 
@@ -61,19 +64,109 @@ fn replay(broker: &Arc<BrokerState>, entries: &[WalEntry]) {
     );
 }
 
-fn replay_declare_queue(broker: &Arc<BrokerState>, data: &[u8]) {
-    if data.len() < 3 {
-        return;
+#[derive(Debug)]
+enum ReplayError {
+    UnexpectedEof,
+    InvalidUtf8,
+    InvalidExchangeType(u8),
+}
+
+impl std::fmt::Display for ReplayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnexpectedEof => write!(f, "unexpected end of file"),
+            Self::InvalidUtf8 => write!(f, "invalid UTF-8 string"),
+            Self::InvalidExchangeType(b) => write!(f, "invalid exchange type byte: {:#04x}", b),
+        }
     }
-    let name_len = u16::from_be_bytes([data[0], data[1]]) as usize;
-    if data.len() < 2 + name_len + 1 {
-        return;
+}
+
+impl std::error::Error for ReplayError {}
+
+type Result<T> = std::result::Result<T, ReplayError>;
+
+struct ReplayReader<'a> {
+    data: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> ReplayReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, offset: 0 }
     }
-    let name = match std::str::from_utf8(&data[2..2 + name_len]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return,
-    };
-    let durable = data[2 + name_len] == 1;
+
+    fn read_u8(&mut self) -> Result<u8> {
+        if self.offset + 1 > self.data.len() {
+            return Err(ReplayError::UnexpectedEof);
+        }
+        let val = self.data[self.offset];
+        self.offset += 1;
+        Ok(val)
+    }
+
+    fn read_u16(&mut self) -> Result<u16> {
+        if self.offset + 2 > self.data.len() {
+            return Err(ReplayError::UnexpectedEof);
+        }
+        let val = u16::from_be_bytes([self.data[self.offset], self.data[self.offset + 1]]);
+        self.offset += 2;
+        Ok(val)
+    }
+
+    fn read_u32(&mut self) -> Result<u32> {
+        if self.offset + 4 > self.data.len() {
+            return Err(ReplayError::UnexpectedEof);
+        }
+        let val = u32::from_be_bytes([
+            self.data[self.offset],
+            self.data[self.offset + 1],
+            self.data[self.offset + 2],
+            self.data[self.offset + 3],
+        ]);
+        self.offset += 4;
+        Ok(val)
+    }
+
+    fn read_u64(&mut self) -> Result<u64> {
+        if self.offset + 8 > self.data.len() {
+            return Err(ReplayError::UnexpectedEof);
+        }
+        let val = u64::from_be_bytes([
+            self.data[self.offset],
+            self.data[self.offset + 1],
+            self.data[self.offset + 2],
+            self.data[self.offset + 3],
+            self.data[self.offset + 4],
+            self.data[self.offset + 5],
+            self.data[self.offset + 6],
+            self.data[self.offset + 7],
+        ]);
+        self.offset += 8;
+        Ok(val)
+    }
+
+    fn read_slice(&mut self, len: usize) -> Result<&'a [u8]> {
+        if self.offset + len > self.data.len() {
+            return Err(ReplayError::UnexpectedEof);
+        }
+        let slice = &self.data[self.offset..self.offset + len];
+        self.offset += len;
+        Ok(slice)
+    }
+
+    fn read_string_u16(&mut self) -> Result<String> {
+        let len = self.read_u16()? as usize;
+        let bytes = self.read_slice(len)?;
+        std::str::from_utf8(bytes)
+            .map(|s| s.to_string())
+            .map_err(|_| ReplayError::InvalidUtf8)
+    }
+}
+
+fn replay_declare_queue(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
+    let mut reader = ReplayReader::new(data);
+    let name = reader.read_string_u16()?;
+    let durable = reader.read_u8()? == 1;
 
     // Only restore durable queues
     if durable {
@@ -86,90 +179,53 @@ fn replay_declare_queue(broker: &Arc<BrokerState>, data: &[u8]) {
         broker.auto_bind_default_exchange(&name);
         info!(queue = name.as_str(), "restored durable queue");
     }
+    Ok(())
 }
 
 fn replay_enqueue(
     broker: &Arc<BrokerState>,
     data: &[u8],
     acked_ids: &std::collections::HashSet<u64>,
-) {
-    let mut offset = 0;
+) -> Result<()> {
+    let mut reader = ReplayReader::new(data);
 
-    // queue name
-    if data.len() < offset + 2 {
-        return;
-    }
-    let queue_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
-    offset += 2;
-    if data.len() < offset + queue_len {
-        return;
-    }
-    let queue_name = match std::str::from_utf8(&data[offset..offset + queue_len]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return,
-    };
-    offset += queue_len;
-
-    // msg_id
-    if data.len() < offset + 8 {
-        return;
-    }
-    let msg_id = u64::from_be_bytes(data[offset..offset + 8].try_into().unwrap());
-    offset += 8;
+    let queue_name = reader.read_string_u16()?;
+    let msg_id = reader.read_u64()?;
 
     // Skip if already acked
     if acked_ids.contains(&msg_id) {
-        return;
+        return Ok(());
     }
 
-    // headers
-    if data.len() < offset + 4 {
-        return;
-    }
-    let headers_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
-    offset += 4;
-    if data.len() < offset + headers_len {
-        return;
-    }
-    let headers = data[offset..offset + headers_len].to_vec();
-    offset += headers_len;
+    let exchange = reader.read_string_u16()?;
+    let routing_key = reader.read_string_u16()?;
 
-    // body
-    if data.len() < offset + 4 {
-        return;
-    }
-    let body_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
-    offset += 4;
-    if data.len() < offset + body_len {
-        return;
-    }
-    let body = data[offset..offset + body_len].to_vec();
+    let headers_len = reader.read_u32()? as usize;
+    let headers = reader.read_slice(headers_len)?.to_vec();
+
+    let body_len = reader.read_u32()? as usize;
+    let body = reader.read_slice(body_len)?.to_vec();
 
     // Re-enqueue the message (only if queue exists)
     if let Some(mut queue) = broker.queues.get_mut(&queue_name) {
-        let msg = Message::new(msg_id, headers, body);
-        queue.messages.push_back(msg);
+        let mut msg = Message::new_routed(msg_id, headers, body, exchange, routing_key);
+        msg.redelivered = true; // recovered messages are marked as redelivered
+        queue
+            .messages
+            .push_back(crate::queue::message::QueueMessage::Full(msg));
         info!(queue = queue_name.as_str(), msg_id, "restored message");
     }
+    Ok(())
 }
 
-fn replay_declare_exchange(broker: &Arc<BrokerState>, data: &[u8]) {
-    if data.len() < 4 {
-        return;
-    }
-    let name_len = u16::from_be_bytes([data[0], data[1]]) as usize;
-    if data.len() < 2 + name_len + 2 {
-        return;
-    }
-    let name = match std::str::from_utf8(&data[2..2 + name_len]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return,
-    };
-    let kind_byte = data[2 + name_len];
-    let durable = data[2 + name_len + 1] == 1;
+fn replay_declare_exchange(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
+    let mut reader = ReplayReader::new(data);
+    let name = reader.read_string_u16()?;
+    let kind_byte = reader.read_u8()?;
+    let durable = reader.read_u8()? == 1;
 
     if !durable {
-        return; // Only restore durable exchanges
+        return Ok(()); // Only restore durable exchanges
     }
 
     let kind = match kind_byte {
@@ -177,7 +233,7 @@ fn replay_declare_exchange(broker: &Arc<BrokerState>, data: &[u8]) {
         0x01 => ExchangeType::Fanout,
         0x02 => ExchangeType::Topic,
         0x03 => ExchangeType::Headers,
-        _ => return,
+        _ => return Err(ReplayError::InvalidExchangeType(kind_byte)),
     };
 
     if let Ok(mut exchanges) = broker.exchanges.try_write() {
@@ -186,54 +242,14 @@ fn replay_declare_exchange(broker: &Arc<BrokerState>, data: &[u8]) {
             .or_insert_with(|| Exchange::new(name.clone(), kind, true));
         info!(exchange = name.as_str(), "restored durable exchange");
     }
+    Ok(())
 }
 
-fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) {
-    let mut offset = 0;
-
-    // exchange
-    if data.len() < offset + 2 {
-        return;
-    }
-    let ex_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
-    offset += 2;
-    if data.len() < offset + ex_len {
-        return;
-    }
-    let exchange = match std::str::from_utf8(&data[offset..offset + ex_len]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return,
-    };
-    offset += ex_len;
-
-    // queue
-    if data.len() < offset + 2 {
-        return;
-    }
-    let q_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
-    offset += 2;
-    if data.len() < offset + q_len {
-        return;
-    }
-    let queue = match std::str::from_utf8(&data[offset..offset + q_len]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return,
-    };
-    offset += q_len;
-
-    // routing_key
-    if data.len() < offset + 2 {
-        return;
-    }
-    let rk_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
-    offset += 2;
-    if data.len() < offset + rk_len {
-        return;
-    }
-    let routing_key = match std::str::from_utf8(&data[offset..offset + rk_len]) {
-        Ok(s) => s.to_string(),
-        Err(_) => return,
-    };
+fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
+    let mut reader = ReplayReader::new(data);
+    let exchange = reader.read_string_u16()?;
+    let queue = reader.read_string_u16()?;
+    let routing_key = reader.read_string_u16()?;
 
     if let Ok(mut exchanges) = broker.exchanges.try_write() {
         if let Some(ex) = exchanges.get_mut(&exchange) {
@@ -244,6 +260,7 @@ fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) {
             });
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -255,11 +272,11 @@ mod tests {
     fn tmp_wal(name: &str) -> PathBuf {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
-            .join("test_recovery");
+            .join("test_recovery")
+            .join(name.replace(".wal", ""));
+        let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(name);
-        let _ = fs::remove_file(&path);
-        path
+        dir.join("broker.wal")
     }
 
     #[tokio::test]
@@ -270,9 +287,10 @@ mod tests {
         // Write WAL entries
         wal.log_declare_queue("durable_q", true).unwrap();
         wal.log_declare_queue("transient_q", false).unwrap();
-        wal.log_enqueue("durable_q", 1, b"h:v\r\n", b"msg1")
+        wal.log_enqueue("durable_q", 1, "", "", b"h:v\r\n", b"msg1")
             .unwrap();
-        wal.log_enqueue("durable_q", 2, b"", b"msg2").unwrap();
+        wal.log_enqueue("durable_q", 2, "", "", b"", b"msg2")
+            .unwrap();
         wal.log_ack(1).unwrap(); // ack msg 1
 
         // Simulate restart: create fresh broker and replay
@@ -288,7 +306,7 @@ mod tests {
         let q = broker.queues.get("durable_q").unwrap();
         assert_eq!(q.messages.len(), 1); // msg2 only (msg1 was acked)
 
-        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[tokio::test]
@@ -310,6 +328,6 @@ mod tests {
         assert_eq!(ex.bindings.len(), 1);
         assert_eq!(ex.bindings[0].queue_name, "q1");
 
-        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

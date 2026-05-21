@@ -22,6 +22,11 @@ pub const TLS_CERT_PATH: &str = "data/tls/server.pem";
 /// Path to the TLS private key PEM file.
 pub const TLS_KEY_PATH: &str = "data/tls/server.key";
 
+// ─── Management HTTP API ──────────────────────────────
+
+/// Address and port for the management HTTP API (RabbitMQ-compatible).
+pub const MANAGEMENT_LISTEN_ADDR: &str = "127.0.0.1:15672";
+
 // ─── AMQP Delivery Pipeline ───────────────────────────
 
 /// Capacity of the per-connection AMQP delivery channel.
@@ -89,3 +94,57 @@ pub const DEFAULT_LOG_FILTER: &str = "rocketmq=info";
 
 /// Fallback heartbeat timeout when client doesn't negotiate one.
 pub const FALLBACK_HEARTBEAT_SECS: u64 = 60;
+
+// ─── Clustering ────────────────────────────────────────
+
+/// Get the Node ID from the environment (ROCKETMQ_NODE_ID), default to 1.
+pub fn get_node_id() -> u64 {
+    std::env::var("ROCKETMQ_NODE_ID")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+}
+
+/// Get the cluster internal bind address from the environment (ROCKETMQ_CLUSTER_ADDR), default to 127.0.0.1:5680.
+pub fn get_cluster_addr() -> String {
+    std::env::var("ROCKETMQ_CLUSTER_ADDR").unwrap_or_else(|_| "127.0.0.1:5680".to_string())
+}
+
+/// Get seed nodes from the environment (ROCKETMQ_CLUSTER_SEEDS), default to empty list.
+pub fn get_cluster_seeds() -> Vec<String> {
+    std::env::var("ROCKETMQ_CLUSTER_SEEDS")
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Get the AMQP bind address, honoring the environment variable (ROCKETMQ_AMQP_PORT) if present.
+pub fn get_amqp_listen_addr() -> String {
+    if let Ok(port) = std::env::var("ROCKETMQ_AMQP_PORT") {
+        format!("127.0.0.1:{}", port)
+    } else {
+        AMQP_LISTEN_ADDR.to_string()
+    }
+}
+
+/// Get the AMQPS bind address, honoring the environment variable (ROCKETMQ_AMQPS_PORT) if present.
+pub fn get_amqps_listen_addr() -> String {
+    if let Ok(port) = std::env::var("ROCKETMQ_AMQPS_PORT") {
+        format!("127.0.0.1:{}", port)
+    } else {
+        AMQPS_LISTEN_ADDR.to_string()
+    }
+}
+
+/// Get the Management HTTP bind address, honoring the environment variable (ROCKETMQ_MGMT_PORT) if present.
+pub fn get_mgmt_listen_addr() -> String {
+    if let Ok(port) = std::env::var("ROCKETMQ_MGMT_PORT") {
+        format!("127.0.0.1:{}", port)
+    } else {
+        MANAGEMENT_LISTEN_ADDR.to_string()
+    }
+}

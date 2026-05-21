@@ -14,6 +14,8 @@ use crate::core::amqp_codec::*;
 use crate::core::method::*;
 use crate::core::properties::BasicProperties;
 use crate::core::types::*;
+
+use super::auth_check::send_channel_error;
 use crate::queue::Message;
 use crate::state::Broker;
 
@@ -125,9 +127,11 @@ pub async fn handle_publish(
     }
 
     let is_persistent = properties.delivery_mode == Some(2);
+    let mut published_messages = Vec::new();
 
     for queue_name in &target_queues {
         let msg_id = broker.alloc_msg_id();
+        published_messages.push((queue_name.clone(), msg_id));
 
         let mut queue_ref = match broker.queues.get_mut(queue_name.as_str()) {
             Some(q) => q,
@@ -161,20 +165,47 @@ pub async fn handle_publish(
         properties.encode(&mut prop_bytes).unwrap_or_default();
 
         // WAL: persist message before enqueueing (durable queue + delivery_mode=2)
+        let mut disk_ref = None;
         if queue.options.durable && is_persistent {
             if let Some(wal) = broker.wal() {
-                let _ = wal.log_enqueue(queue_name, msg_id, &prop_bytes, body);
+                if let Ok((seg_id, offset, length)) = wal.log_enqueue(
+                    queue_name,
+                    msg_id,
+                    exchange_name,
+                    routing_key,
+                    &prop_bytes,
+                    body,
+                ) {
+                    disk_ref = Some((seg_id, offset, length));
+                }
             }
         }
 
-        let msg = Message {
-            id: msg_id,
-            headers: prop_bytes,
-            body: body.to_vec(),
-            priority: effective_priority,
-            expiration,
-            redelivered: false,
-            delivery_count: 0,
+        let msg = if let Some((segment_id, offset, length)) = disk_ref {
+            crate::queue::message::QueueMessage::Ref(crate::queue::message::MessageRef {
+                id: msg_id,
+                segment_id,
+                offset,
+                length,
+                priority: effective_priority,
+                expiration,
+                redelivered: false,
+                delivery_count: 0,
+                exchange: exchange_name.to_string(),
+                routing_key: routing_key.to_string(),
+            })
+        } else {
+            crate::queue::message::QueueMessage::Full(Message {
+                id: msg_id,
+                headers: prop_bytes,
+                body: body.to_vec(),
+                priority: effective_priority,
+                expiration,
+                redelivered: false,
+                delivery_count: 0,
+                exchange: exchange_name.to_string(),
+                routing_key: routing_key.to_string(),
+            })
         };
 
         queue.last_activity = Instant::now();
@@ -185,10 +216,28 @@ pub async fn handle_publish(
             queue = queue_name.as_str(),
             "queued via AMQP"
         );
+        crate::metrics::record_published(&queue_name);
+
+        // Background replication for non-confirm publishes
+        if confirm_tag.is_none() {
+            if let Some(c) = broker.cluster() {
+                let c = c.clone();
+                let q_name = queue_name.clone();
+                let body_vec = body.to_vec();
+                tokio::spawn(async move {
+                    let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
+                });
+            }
+        }
     }
 
     // Send confirm ack after all queues received the message
     if let Some(tag) = confirm_tag {
+        if let Some(c) = broker.cluster() {
+            for (queue_name, msg_id) in &published_messages {
+                let _ = c.replicate_publish(queue_name, *msg_id, body).await;
+            }
+        }
         send_confirm_ack(channel, tag, writer).await;
     }
 }
@@ -291,21 +340,15 @@ pub async fn handle_consume(
     if exclusive {
         if let Some(q) = broker.queues.get(&queue_name) {
             if !q.consumer_tags.is_empty() {
-                let close = build_channel_close(
+                send_channel_error(
+                    writer,
+                    channel,
                     ACCESS_REFUSED,
                     "ACCESS_REFUSED - exclusive consumer exists",
                     CLASS_BASIC,
                     METHOD_BASIC_CONSUME,
-                );
-                let _ = writer
-                    .write_all(&encode_method_frame(
-                        channel,
-                        CLASS_CHANNEL,
-                        METHOD_CHANNEL_CLOSE,
-                        &close,
-                    ))
-                    .await;
-                let _ = writer.flush().await;
+                )
+                .await;
                 return;
             }
         }
@@ -314,21 +357,15 @@ pub async fn handle_consume(
     let assigned_tag = match broker.queues.get_mut(&queue_name) {
         Some(mut queue) => queue.add_consumer(conn_id, channel, consumer_tag, None),
         None => {
-            let close = build_channel_close(
+            send_channel_error(
+                writer,
+                channel,
                 NOT_FOUND,
                 "NOT_FOUND - no such queue",
                 CLASS_BASIC,
                 METHOD_BASIC_CONSUME,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
-                    channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
-                .await;
-            let _ = writer.flush().await;
+            )
+            .await;
             return;
         }
     };
@@ -405,7 +442,18 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
             if let Some(wal) = broker.wal() {
                 let _ = wal.log_ack(delivery_tag);
             }
+            crate::metrics::record_acked();
             info!(conn_id, delivery_tag, "acked");
+
+            // Replicate Ack to peers
+            if let Some(c) = broker.cluster() {
+                let c = c.clone();
+                let q_name = entry.key().clone();
+                tokio::spawn(async move {
+                    let _ = c.replicate_ack(&q_name, delivery_tag).await;
+                });
+            }
+
             return;
         }
     }
@@ -433,7 +481,10 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
             if requeue {
                 msg.redelivered = true;
                 msg.delivery_count += 1;
-                entry.value_mut().messages.push_front(msg);
+                entry
+                    .value_mut()
+                    .messages
+                    .push_front(crate::queue::message::QueueMessage::Full(msg));
                 info!(conn_id, delivery_tag, "rejected+requeued");
             } else {
                 info!(conn_id, delivery_tag, "rejected+discarded");
@@ -466,7 +517,10 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
             if requeue {
                 msg.redelivered = true;
                 msg.delivery_count += 1;
-                entry.value_mut().messages.push_front(msg);
+                entry
+                    .value_mut()
+                    .messages
+                    .push_front(crate::queue::message::QueueMessage::Full(msg));
                 info!(conn_id, delivery_tag, "nacked+requeued");
             } else {
                 info!(conn_id, delivery_tag, "nacked+discarded");
@@ -492,13 +546,43 @@ pub async fn handle_get(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_ack = flags & 0x01 != 0;
 
-    let msg = broker
+    if !broker.queues.contains_key(&queue_name) {
+        send_channel_error(
+            writer,
+            channel,
+            NOT_FOUND,
+            "NOT_FOUND - no such queue",
+            CLASS_BASIC,
+            METHOD_BASIC_GET,
+        )
+        .await;
+        return;
+    }
+
+    let q_msg = broker
         .queues
         .get_mut(&queue_name)
         .and_then(|mut q| q.value_mut().messages.pop_front());
 
-    match msg {
-        Some(msg) => {
+    match q_msg {
+        Some(q_msg) => {
+            let msg = match q_msg.resolve(broker.wal().expect("WAL must be initialized")) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!("Failed to resolve basic.get message: {}", e);
+                    let mut reply_args = Vec::new();
+                    write_shortstr(&mut reply_args, "").unwrap();
+                    let reply = encode_method_frame(
+                        channel,
+                        CLASS_BASIC,
+                        METHOD_BASIC_GET_EMPTY,
+                        &reply_args,
+                    );
+                    let _ = writer.write_all(&reply).await;
+                    let _ = writer.flush().await;
+                    return;
+                }
+            };
             let delivery_tag = msg.id;
             let msg_count = broker
                 .queues
@@ -510,8 +594,8 @@ pub async fn handle_get(
             let mut reply_args = Vec::new();
             write_longlong(&mut reply_args, delivery_tag).unwrap();
             write_octet(&mut reply_args, if msg.redelivered { 1 } else { 0 }).unwrap();
-            write_shortstr(&mut reply_args, "").unwrap(); // exchange
-            write_shortstr(&mut reply_args, "").unwrap(); // routing_key
+            write_shortstr(&mut reply_args, &msg.exchange).unwrap();
+            write_shortstr(&mut reply_args, &msg.routing_key).unwrap();
             write_long(&mut reply_args, msg_count).unwrap();
 
             let method =
@@ -593,15 +677,6 @@ pub async fn handle_recover(
 }
 
 // ─── Helpers ──────────────────────────────────────────
-
-fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
-    let mut buf = Vec::new();
-    write_short(&mut buf, code).unwrap();
-    write_shortstr(&mut buf, text).unwrap();
-    write_short(&mut buf, class_id).unwrap();
-    write_short(&mut buf, method_id).unwrap();
-    buf
-}
 
 /// Build a Basic.Deliver method frame (server→client).
 pub fn build_deliver_args(

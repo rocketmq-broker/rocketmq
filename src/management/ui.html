@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RocketMQ Management</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0f1117;
+        --bg2: #181a20;
+        --bg3: #1e2028;
+        --bg4: #23252d;
+        --bd: #2a2d37;
+        --ba: #5b5eff;
+        --t: #e4e5e9;
+        --tm: #8b8d97;
+        --td: #5c5e6a;
+        --ac: #5b5eff;
+        --g: #22c55e;
+        --gd: rgba(34, 197, 94, 0.12);
+        --r: #ef4444;
+        --rd: rgba(239, 68, 68, 0.12);
+        --o: #f59e0b;
+        --od: rgba(245, 158, 11, 0.12);
+        --c: #06b6d4;
+        --rad: 10px;
+        --rs: 6px;
+        --tr: 0.15s ease;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          "Inter",
+          -apple-system,
+          sans-serif;
+        background: var(--bg);
+        color: var(--t);
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+      }
+      header {
+        background: var(--bg2);
+        border-bottom: 1px solid var(--bd);
+        padding: 0 24px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        font-size: 16px;
+      }
+      .logo-icon {
+        width: 28px;
+        height: 28px;
+        background: linear-gradient(135deg, var(--ac), #818cf8);
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+      }
+      .hm {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 13px;
+        color: var(--tm);
+      }
+      .sd {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--g);
+        display: inline-block;
+        animation: p 2s infinite;
+      }
+      @keyframes p {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      nav {
+        background: var(--bg2);
+        border-bottom: 1px solid var(--bd);
+        padding: 0 24px;
+        display: flex;
+        gap: 2px;
+        overflow-x: auto;
+      }
+      nav button {
+        background: 0 0;
+        border: none;
+        color: var(--tm);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 12px 16px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all var(--tr);
+        white-space: nowrap;
+      }
+      nav button:hover {
+        color: var(--t);
+      }
+      nav button.active {
+        color: var(--ac);
+        border-bottom-color: var(--ac);
+      }
+      main {
+        padding: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      .sg {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      .sc {
+        background: var(--bg2);
+        border: 1px solid var(--bd);
+        border-radius: var(--rad);
+        padding: 16px 18px;
+        transition: border-color var(--tr);
+      }
+      .sc:hover {
+        border-color: var(--ba);
+      }
+      .sl {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--tm);
+        margin-bottom: 6px;
+      }
+      .sv {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -1px;
+        font-variant-numeric: tabular-nums;
+      }
+      .sv.green {
+        color: var(--g);
+      }
+      .sv.cyan {
+        color: var(--c);
+      }
+      .sv.orange {
+        color: var(--o);
+      }
+      .pn {
+        background: var(--bg2);
+        border: 1px solid var(--bd);
+        border-radius: var(--rad);
+        overflow: hidden;
+        margin-bottom: 24px;
+      }
+      .ph {
+        padding: 14px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--bd);
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pt {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th {
+        text-align: left;
+        padding: 10px 18px;
+        font-weight: 500;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--tm);
+        border-bottom: 1px solid var(--bd);
+        background: var(--bg);
+      }
+      td {
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--bd);
+        transition: background var(--tr);
+      }
+      tr:hover td {
+        background: var(--bg3);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .bg {
+        background: var(--gd);
+        color: var(--g);
+      }
+      .br {
+        background: var(--rd);
+        color: var(--r);
+      }
+      .bo {
+        background: var(--od);
+        color: var(--o);
+      }
+      .btn {
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        padding: 6px 14px;
+        border-radius: var(--rs);
+        border: 1px solid var(--bd);
+        background: var(--bg4);
+        color: var(--t);
+        cursor: pointer;
+        transition: all var(--tr);
+      }
+      .btn:hover {
+        border-color: var(--tm);
+      }
+      .bd {
+        border-color: var(--r);
+        color: var(--r);
+      }
+      .bd:hover {
+        background: var(--rd);
+      }
+      .bp {
+        background: var(--ac);
+        border-color: var(--ac);
+        color: #fff;
+      }
+      .bp:hover {
+        opacity: 0.85;
+      }
+      .bs {
+        padding: 4px 10px;
+        font-size: 11px;
+      }
+      .mo {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 200;
+        backdrop-filter: blur(4px);
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s;
+      }
+      .mo.show {
+        opacity: 1;
+        visibility: visible;
+      }
+      .md {
+        background: var(--bg2);
+        border: 1px solid var(--bd);
+        border-radius: var(--rad);
+        padding: 24px;
+        min-width: 380px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        transform: translateY(10px);
+        transition: transform 0.2s;
+      }
+      .mo.show .md {
+        transform: translateY(0);
+      }
+      .md h3 {
+        font-size: 16px;
+        margin-bottom: 16px;
+      }
+      .md label {
+        display: block;
+        font-size: 12px;
+        color: var(--tm);
+        margin-bottom: 4px;
+        margin-top: 12px;
+      }
+      .md input,
+      .md select,
+      .md textarea {
+        width: 100%;
+        padding: 8px 12px;
+        background: var(--bg4);
+        border: 1px solid var(--bd);
+        border-radius: var(--rs);
+        color: var(--t);
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+        transition: border-color var(--tr);
+      }
+      .md input:focus,
+      .md textarea:focus {
+        border-color: var(--ac);
+      }
+      .md textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .ma {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 20px;
+      }
+      .empty {
+        padding: 40px;
+        text-align: center;
+        color: var(--td);
+        font-size: 13px;
+      }
+      .mr {
+        background: var(--bg);
+        padding: 16px;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--tm);
+        white-space: pre-wrap;
+        max-height: 500px;
+        overflow-y: auto;
+      }
+      .section {
+        display: none;
+      }
+      .section.active {
+        display: block;
+      }
+      canvas {
+        width: 100% !important;
+        height: 200px !important;
+        margin-top: 12px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: var(--bg2);
+        border: 1px solid var(--g);
+        color: var(--g);
+        padding: 12px 20px;
+        border-radius: var(--rs);
+        font-size: 13px;
+        z-index: 300;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+      }
+      .toast.show {
+        opacity: 1;
+      }
+      .toast.err {
+        border-color: var(--r);
+        color: var(--r);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🚀</div>
+        <span>RocketMQ</span>
+      </div>
+      <div class="hm">
+        <span id="hv"></span><span><span class="sd"></span> Running</span>
+      </div>
+    </header>
+    <nav id="nav">
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="queues">Queues</button>
+      <button data-tab="exchanges">Exchanges</button>
+      <button data-tab="bindings">Bindings</button>
+      <button data-tab="connections">Connections</button>
+      <button data-tab="publish">Publish</button>
+      <button data-tab="users">Users</button>
+      <button data-tab="permissions">Permissions</button>
+      <button data-tab="metrics">Metrics</button>
+    </nav>
+    <main>
+      <!-- Overview -->
+      <div class="section active" id="sec-overview">
+        <div class="sg" id="os"></div>
+        <div class="pn">
+          <div class="ph"><span class="pt">Listeners</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Protocol</th>
+                <th>Address</th>
+              </tr>
+            </thead>
+            <tbody id="lb"></tbody>
+          </table>
+        </div>
+        <div class="pn">
+          <div class="ph"><span class="pt">Message Rates (last 30s)</span></div>
+          <canvas id="rate-chart"></canvas>
+        </div>
+      </div>
+      <!-- Queues -->
+      <div class="section" id="sec-queues">
+        <div class="pn">
+          <div class="ph">
+            <span class="pt">Queues</span><span id="qc" class="badge bg"></span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Ready</th>
+                <th>Consumers</th>
+                <th>Inflight</th>
+                <th>Durable</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="qb"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Exchanges -->
+      <div class="section" id="sec-exchanges">
+        <div class="pn">
+          <div class="ph"><span class="pt">Exchanges</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Durable</th>
+                <th>Bindings</th>
+              </tr>
+            </thead>
+            <tbody id="eb"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Bindings -->
+      <div class="section" id="sec-bindings">
+        <div class="pn">
+          <div class="ph"><span class="pt">Bindings</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Destination</th>
+                <th>Routing Key</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody id="bb"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Connections -->
+      <div class="section" id="sec-connections">
+        <div class="pn">
+          <div class="ph"><span class="pt">Connections</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Peer</th>
+                <th>User</th>
+                <th>Channels</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cb"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Publish -->
+      <div class="section" id="sec-publish">
+        <div class="pn">
+          <div class="ph"><span class="pt">Publish Message</span></div>
+          <div style="padding: 18px">
+            <label
+              style="
+                display: block;
+                font-size: 12px;
+                color: var(--tm);
+                margin-bottom: 4px;
+              "
+              >Exchange</label
+            >
+            <select
+              id="pub-ex"
+              style="
+                width: 100%;
+                padding: 8px 12px;
+                background: var(--bg4);
+                border: 1px solid var(--bd);
+                border-radius: var(--rs);
+                color: var(--t);
+                font-size: 13px;
+                margin-bottom: 12px;
+              "
+            ></select>
+            <label
+              style="
+                display: block;
+                font-size: 12px;
+                color: var(--tm);
+                margin-bottom: 4px;
+              "
+              >Routing Key</label
+            >
+            <input
+              id="pub-rk"
+              placeholder="routing.key"
+              style="
+                width: 100%;
+                padding: 8px 12px;
+                background: var(--bg4);
+                border: 1px solid var(--bd);
+                border-radius: var(--rs);
+                color: var(--t);
+                font-size: 13px;
+                margin-bottom: 12px;
+              "
+            />
+            <label
+              style="
+                display: block;
+                font-size: 12px;
+                color: var(--tm);
+                margin-bottom: 4px;
+              "
+              >Payload</label
+            >
+            <textarea
+              id="pub-body"
+              placeholder='{"hello":"world"}'
+              style="
+                width: 100%;
+                padding: 8px 12px;
+                background: var(--bg4);
+                border: 1px solid var(--bd);
+                border-radius: var(--rs);
+                color: var(--t);
+                font-family: monospace;
+                font-size: 13px;
+                min-height: 120px;
+                resize: vertical;
+                margin-bottom: 12px;
+              "
+            ></textarea>
+            <button class="btn bp" onclick="doPublish()">
+              Publish Message
+            </button>
+            <span
+              id="pub-result"
+              style="margin-left: 12px; font-size: 12px; color: var(--g)"
+            ></span>
+          </div>
+        </div>
+      </div>
+      <!-- Users -->
+      <div class="section" id="sec-users">
+        <div class="pn">
+          <div class="ph">
+            <span class="pt">Users</span>
+            <button class="btn bp bs" onclick="showModal('mu')">
+              + Add User
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Tags</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ub"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Permissions -->
+      <div class="section" id="sec-permissions">
+        <div class="pn">
+          <div class="ph"><span class="pt">Permissions</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>VHost</th>
+                <th>Configure</th>
+                <th>Write</th>
+                <th>Read</th>
+              </tr>
+            </thead>
+            <tbody id="pb"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Metrics -->
+      <div class="section" id="sec-metrics">
+        <div class="pn">
+          <div class="ph">
+            <span class="pt">OpenTelemetry Metrics</span>
+            <button class="btn bs" onclick="loadMetrics()">⟳ Refresh</button>
+          </div>
+          <div class="mr" id="mr">Loading...</div>
+        </div>
+      </div>
+    </main>
+    <!-- Add User Modal -->
+    <div class="mo" id="mu">
+      <div class="md">
+        <h3>Add User</h3>
+        <label>Username</label><input id="mu-u" placeholder="username" />
+        <label>Password</label
+        ><input id="mu-p" type="password" placeholder="password" />
+        <label>Tags</label
+        ><select id="mu-t">
+          <option value="">None</option>
+          <option value="administrator">Administrator</option>
+          <option value="monitoring">Monitoring</option>
+          <option value="management">Management</option>
+        </select>
+        <div class="ma">
+          <button class="btn" onclick="hideModal('mu')">Cancel</button
+          ><button class="btn bp" onclick="createUser()">Create</button>
+        </div>
+      </div>
+    </div>
+    <!-- Get Messages Modal -->
+    <div class="mo" id="gm">
+      <div class="md">
+        <h3>Messages from <span id="gm-q"></span></h3>
+        <label>Count</label
+        ><input id="gm-c" type="number" value="5" min="1" max="100" />
+        <label>Mode</label
+        ><select id="gm-m">
+          <option value="ack_requeue_true">Peek (requeue)</option>
+          <option value="ack_requeue_false">Consume (remove)</option>
+        </select>
+        <div class="ma">
+          <button class="btn" onclick="hideModal('gm')">Cancel</button
+          ><button class="btn bp" onclick="doGetMessages()">Get</button>
+        </div>
+        <div
+          id="gm-results"
+          style="margin-top: 16px; max-height: 300px; overflow-y: auto"
+        ></div>
+      </div>
+    </div>
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+    <script>
+      const A = "";
+      let rateHistory = [];
+      const MAX_RATE = 30;
+      // Nav
+      document.getElementById("nav").onclick = (e) => {
+        if (e.target.tagName !== "BUTTON") return;
+        document
+          .querySelectorAll("nav button")
+          .forEach((b) => b.classList.remove("active"));
+        document
+          .querySelectorAll(".section")
+          .forEach((s) => s.classList.remove("active"));
+        e.target.classList.add("active");
+        document
+          .getElementById("sec-" + e.target.dataset.tab)
+          .classList.add("active");
+        refresh();
+      };
+      // API
+      async function api(p, o = {}) {
+        const r = await fetch(A + p, {
+          headers: { "Content-Type": "application/json" },
+          ...o,
+        });
+        if (!r.ok && o.method !== "DELETE") throw new Error(await r.text());
+        if (r.status === 204 || r.status === 201) return null;
+        return r.json();
+      }
+      // Toast
+      function toast(msg, err) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.className = "toast" + (err ? " err" : "") + " show";
+        setTimeout(() => t.classList.remove("show"), 3000);
+      }
+      function showModal(id) {
+        document.getElementById(id).classList.add("show");
+      }
+      function hideModal(id) {
+        document.getElementById(id).classList.remove("show");
+      }
+      function esc(s) {
+        const d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+      }
+      // Overview
+      async function loadOverview() {
+        const d = await api("/api/overview");
+        document.getElementById("hv").textContent = `v${d.version}`;
+        const s = crate_metrics();
+        document.getElementById("os").innerHTML = [
+          { l: "Queues", v: d.queue_count, c: "green" },
+          { l: "Connections", v: d.connection_count, c: "cyan" },
+          { l: "Exchanges", v: d.exchange_count, c: "" },
+          { l: "Messages", v: d.message_count, c: "orange" },
+          { l: "Published", v: s.pub, c: "" },
+          { l: "Delivered", v: s.del, c: "" },
+          { l: "Acked", v: s.ack, c: "green" },
+          { l: "Channels", v: s.cho - s.chc, c: "cyan" },
+        ]
+          .map(
+            (s) =>
+              `<div class="sc"><div class="sl">${s.l}</div><div class="sv ${s.c}">${s.v}</div></div>`,
+          )
+          .join("");
+        document.getElementById("lb").innerHTML = d.amqp_listeners
+          .map(
+            (l) =>
+              `<tr><td><span class="badge bg">${l.protocol}</span></td><td>${l.address}</td></tr>`,
+          )
+          .join("");
+        rateHistory.push({
+          t: Date.now(),
+          msgs: d.message_count,
+          conns: d.connection_count,
+        });
+        if (rateHistory.length > MAX_RATE) rateHistory.shift();
+        drawChart();
+      }
+      let _ms = { pub: 0, del: 0, ack: 0, cho: 0, chc: 0 };
+      function crate_metrics() {
+        return _ms;
+      }
+      async function fetchCounters() {
+        try {
+          const t = await (await fetch(A + "/api/metrics")).text();
+          const g = (n) => {
+            const m = t.match(new RegExp(n + "\\s+(\\d+)"));
+            return m ? parseInt(m[1]) : 0;
+          };
+          _ms = {
+            pub: g("amqp_messages_published_total"),
+            del: g("amqp_messages_delivered_total"),
+            ack: g("amqp_messages_acked_total"),
+            cho: g("amqp_channels_opened_total"),
+            chc: g("amqp_channels_closed_total"),
+          };
+        } catch (e) {}
+      }
+      // Chart
+      function drawChart() {
+        const c = document.getElementById("rate-chart");
+        if (!c || !c.getContext) return;
+        const ctx = c.getContext("2d");
+        const W = (c.width = c.offsetWidth);
+        const H = (c.height = 200);
+        ctx.clearRect(0, 0, W, H);
+        if (rateHistory.length < 2) return;
+        const vals = rateHistory.map((r) => r.msgs);
+        const max = Math.max(...vals, 1);
+        ctx.strokeStyle = "#5b5eff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const step = W / (vals.length - 1);
+        vals.forEach((v, i) => {
+          const x = i * step;
+          const y = H - 20 - (v / max) * (H - 40);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.fillStyle = "var(--tm)";
+        ctx.font = "11px Inter";
+        ctx.fillText("Messages: " + vals[vals.length - 1], 8, 16);
+      }
+      // Queues
+      async function loadQueues() {
+        const q = await api("/api/queues");
+        document.getElementById("qc").textContent = q.length;
+        document.getElementById("qb").innerHTML =
+          q.length === 0
+            ? '<tr><td colspan="6" class="empty">No queues</td></tr>'
+            : q
+                .map(
+                  (
+                    q,
+                  ) => `<tr><td><strong>${esc(q.name)}</strong></td><td>${q.messages}</td><td>${q.consumers}</td><td>${q.inflight}</td>
+<td>${q.durable ? '<span class="badge bg">durable</span>' : '<span class="badge bo">transient</span>'}</td>
+<td><button class="btn bs" onclick="getMsg('${esc(q.name)}')">Get</button>
+<button class="btn bs bo" onclick="purgeQ('${esc(q.name)}')">Purge</button>
+<button class="btn bs bd" onclick="delQ('${esc(q.name)}')">Delete</button></td></tr>`,
+                )
+                .join("");
+      }
+      // Exchanges
+      async function loadExchanges() {
+        const e = await api("/api/exchanges");
+        document.getElementById("eb").innerHTML = e
+          .map(
+            (x) => `<tr><td>${esc(x.name) || "<em>(default)</em>"}</td>
+<td><span class="badge bg">${x.type}</span></td><td>${x.durable ? "✓" : "–"}</td><td>${x.bindings}</td></tr>`,
+          )
+          .join("");
+      }
+      // Bindings
+      async function loadBindings() {
+        const b = await api("/api/bindings");
+        document.getElementById("bb").innerHTML =
+          b.length === 0
+            ? '<tr><td colspan="4" class="empty">No bindings</td></tr>'
+            : b
+                .map(
+                  (
+                    x,
+                  ) => `<tr><td>${esc(x.source) || "<em>(default)</em>"}</td><td>${esc(x.destination)}</td>
+<td><code>${esc(x.routing_key)}</code></td><td>${x.destination_type}</td></tr>`,
+                )
+                .join("");
+      }
+      // Connections
+      async function loadConnections() {
+        const c = await api("/api/connections");
+        document.getElementById("cb").innerHTML =
+          c.length === 0
+            ? '<tr><td colspan="6" class="empty">No connections</td></tr>'
+            : c
+                .map(
+                  (
+                    x,
+                  ) => `<tr><td>${x.id}</td><td><code>${esc(x.peer_address)}</code></td><td>${esc(x.user)}</td>
+<td>${x.channels}</td><td><span class="badge bg">open</span></td>
+<td><button class="btn bd bs" onclick="closeC(${x.id})">Close</button></td></tr>`,
+                )
+                .join("");
+      }
+      // Users
+      async function loadUsers() {
+        const u = await api("/api/users");
+        document.getElementById("ub").innerHTML = u
+          .map(
+            (x) => `<tr><td><strong>${esc(x.name)}</strong></td>
+<td>${x.tags.map((t) => `<span class="badge bg">${t}</span>`).join(" ")}</td>
+<td><button class="btn bd bs" onclick="delU('${esc(x.name)}')">Delete</button></td></tr>`,
+          )
+          .join("");
+      }
+      // Permissions
+      async function loadPermissions() {
+        const p = await api("/api/permissions");
+        document.getElementById("pb").innerHTML = p
+          .map(
+            (x) => `<tr><td>${esc(x.user)}</td><td>${esc(x.vhost)}</td>
+<td><code>${esc(x.configure)}</code></td><td><code>${esc(x.write)}</code></td><td><code>${esc(x.read)}</code></td></tr>`,
+          )
+          .join("");
+      }
+      // Metrics
+      async function loadMetrics() {
+        document.getElementById("mr").textContent = await (
+          await fetch(A + "/api/metrics")
+        ).text();
+      }
+      // Publish
+      async function loadPublish() {
+        const e = await api("/api/exchanges");
+        document.getElementById("pub-ex").innerHTML = e
+          .map(
+            (x) =>
+              `<option value="${esc(x.name)}">${esc(x.name) || "(default)"} [${x.type}]</option>`,
+          )
+          .join("");
+      }
+      async function doPublish() {
+        const ex = document.getElementById("pub-ex").value;
+        const rk = document.getElementById("pub-rk").value;
+        const body = document.getElementById("pub-body").value;
+        try {
+          const r = await api(
+            `/api/exchanges/${encodeURIComponent(ex)}/publish`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                routing_key: rk,
+                payload: body,
+                properties: {},
+              }),
+            },
+          );
+          toast(
+            r.routed
+              ? `Published to ${r.queues} queue(s)`
+              : "Not routed (no matching bindings)",
+            !r.routed,
+          );
+          document.getElementById("pub-result").textContent = r.routed
+            ? `✓ Routed to ${r.queues} queue(s)`
+            : "⚠ No route";
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+      // Actions
+      async function delQ(n) {
+        if (!confirm(`Delete queue "${n}"?`)) return;
+        await api(`/api/queues/${n}`, { method: "DELETE" });
+        toast("Queue deleted");
+        loadQueues();
+      }
+      async function purgeQ(n) {
+        if (!confirm(`Purge all messages from "${n}"?`)) return;
+        const r = await api(`/api/queues/${n}/purge`, { method: "DELETE" });
+        toast(`Purged ${r.messages_purged} messages`);
+        loadQueues();
+      }
+      async function closeC(id) {
+        if (!confirm(`Close connection ${id}?`)) return;
+        await api(`/api/connections/${id}`, { method: "DELETE" });
+        toast("Connection closed");
+        loadConnections();
+      }
+      async function delU(n) {
+        if (!confirm(`Delete user "${n}"?`)) return;
+        await api(`/api/users/${n}`, { method: "DELETE" });
+        toast("User deleted");
+        loadUsers();
+      }
+      async function createUser() {
+        const u = document.getElementById("mu-u").value.trim();
+        const p = document.getElementById("mu-p").value;
+        const t = document.getElementById("mu-t").value;
+        if (!u || !p) return toast("Username and password required", true);
+        try {
+          await api("/api/users", {
+            method: "POST",
+            body: JSON.stringify({
+              username: u,
+              password: p,
+              tags: t ? [t] : [],
+            }),
+          });
+          hideModal("mu");
+          toast("User created");
+          loadUsers();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+      function getMsg(q) {
+        document.getElementById("gm-q").textContent = q;
+        document.getElementById("gm-results").innerHTML = "";
+        showModal("gm");
+      }
+      async function doGetMessages() {
+        const q = document.getElementById("gm-q").textContent;
+        const c = parseInt(document.getElementById("gm-c").value) || 1;
+        const m = document.getElementById("gm-m").value;
+        const msgs = await api(`/api/queues/${encodeURIComponent(q)}/get`, {
+          method: "POST",
+          body: JSON.stringify({ count: c, ack_mode: m }),
+        });
+        document.getElementById("gm-results").innerHTML =
+          msgs.length === 0
+            ? '<div class="empty">No messages</div>'
+            : msgs
+                .map(
+                  (
+                    m,
+                    i,
+                  ) => `<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rs);padding:12px;margin-bottom:8px">
+<div style="font-size:11px;color:var(--tm);margin-bottom:6px">#${i + 1} · ${m.payload_bytes} bytes · ${m.message_count} remaining</div>
+<pre style="font-size:12px;color:var(--t);white-space:pre-wrap;word-break:break-all">${esc(m.payload)}</pre></div>`,
+                )
+                .join("");
+        loadQueues();
+      }
+      // Refresh
+      function refresh() {
+        const a = document.querySelector("nav button.active").dataset.tab;
+        fetchCounters().then(() => {
+          switch (a) {
+            case "overview":
+              loadOverview();
+              break;
+            case "queues":
+              loadQueues();
+              break;
+            case "exchanges":
+              loadExchanges();
+              break;
+            case "bindings":
+              loadBindings();
+              break;
+            case "connections":
+              loadConnections();
+              break;
+            case "publish":
+              loadPublish();
+              break;
+            case "users":
+              loadUsers();
+              break;
+            case "permissions":
+              loadPermissions();
+              break;
+            case "metrics":
+              loadMetrics();
+              break;
+          }
+        });
+      }
+      setInterval(refresh, 5000);
+      refresh();
+    </script>
+  </body>
+</html>

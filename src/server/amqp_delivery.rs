@@ -90,9 +90,16 @@ async fn deliver_round(broker: &Broker) {
             }
 
             // Pop message
-            let msg = match queue.messages.pop_front() {
+            let q_msg = match queue.messages.pop_front() {
                 Some(m) => m,
                 None => break,
+            };
+            let msg = match q_msg.resolve(broker.wal().expect("WAL must be initialized")) {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to resolve message payload from segments");
+                    continue;
+                }
             };
 
             let delivery_tag = msg.id;
@@ -106,7 +113,13 @@ async fn deliver_round(broker: &Broker) {
             };
 
             // Build AMQP frames from borrowed msg — no body clone
-            let deliver_args = build_deliver_args(consumer_tag, delivery_tag, false, "", "");
+            let deliver_args = build_deliver_args(
+                consumer_tag,
+                delivery_tag,
+                msg.redelivered,
+                &msg.exchange,
+                &msg.routing_key,
+            );
             let method_frame =
                 encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_DELIVER, &deliver_args);
             let header_frame =
@@ -137,12 +150,15 @@ async fn deliver_round(broker: &Broker) {
                 if handle.amqp_tx.try_send(combined).is_err() {
                     // Channel full or closed — requeue message
                     if let Some(msg) = queue.inflight.remove(&delivery_tag) {
-                        queue.messages.push_front(msg);
+                        queue
+                            .messages
+                            .push_front(crate::queue::message::QueueMessage::Full(msg));
                     }
                     warn!(conn_id, delivery_tag, "delivery channel full, requeued");
                     break;
                 }
                 delivered += 1;
+                crate::metrics::record_delivered(&queue_name);
                 debug!(
                     conn_id,
                     channel,
@@ -154,7 +170,9 @@ async fn deliver_round(broker: &Broker) {
             } else {
                 // Connection gone — requeue and skip this consumer
                 if let Some(msg) = queue.inflight.remove(&delivery_tag) {
-                    queue.messages.push_front(msg);
+                    queue
+                        .messages
+                        .push_front(crate::queue::message::QueueMessage::Full(msg));
                 }
                 warn!(
                     conn_id,

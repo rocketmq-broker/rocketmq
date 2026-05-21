@@ -125,6 +125,7 @@ pub struct BrokerState {
     pub vhosts: DashMap<String, VHost>,
     /// Authentication and authorization backend.
     pub auth: AuthBackend,
+    cluster: OnceLock<Arc<crate::cluster::ClusterManager>>,
 }
 
 impl BrokerState {
@@ -159,7 +160,16 @@ impl BrokerState {
                 map
             },
             auth,
+            cluster: OnceLock::new(),
         }
+    }
+
+    pub fn set_cluster(&self, cluster: Arc<crate::cluster::ClusterManager>) {
+        let _ = self.cluster.set(cluster);
+    }
+
+    pub fn cluster(&self) -> Option<&Arc<crate::cluster::ClusterManager>> {
+        self.cluster.get()
     }
 
     pub fn set_wal(&self, wal: Arc<crate::storage::wal::Wal>) {
@@ -562,12 +572,23 @@ mod tests {
         // Apply the op
         match &op {
             PendingOp::Publish {
-                routing_key, body, ..
+                exchange,
+                routing_key,
+                headers,
+                body,
             } => {
                 let msg_id = bs.alloc_msg_id();
                 if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
-                    let msg = crate::queue::Message::new(msg_id, Vec::new(), body.clone());
-                    queue.messages.push_back(msg);
+                    let msg = crate::queue::Message::new_routed(
+                        msg_id,
+                        headers.clone(),
+                        body.clone(),
+                        exchange.clone(),
+                        routing_key.clone(),
+                    );
+                    queue
+                        .messages
+                        .push_back(crate::queue::message::QueueMessage::Full(msg));
                 }
             }
             _ => {}

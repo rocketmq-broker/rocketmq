@@ -178,6 +178,85 @@ def test_tx():
     print("  ✓ Transactions (select/commit/rollback)")
 
 
+def test_amqp_compliance():
+    """Test 11: AMQP 0-9-1 Compliance Exception Paths."""
+    conn = connect()
+
+    # 1. Exchange starting with amq. -> ACCESS_REFUSED (403)
+    ch = conn.channel()
+    try:
+        ch.exchange_declare(exchange='amq.custom', exchange_type='direct')
+        assert False, "Should raise ACCESS_REFUSED"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 403, f"Expected 403, got {e.reply_code}"
+
+    # 2. Unsupported exchange type -> COMMAND_INVALID (503)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.exchange_declare(exchange='test.invalid.type', exchange_type='invalidtype')
+        assert False, "Should raise COMMAND_INVALID"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 503, f"Expected 503, got {e.reply_code}"
+
+    # 3. Queue starting with amq. -> ACCESS_REFUSED (403)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.queue_declare(queue='amq.custom')
+        assert False, "Should raise ACCESS_REFUSED"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 403, f"Expected 403, got {e.reply_code}"
+
+    # 4. Queue.Bind on nonexistent queue -> NOT_FOUND (404)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.queue_bind(queue='nonexistent.q', exchange='amq.direct', routing_key='key')
+        assert False, "Should raise NOT_FOUND"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"Expected 404, got {e.reply_code}"
+
+    # 5. Queue.Unbind on nonexistent queue -> NOT_FOUND (404)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.queue_unbind(queue='nonexistent.q', exchange='amq.direct', routing_key='key')
+        assert False, "Should raise NOT_FOUND"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"Expected 404, got {e.reply_code}"
+
+    # 6. Queue.Purge on nonexistent queue -> NOT_FOUND (404)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.queue_purge(queue='nonexistent.q')
+        assert False, "Should raise NOT_FOUND"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"Expected 404, got {e.reply_code}"
+
+    # 7. Queue.Delete on nonexistent queue -> NOT_FOUND (404)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.queue_delete(queue='nonexistent.q')
+        assert False, "Should raise NOT_FOUND"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"Expected 404, got {e.reply_code}"
+
+    # 8. Basic.Get on nonexistent queue -> NOT_FOUND (404)
+    conn = connect()
+    ch = conn.channel()
+    try:
+        ch.basic_get(queue='nonexistent.q')
+        assert False, "Should raise NOT_FOUND"
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"Expected 404, got {e.reply_code}"
+
+    conn.close()
+    print("  ✓ Compliance exceptions (403, 404, 503)")
+
+
 def connect():
     creds = pika.PlainCredentials('guest', 'guest')
     params = pika.ConnectionParameters('localhost', 5672, '/', creds)
@@ -199,6 +278,7 @@ def main():
         test_queue_purge,
         test_confirm,
         test_tx,
+        test_amqp_compliance,
     ]
 
     passed = 0

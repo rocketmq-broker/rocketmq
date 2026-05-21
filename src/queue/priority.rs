@@ -1,8 +1,8 @@
-use super::message::Message;
+use super::message::QueueMessage;
 use std::collections::{BTreeMap, VecDeque};
 
 pub struct PriorityQueue {
-    buckets: BTreeMap<u8, VecDeque<Message>>,
+    buckets: BTreeMap<u8, VecDeque<QueueMessage>>,
 }
 
 impl PriorityQueue {
@@ -12,18 +12,21 @@ impl PriorityQueue {
         }
     }
 
-    pub fn push_back(&mut self, msg: Message) {
-        self.buckets.entry(msg.priority).or_default().push_back(msg);
+    pub fn push_back(&mut self, msg: QueueMessage) {
+        self.buckets
+            .entry(msg.priority())
+            .or_default()
+            .push_back(msg);
     }
 
-    pub fn push_front(&mut self, msg: Message) {
+    pub fn push_front(&mut self, msg: QueueMessage) {
         self.buckets
-            .entry(msg.priority)
+            .entry(msg.priority())
             .or_default()
             .push_front(msg);
     }
 
-    pub fn pop_front(&mut self) -> Option<Message> {
+    pub fn pop_front(&mut self) -> Option<QueueMessage> {
         let key = *self.buckets.keys().next_back()?;
         let queue = self.buckets.get_mut(&key)?;
         let msg = queue.pop_front();
@@ -33,7 +36,7 @@ impl PriorityQueue {
         msg
     }
 
-    pub fn pop_oldest(&mut self) -> Option<Message> {
+    pub fn pop_oldest(&mut self) -> Option<QueueMessage> {
         let key = *self.buckets.keys().next()?;
         let queue = self.buckets.get_mut(&key)?;
         let msg = queue.pop_front();
@@ -48,7 +51,7 @@ impl PriorityQueue {
     }
 
     /// Peek at the highest-priority front message without removing it.
-    pub fn peek_front(&self) -> Option<&Message> {
+    pub fn peek_front(&self) -> Option<&QueueMessage> {
         let key = *self.buckets.keys().next_back()?;
         self.buckets.get(&key)?.front()
     }

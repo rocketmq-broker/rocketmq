@@ -218,6 +218,7 @@ async fn handle_channel_open(
         .or_insert_with(|| ChannelState::new(channel));
 
     info!(conn_id, channel, "channel opened");
+    crate::metrics::record_chan_opened();
 
     // Channel.OpenOk: reserved(longstr) — send empty
     let mut args = Vec::new();
@@ -246,6 +247,7 @@ async fn handle_channel_close(
         conn_state.channels.remove(&channel);
     }
 
+    crate::metrics::record_chan_closed();
     info!(conn_id, channel, "channel closed");
     let reply = encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE_OK, &[]);
     let _ = writer.write_all(&reply).await;

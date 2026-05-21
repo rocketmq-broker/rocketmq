@@ -64,6 +64,7 @@ pub fn spawn_amqp_on_stream(
             },
         );
         broker.conn_state.insert(conn_id, ConnectionState::new());
+        crate::metrics::record_conn_opened();
 
         info!(conn_id, %addr, "AMQP connection accepted");
 
@@ -266,6 +267,7 @@ pub fn spawn_amqp_on_stream(
         }
 
         broker.remove_connection(conn_id);
+        crate::metrics::record_conn_closed();
         info!(conn_id, "AMQP connection closed");
     });
 }

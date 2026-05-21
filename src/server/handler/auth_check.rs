@@ -25,26 +25,49 @@ pub async fn deny_access(
         conn_id,
         channel, resource, operation, "ACCESS_REFUSED - permission denied"
     );
-    let close = build_channel_close(
+    send_channel_error(
+        writer,
+        channel,
         ACCESS_REFUSED,
         "ACCESS_REFUSED - permission denied",
         class_id,
         method_id,
-    );
-    let frame = encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close);
-    let _ = writer.write_all(&frame).await;
-    let _ = writer.flush().await;
+    )
+    .await;
     true
 }
 
-fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
+/// Build the wire-format payload for a Channel.Close method frame.
+///
+/// This is the single canonical implementation — all handlers should
+/// call this instead of maintaining local copies.
+pub fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
     use crate::core::types::{write_short, write_shortstr};
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(4 + 1 + text.len() + 4);
     write_short(&mut buf, code).unwrap();
     write_shortstr(&mut buf, text).unwrap();
     write_short(&mut buf, class_id).unwrap();
     write_short(&mut buf, method_id).unwrap();
     buf
+}
+
+/// Send a Channel.Close frame with the given error code and flush.
+///
+/// This is the single reusable helper for all AMQP protocol error paths.
+/// Eliminates the 12-line boilerplate that was previously copy-pasted
+/// across every handler file.
+pub async fn send_channel_error(
+    writer: &mut crate::server::AmqpWriter,
+    channel: u16,
+    code: u16,
+    text: &str,
+    class_id: u16,
+    method_id: u16,
+) {
+    let close = build_channel_close(code, text, class_id, method_id);
+    let frame = encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE, &close);
+    let _ = writer.write_all(&frame).await;
+    let _ = writer.flush().await;
 }
 
 /// Get the username and vhost for a connection from broker state.

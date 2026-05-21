@@ -67,6 +67,8 @@ fn message_expired() {
         expiration: Some(Instant::now() - Duration::from_secs(1)),
         redelivered: false,
         delivery_count: 0,
+        exchange: "".to_string(),
+        routing_key: "".to_string(),
     };
     assert!(msg.is_expired());
 }
@@ -81,6 +83,8 @@ fn message_not_expired() {
         expiration: Some(Instant::now() + Duration::from_secs(60)),
         redelivered: false,
         delivery_count: 0,
+        exchange: "".to_string(),
+        routing_key: "".to_string(),
     };
     assert!(!msg.is_expired());
 }
@@ -88,13 +92,25 @@ fn message_not_expired() {
 #[test]
 fn priority_queue_fifo_same_priority() {
     let mut pq = PriorityQueue::new();
-    pq.push_back(Message::new(1, vec![], b"first".to_vec()));
-    pq.push_back(Message::new(2, vec![], b"second".to_vec()));
-    pq.push_back(Message::new(3, vec![], b"third".to_vec()));
+    pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
+        1,
+        vec![],
+        b"first".to_vec(),
+    )));
+    pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
+        2,
+        vec![],
+        b"second".to_vec(),
+    )));
+    pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
+        3,
+        vec![],
+        b"third".to_vec(),
+    )));
     assert_eq!(pq.len(), 3);
-    assert_eq!(pq.pop_front().unwrap().body, b"first");
-    assert_eq!(pq.pop_front().unwrap().body, b"second");
-    assert_eq!(pq.pop_front().unwrap().body, b"third");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"first");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"second");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"third");
     assert!(pq.pop_front().is_none());
 }
 
@@ -107,20 +123,28 @@ fn priority_queue_higher_priority_first() {
     high.priority = 10;
     let mut mid = Message::new(3, vec![], b"mid".to_vec());
     mid.priority = 5;
-    pq.push_back(low);
-    pq.push_back(high);
-    pq.push_back(mid);
-    assert_eq!(pq.pop_front().unwrap().body, b"high");
-    assert_eq!(pq.pop_front().unwrap().body, b"mid");
-    assert_eq!(pq.pop_front().unwrap().body, b"low");
+    pq.push_back(crate::queue::message::QueueMessage::Full(low));
+    pq.push_back(crate::queue::message::QueueMessage::Full(high));
+    pq.push_back(crate::queue::message::QueueMessage::Full(mid));
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"high");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"mid");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"low");
 }
 
 #[test]
 fn priority_queue_push_front_stays_at_front() {
     let mut pq = PriorityQueue::new();
-    pq.push_back(Message::new(1, vec![], b"back".to_vec()));
-    pq.push_front(Message::new(2, vec![], b"front".to_vec()));
-    assert_eq!(pq.pop_front().unwrap().body, b"front");
+    pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
+        1,
+        vec![],
+        b"back".to_vec(),
+    )));
+    pq.push_front(crate::queue::message::QueueMessage::Full(Message::new(
+        2,
+        vec![],
+        b"front".to_vec(),
+    )));
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"front");
 }
 
 #[test]
@@ -130,9 +154,9 @@ fn priority_queue_pop_oldest_evicts_lowest() {
     low.priority = 0;
     let mut high = Message::new(2, vec![], b"high".to_vec());
     high.priority = 10;
-    pq.push_back(low);
-    pq.push_back(high);
-    assert_eq!(pq.pop_oldest().unwrap().body, b"low");
+    pq.push_back(crate::queue::message::QueueMessage::Full(low));
+    pq.push_back(crate::queue::message::QueueMessage::Full(high));
+    assert_eq!(pq.pop_oldest().unwrap().unwrap_full().body, b"low");
     assert_eq!(pq.len(), 1);
 }
 
@@ -346,8 +370,12 @@ fn message_delivery_count_default() {
 fn priority_queue_peek_front() {
     let mut pq = PriorityQueue::new();
     assert!(pq.peek_front().is_none());
-    pq.push_back(Message::new(1, vec![], b"a".to_vec()));
-    assert_eq!(pq.peek_front().unwrap().body, b"a");
+    pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
+        1,
+        vec![],
+        b"a".to_vec(),
+    )));
+    assert_eq!(pq.peek_front().unwrap().clone().unwrap_full().body, b"a");
     assert_eq!(pq.len(), 1); // peek doesn't remove
 }
 

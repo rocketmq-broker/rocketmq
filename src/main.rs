@@ -1,9 +1,15 @@
 #[allow(dead_code)]
 mod auth;
 #[allow(dead_code)]
+mod cluster;
+#[allow(dead_code)]
 mod config;
 #[allow(dead_code)]
 mod core;
+#[allow(dead_code)]
+mod management;
+#[allow(dead_code)]
+mod metrics;
 #[allow(dead_code)]
 mod queue;
 #[allow(dead_code)]
@@ -29,6 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
+    // Initialize OpenTelemetry meter provider
+    let _meter_provider = metrics::init_meter_provider();
+
     let broker: state::Broker = Arc::new(state::BrokerState::new());
 
     // Initialize WAL and replay any existing entries (crash recovery)
@@ -37,21 +46,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Store WAL handle in broker for handlers to use
     broker.set_wal(wal);
 
+    // Initialize Cluster Manager
+    let node_id = get_node_id();
+    let cluster_addr = get_cluster_addr();
+    let seed_nodes = get_cluster_seeds();
+
+    info!(
+        node_id,
+        cluster_addr,
+        ?seed_nodes,
+        "initializing cluster management"
+    );
+    let cluster_manager = Arc::new(cluster::ClusterManager::new(node_id, cluster_addr.clone()));
+    broker.set_cluster(cluster_manager.clone());
+
+    // Start Cluster TCP Listener & Peer gossip tasks
+    cluster::start_cluster_listener(broker.clone(), cluster_manager.clone(), cluster_addr).await?;
+    cluster::start_peer_connector(broker.clone(), cluster_manager.clone(), seed_nodes).await;
+
     // Spawn background maintenance tasks (queue TTL, message TTL, dedup eviction)
     server::tasks::spawn_all(broker.clone());
 
     // Spawn AMQP delivery pipeline (pushes messages to consumers)
     server::amqp_delivery::spawn_delivery_task(broker.clone());
 
+    // Spawn Management HTTP API (port 15672)
+    let mgmt_broker = broker.clone();
+    tokio::spawn(async move {
+        if let Err(e) = management::serve(mgmt_broker).await {
+            tracing::error!(error = %e, "Management HTTP API failed");
+        }
+    });
+
     // ── Plain AMQP listener (port 5672) ──────────────
-    let amqp_listener = tokio::net::TcpListener::bind(AMQP_LISTEN_ADDR).await?;
-    info!("AMQP 0-9-1 on {}", AMQP_LISTEN_ADDR);
+    let amqp_addr = get_amqp_listen_addr();
+    let amqp_listener = tokio::net::TcpListener::bind(&amqp_addr).await?;
+    info!("AMQP 0-9-1 on {}", amqp_addr);
 
     // ── AMQPS (TLS) listener (port 5671) ─────────────
+    let amqps_addr = get_amqps_listen_addr();
     let tls_acceptor = match server::tls::build_tls_acceptor(TLS_CERT_PATH, TLS_KEY_PATH) {
         Ok(acc) => {
-            let amqps_listener = tokio::net::TcpListener::bind(AMQPS_LISTEN_ADDR).await?;
-            info!("AMQPS (TLS) on {}", AMQPS_LISTEN_ADDR);
+            let amqps_listener = tokio::net::TcpListener::bind(&amqps_addr).await?;
+            info!("AMQPS (TLS) on {}", amqps_addr);
             Some((amqps_listener, acc))
         }
         Err(e) => {

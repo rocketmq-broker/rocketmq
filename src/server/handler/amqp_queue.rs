@@ -11,6 +11,8 @@ use crate::queue::{QueueOptions, QueueState};
 use crate::routing::exchange::Binding;
 use crate::state::Broker;
 
+use super::auth_check::send_channel_error;
+
 /// Queue.Declare: queue(shortstr) passive(bit) durable(bit) exclusive(bit)
 ///   auto_delete(bit) no_wait(bit) arguments(table)
 pub async fn handle_declare(
@@ -34,6 +36,17 @@ pub async fn handle_declare(
     // Server-named queue
     if name.is_empty() {
         name = format!("amq.gen-{}", broker.alloc_msg_id());
+    } else if !passive && name.starts_with("amq.") && !name.starts_with("amq.gen-") {
+        send_channel_error(
+            writer,
+            channel,
+            ACCESS_REFUSED,
+            "ACCESS_REFUSED - queue names starting with 'amq.' are reserved",
+            CLASS_QUEUE,
+            METHOD_QUEUE_DECLARE,
+        )
+        .await;
+        return;
     }
 
     // Permission check: configure permission needed for declare (skip for passive)
@@ -61,21 +74,15 @@ pub async fn handle_declare(
                 send_declare_ok(channel, &name, msg_count, consumer_count, writer).await;
             }
         } else {
-            let close = build_channel_close(
+            send_channel_error(
+                writer,
+                channel,
                 NOT_FOUND,
                 "NOT_FOUND - no such queue",
                 CLASS_QUEUE,
                 METHOD_QUEUE_DECLARE,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
-                    channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
-                .await;
-            let _ = writer.flush().await;
+            )
+            .await;
         }
         return;
     }
@@ -83,21 +90,15 @@ pub async fn handle_declare(
     // Check exclusive ownership
     if let Some(existing) = broker.queues.get(&name) {
         if existing.options.exclusive && existing.owner_conn_id != Some(conn_id) {
-            let close = build_channel_close(
+            send_channel_error(
+                writer,
+                channel,
                 RESOURCE_LOCKED,
                 "RESOURCE_LOCKED - exclusive queue",
                 CLASS_QUEUE,
                 METHOD_QUEUE_DECLARE,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
-                    channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
-                .await;
-            let _ = writer.flush().await;
+            )
+            .await;
             return;
         }
     }
@@ -130,6 +131,22 @@ pub async fn handle_declare(
     });
 
     broker.auto_bind_default_exchange(&name);
+
+    if is_new {
+        if let Some(c) = broker.cluster() {
+            let c = c.clone();
+            let name_clone = name.clone();
+            tokio::spawn(async move {
+                c.broadcast(crate::cluster::ClusterFrame::DeclareQueue {
+                    name: name_clone,
+                    durable,
+                    exclusive,
+                    auto_delete,
+                })
+                .await;
+            });
+        }
+    }
 
     // WAL: persist durable queue declarations
     if durable && is_new {
@@ -165,42 +182,43 @@ pub async fn handle_delete(
     let if_empty = flags & 0x02 != 0;
     let no_wait = flags & 0x04 != 0;
 
+    if !broker.queues.contains_key(&name) {
+        send_channel_error(
+            writer,
+            channel,
+            NOT_FOUND,
+            "NOT_FOUND - no such queue",
+            CLASS_QUEUE,
+            METHOD_QUEUE_DELETE,
+        )
+        .await;
+        return;
+    }
+
     // Pre-checks
     if let Some(q) = broker.queues.get(&name) {
         if if_unused && !q.consumer_tags.is_empty() {
-            let close = build_channel_close(
+            send_channel_error(
+                writer,
+                channel,
                 PRECONDITION_FAILED,
                 "PRECONDITION_FAILED - queue in use",
                 CLASS_QUEUE,
                 METHOD_QUEUE_DELETE,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
-                    channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
-                .await;
-            let _ = writer.flush().await;
+            )
+            .await;
             return;
         }
         if if_empty && !q.messages.is_empty() {
-            let close = build_channel_close(
+            send_channel_error(
+                writer,
+                channel,
                 PRECONDITION_FAILED,
                 "PRECONDITION_FAILED - queue not empty",
                 CLASS_QUEUE,
                 METHOD_QUEUE_DELETE,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
-                    channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
-                .await;
-            let _ = writer.flush().await;
+            )
+            .await;
             return;
         }
     }
@@ -210,6 +228,15 @@ pub async fn handle_delete(
         .remove(&name)
         .map(|(_, q)| q.messages.len() as u32)
         .unwrap_or(0);
+
+    if let Some(c) = broker.cluster() {
+        let c = c.clone();
+        let name_clone = name.clone();
+        tokio::spawn(async move {
+            c.broadcast(crate::cluster::ClusterFrame::DeleteQueue { name: name_clone })
+                .await;
+        });
+    }
 
     info!(
         conn_id,
@@ -241,9 +268,30 @@ pub async fn handle_purge(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_wait = flags & 0x01 != 0;
 
+    if !broker.queues.contains_key(&name) {
+        send_channel_error(
+            writer,
+            channel,
+            NOT_FOUND,
+            "NOT_FOUND - no such queue",
+            CLASS_QUEUE,
+            METHOD_QUEUE_PURGE,
+        )
+        .await;
+        return;
+    }
+
     let msg_count = if let Some(mut q) = broker.queues.get_mut(&name) {
         let count = q.messages.len() as u32;
         q.messages.clear();
+        if let Some(c) = broker.cluster() {
+            let c = c.clone();
+            let name_clone = name.clone();
+            tokio::spawn(async move {
+                c.broadcast(crate::cluster::ClusterFrame::PurgeQueue { name: name_clone })
+                    .await;
+            });
+        }
         count
     } else {
         0
@@ -282,6 +330,19 @@ pub async fn handle_bind(
     let no_wait = flags & 0x01 != 0;
     let _arguments = read_field_table(&mut r).unwrap_or_default();
 
+    if !broker.queues.contains_key(&queue) {
+        send_channel_error(
+            writer,
+            channel,
+            NOT_FOUND,
+            "NOT_FOUND - no such queue",
+            CLASS_QUEUE,
+            METHOD_QUEUE_BIND,
+        )
+        .await;
+        return;
+    }
+
     {
         let mut exchanges = broker.exchanges.write().await;
         if let Some(ex) = exchanges.get_mut(&exchange) {
@@ -290,22 +351,31 @@ pub async fn handle_bind(
                 routing_key: routing_key.clone(),
                 headers_match: None,
             });
+
+            if let Some(c) = broker.cluster() {
+                let c = c.clone();
+                let exchange_clone = exchange.clone();
+                let queue_clone = queue.clone();
+                let routing_key_clone = routing_key.clone();
+                tokio::spawn(async move {
+                    c.broadcast(crate::cluster::ClusterFrame::BindQueue {
+                        exchange: exchange_clone,
+                        queue: queue_clone,
+                        routing_key: routing_key_clone,
+                    })
+                    .await;
+                });
+            }
         } else {
-            let close = build_channel_close(
+            send_channel_error(
+                writer,
+                channel,
                 NOT_FOUND,
                 "NOT_FOUND - no such exchange",
                 CLASS_QUEUE,
                 METHOD_QUEUE_BIND,
-            );
-            let _ = writer
-                .write_all(&encode_method_frame(
-                    channel,
-                    CLASS_CHANNEL,
-                    METHOD_CHANNEL_CLOSE,
-                    &close,
-                ))
-                .await;
-            let _ = writer.flush().await;
+            )
+            .await;
             return;
         }
     }
@@ -344,10 +414,34 @@ pub async fn handle_unbind(
     let exchange = read_shortstr(&mut r).unwrap_or_default();
     let routing_key = read_shortstr(&mut r).unwrap_or_default();
 
+    if !broker.queues.contains_key(&queue) {
+        send_channel_error(
+            writer,
+            channel,
+            NOT_FOUND,
+            "NOT_FOUND - no such queue",
+            CLASS_QUEUE,
+            METHOD_QUEUE_UNBIND,
+        )
+        .await;
+        return;
+    }
+
     {
         let mut exchanges = broker.exchanges.write().await;
         if let Some(ex) = exchanges.get_mut(&exchange) {
             ex.remove_binding(&queue, &routing_key);
+        } else {
+            send_channel_error(
+                writer,
+                channel,
+                NOT_FOUND,
+                "NOT_FOUND - no such exchange",
+                CLASS_QUEUE,
+                METHOD_QUEUE_UNBIND,
+            )
+            .await;
+            return;
         }
     }
 
@@ -378,15 +472,6 @@ async fn send_declare_ok(
     let reply = encode_method_frame(channel, CLASS_QUEUE, METHOD_QUEUE_DECLARE_OK, &args);
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
-}
-
-fn build_channel_close(reply_code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
-    let mut buf = Vec::new();
-    write_short(&mut buf, reply_code).unwrap();
-    write_shortstr(&mut buf, text).unwrap();
-    write_short(&mut buf, class_id).unwrap();
-    write_short(&mut buf, method_id).unwrap();
-    buf
 }
 
 #[cfg(test)]

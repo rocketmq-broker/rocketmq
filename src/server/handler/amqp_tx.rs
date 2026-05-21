@@ -5,9 +5,11 @@ use tracing::{info, warn};
 
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
-use crate::core::types::*;
+
 use crate::state::Broker;
 use crate::state::broker::PendingOp;
+
+use super::auth_check::send_channel_error;
 
 // ─── Tx.Select ────────────────────────────────────────
 
@@ -40,21 +42,15 @@ pub async fn handle_tx_commit(
             Some(mut cs) => {
                 if !cs.tx_mode {
                     warn!(conn_id, "tx_commit without tx_select");
-                    let close = build_channel_close(
+                    send_channel_error(
+                        writer,
+                        channel,
                         PRECONDITION_FAILED,
                         "PRECONDITION_FAILED - not in tx mode",
                         CLASS_TX,
                         METHOD_TX_COMMIT,
-                    );
-                    let _ = writer
-                        .write_all(&encode_method_frame(
-                            channel,
-                            CLASS_CHANNEL,
-                            METHOD_CHANNEL_CLOSE,
-                            &close,
-                        ))
-                        .await;
-                    let _ = writer.flush().await;
+                    )
+                    .await;
                     return;
                 }
                 std::mem::take(&mut cs.tx_buffer)
@@ -66,12 +62,23 @@ pub async fn handle_tx_commit(
     for op in &ops {
         match op {
             PendingOp::Publish {
-                routing_key, body, ..
+                exchange,
+                routing_key,
+                headers,
+                body,
             } => {
                 let msg_id = broker.alloc_msg_id();
                 if let Some(mut queue) = broker.queues.get_mut(routing_key.as_str()) {
-                    let msg = crate::queue::Message::new(msg_id, Vec::new(), body.clone());
-                    queue.messages.push_back(msg);
+                    let msg = crate::queue::Message::new_routed(
+                        msg_id,
+                        headers.clone(),
+                        body.clone(),
+                        exchange.clone(),
+                        routing_key.clone(),
+                    );
+                    queue
+                        .messages
+                        .push_back(crate::queue::message::QueueMessage::Full(msg));
                 }
             }
             PendingOp::Ack { msg_id } => {
@@ -106,21 +113,15 @@ pub async fn handle_tx_rollback(
             Some(mut cs) => {
                 if !cs.tx_mode {
                     warn!(conn_id, "tx_rollback without tx_select");
-                    let close = build_channel_close(
+                    send_channel_error(
+                        writer,
+                        channel,
                         PRECONDITION_FAILED,
                         "PRECONDITION_FAILED - not in tx mode",
                         CLASS_TX,
                         METHOD_TX_ROLLBACK,
-                    );
-                    let _ = writer
-                        .write_all(&encode_method_frame(
-                            channel,
-                            CLASS_CHANNEL,
-                            METHOD_CHANNEL_CLOSE,
-                            &close,
-                        ))
-                        .await;
-                    let _ = writer.flush().await;
+                    )
+                    .await;
                     return;
                 }
                 let count = cs.tx_buffer.len();
@@ -162,17 +163,6 @@ pub async fn handle_confirm_select(
         let _ = writer.write_all(&reply).await;
         let _ = writer.flush().await;
     }
-}
-
-// ─── Helper ───────────────────────────────────────────
-
-fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
-    let mut buf = Vec::new();
-    write_short(&mut buf, code).unwrap();
-    write_shortstr(&mut buf, text).unwrap();
-    write_short(&mut buf, class_id).unwrap();
-    write_short(&mut buf, method_id).unwrap();
-    buf
 }
 
 #[cfg(test)]
