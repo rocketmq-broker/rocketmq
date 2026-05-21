@@ -1,0 +1,113 @@
+version: "3.8"
+
+services:
+  node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rocketmq-node1
+    environment:
+      - ROCKETMQ_NODE_ID=1
+      - ROCKETMQ_BIND_HOST=0.0.0.0
+      - ROCKETMQ_CLUSTER_ADDR=0.0.0.0:5680
+      - ROCKETMQ_CLUSTER_SEEDS=""
+      - ROCKETMQ_AMQP_PORT=5672
+      - ROCKETMQ_MGMT_PORT=15672
+      - RUST_LOG=info
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "5680:5680"
+    volumes:
+      - node1-data:/app/data
+    networks:
+      - rocketmq-net
+
+  node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rocketmq-node2
+    environment:
+      - ROCKETMQ_NODE_ID=2
+      - ROCKETMQ_BIND_HOST=0.0.0.0
+      - ROCKETMQ_CLUSTER_ADDR=0.0.0.0:5680
+      - ROCKETMQ_CLUSTER_SEEDS=node1:5680
+      - ROCKETMQ_AMQP_PORT=5672
+      - ROCKETMQ_MGMT_PORT=15672
+      - RUST_LOG=info
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - node2-data:/app/data
+    depends_on:
+      - node1
+    networks:
+      - rocketmq-net
+
+  node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rocketmq-node3
+    environment:
+      - ROCKETMQ_NODE_ID=3
+      - ROCKETMQ_BIND_HOST=0.0.0.0
+      - ROCKETMQ_CLUSTER_ADDR=0.0.0.0:5680
+      - ROCKETMQ_CLUSTER_SEEDS=node1:5680
+      - ROCKETMQ_AMQP_PORT=5672
+      - ROCKETMQ_MGMT_PORT=15672
+      - RUST_LOG=info
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+    volumes:
+      - node3-data:/app/data
+    depends_on:
+      - node1
+    networks:
+      - rocketmq-net
+
+  management:
+    build:
+      context: ./managment
+      dockerfile: Dockerfile
+    container_name: rocketmq-management
+    environment:
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - node1
+      - node2
+      - node3
+    networks:
+      - rocketmq-net
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: rocketmq-client
+    environment:
+      - AMQP_URL=amqp://guest:guest@node1:5672/
+      - PORT=3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      - node1
+      - node2
+      - node3
+    networks:
+      - rocketmq-net
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
+networks:
+  rocketmq-net:
+    driver: bridge
