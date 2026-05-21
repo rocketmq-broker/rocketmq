@@ -2,24 +2,31 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Dashboard } from '@/components/dashboard';
-import { ConnectDialog } from '@/components/connect-dialog';
 import { useConnectionStatus } from '@/lib/hooks';
-import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function HomePage() {
   const { data: connectionStatus, isLoading } = useConnectionStatus();
-  const [showConnect, setShowConnect] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (!isLoading && !connectionStatus?.connected) {
-      setShowConnect(true);
+      router.push('/login');
     }
-  }, [connectionStatus, isLoading]);
+  }, [connectionStatus, isLoading, router]);
+
+  if (isLoading || !connectionStatus?.connected) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'hsl(222 47% 11%)' }}>
+        <div style={{ color: 'hsl(215 20% 55%)', fontSize: '0.875rem' }}>Loading…</div>
+      </div>
+    );
+  }
 
   return (
     <AppShell>
       <Dashboard />
-      <ConnectDialog open={showConnect} onOpenChange={setShowConnect} />
     </AppShell>
   );
 }

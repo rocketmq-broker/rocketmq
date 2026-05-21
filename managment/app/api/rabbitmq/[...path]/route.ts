@@ -62,8 +62,22 @@ async function handleRequest(
 
     const { url, username, password } = config;
 
-    // Build the target URL — re-encode path segments to preserve %2F for vhost "/"
-    const apiPath = '/api/' + path.map(encodeURIComponent).join('/');
+    // Build the target URL — extract raw pathname from request.url to preserve %2F for vhost "/"
+    let apiPath = '';
+    const prefix = '/api/rabbitmq';
+    const urlString = request.url;
+    const prefixIdx = urlString.indexOf(prefix);
+    if (prefixIdx === -1) {
+      apiPath = '/api/' + path.map(encodeURIComponent).join('/');
+    } else {
+      let rawPath = urlString.substring(prefixIdx + prefix.length);
+      const qIdx = rawPath.indexOf('?');
+      if (qIdx !== -1) {
+        rawPath = rawPath.substring(0, qIdx);
+      }
+      apiPath = '/api' + rawPath;
+    }
+
     const searchParams = request.nextUrl.searchParams.toString();
     const targetUrl = `${url}${apiPath}${searchParams ? '?' + searchParams : ''}`;
 
