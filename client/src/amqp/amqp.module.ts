@@ -2,26 +2,30 @@ import { Global, Logger, Module, OnModuleDestroy } from '@nestjs/common';
 import * as amqp from 'amqplib';
 import {
   AMQP_URL,
+  EXCHANGE_GAME,
+  EXCHANGE_ANALYTICS,
+  EXCHANGE_METRICS,
   EXCHANGE_DLX,
-  EXCHANGE_INVENTORY,
-  EXCHANGE_NOTIFICATIONS,
-  EXCHANGE_ORDERS,
-  EXCHANGE_PAYMENTS,
+  EXCHANGE_MATCHMAKING,
+  EXCHANGE_SECURITY,
+  EXCHANGE_LEADERBOARD,
+  QUEUE_SESSION_TICKS,
+  QUEUE_SESSION_ACTIONS,
+  QUEUE_TELEMETRY,
+  QUEUE_ANTI_CHEAT,
+  QUEUE_MATCHMAKING,
+  QUEUE_METRICS_LOGS,
   QUEUE_DLQ,
-  QUEUE_INVENTORY_RESERVE,
-  QUEUE_INVENTORY_RESULT,
-  QUEUE_NOTIFICATIONS_SEND,
-  QUEUE_ORDERS_CREATED,
-  QUEUE_ORDERS_VALIDATED,
-  QUEUE_PAYMENTS_PROCESS,
-  QUEUE_PAYMENTS_RESULT,
-  RK_INVENTORY_OK,
-  RK_INVENTORY_RESERVE,
-  RK_ORDER_CREATED,
-  RK_ORDER_VALIDATED,
-  RK_PAYMENT_FAILED,
-  RK_PAYMENT_PROCESS,
-  RK_PAYMENT_SUCCESS,
+  QUEUE_LOBBY_CREATED,
+  QUEUE_SECURITY_BROADCAST,
+  QUEUE_LEADERBOARD_UPDATES,
+  QUEUE_LOBBY_MAINTENANCE,
+  RK_SESSION_TICK_PATTERN,
+  RK_SESSION_ACTION_PATTERN,
+  RK_ALL_SESSION_EVENTS,
+  RK_ANTI_CHEAT_ALERT,
+  RK_MATCHMAKING_LOBBY,
+  RK_LOBBY_CREATED,
 } from './constants';
 
 export const AMQP_CONNECTION = 'AMQP_CONNECTION';
@@ -34,6 +38,26 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
       provide: AMQP_CONNECTION,
       useFactory: async () => {
         const logger = new Logger('AmqpModule');
+
+        // ── Auto-declare Virtual Hosts via Management API before connecting ──
+        const mgmtUrl = 'http://127.0.0.1:15672/api/vhosts/';
+        const authHeader =
+          'Basic ' + Buffer.from('guest:guest').toString('base64');
+
+        for (const vhost of ['gaming', 'security', 'analytics']) {
+          try {
+            await fetch(`${mgmtUrl}${encodeURIComponent(vhost)}`, {
+              method: 'PUT',
+              headers: { Authorization: authHeader },
+            });
+            logger.log(`Declared virtual host: "${vhost}"`);
+          } catch (err) {
+            logger.warn(
+              `Failed to auto-create vhost "${vhost}" (is management service up?): ${err.message}`,
+            );
+          }
+        }
+
         const conn = await amqp.connect(AMQP_URL);
         logger.log(`Connected to AMQP at ${AMQP_URL}`);
         return conn;
@@ -44,119 +68,133 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
       useFactory: async (conn: amqp.ChannelModel) => {
         const logger = new Logger('AmqpModule');
         const ch = await conn.createChannel();
-        await ch.prefetch(10);
+        await ch.prefetch(100); // High prefetch for game telemetry processing
 
         // ── Dead Letter Exchange ──────────────────────
         await ch.assertExchange(EXCHANGE_DLX, 'direct', { durable: true });
         await ch.assertQueue(QUEUE_DLQ, { durable: true });
         await ch.bindQueue(QUEUE_DLQ, EXCHANGE_DLX, 'dead');
 
-        // ── Orders ───────────────────────────────────
-        await ch.assertExchange(EXCHANGE_ORDERS, 'direct', { durable: true });
-        await ch.assertQueue(QUEUE_ORDERS_CREATED, {
+        const queueArgs = {
+          'x-dead-letter-exchange': EXCHANGE_DLX,
+          'x-dead-letter-routing-key': 'dead',
+        };
+
+        // ── Game Event Exchange (Topic) ───────────────
+        await ch.assertExchange(EXCHANGE_GAME, 'topic', { durable: true });
+
+        await ch.assertQueue(QUEUE_SESSION_TICKS, {
           durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
+          arguments: queueArgs,
         });
-        await ch.assertQueue(QUEUE_ORDERS_VALIDATED, {
+        await ch.assertQueue(QUEUE_SESSION_ACTIONS, {
           durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
+          arguments: queueArgs,
         });
+        await ch.assertQueue(QUEUE_TELEMETRY, {
+          durable: true,
+          arguments: queueArgs,
+        });
+
         await ch.bindQueue(
-          QUEUE_ORDERS_CREATED,
-          EXCHANGE_ORDERS,
-          RK_ORDER_CREATED,
+          QUEUE_SESSION_TICKS,
+          EXCHANGE_GAME,
+          RK_SESSION_TICK_PATTERN,
         );
         await ch.bindQueue(
-          QUEUE_ORDERS_VALIDATED,
-          EXCHANGE_ORDERS,
-          RK_ORDER_VALIDATED,
+          QUEUE_SESSION_ACTIONS,
+          EXCHANGE_GAME,
+          RK_SESSION_ACTION_PATTERN,
+        );
+        await ch.bindQueue(
+          QUEUE_TELEMETRY,
+          EXCHANGE_GAME,
+          RK_ALL_SESSION_EVENTS,
         );
 
-        // ── Payments ─────────────────────────────────
-        await ch.assertExchange(EXCHANGE_PAYMENTS, 'direct', { durable: true });
-        await ch.assertQueue(QUEUE_PAYMENTS_PROCESS, {
+        // ── Analytics Exchange (Direct) ───────────────
+        await ch.assertExchange(EXCHANGE_ANALYTICS, 'direct', {
           durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
         });
-        await ch.assertQueue(QUEUE_PAYMENTS_RESULT, {
+
+        await ch.assertQueue(QUEUE_ANTI_CHEAT, {
           durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
+          arguments: queueArgs,
         });
+        await ch.assertQueue(QUEUE_MATCHMAKING, {
+          durable: true,
+          arguments: queueArgs,
+        });
+
         await ch.bindQueue(
-          QUEUE_PAYMENTS_PROCESS,
-          EXCHANGE_PAYMENTS,
-          RK_PAYMENT_PROCESS,
+          QUEUE_ANTI_CHEAT,
+          EXCHANGE_ANALYTICS,
+          RK_ANTI_CHEAT_ALERT,
         );
         await ch.bindQueue(
-          QUEUE_PAYMENTS_RESULT,
-          EXCHANGE_PAYMENTS,
-          RK_PAYMENT_SUCCESS,
-        );
-        await ch.bindQueue(
-          QUEUE_PAYMENTS_RESULT,
-          EXCHANGE_PAYMENTS,
-          RK_PAYMENT_FAILED,
+          QUEUE_MATCHMAKING,
+          EXCHANGE_ANALYTICS,
+          RK_MATCHMAKING_LOBBY,
         );
 
-        // ── Inventory ────────────────────────────────
-        await ch.assertExchange(EXCHANGE_INVENTORY, 'direct', {
+        // ── Metrics Exchange (Fanout) ─────────────────
+        await ch.assertExchange(EXCHANGE_METRICS, 'fanout', { durable: true });
+        await ch.assertQueue(QUEUE_METRICS_LOGS, {
+          durable: true,
+          arguments: queueArgs,
+        });
+        await ch.bindQueue(QUEUE_METRICS_LOGS, EXCHANGE_METRICS, '');
+
+        // ── Matchmaking Events (Direct) ───────────────
+        await ch.assertExchange(EXCHANGE_MATCHMAKING, 'direct', {
           durable: true,
         });
-        await ch.assertQueue(QUEUE_INVENTORY_RESERVE, {
+        await ch.assertQueue(QUEUE_LOBBY_CREATED, {
           durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
-        });
-        await ch.assertQueue(QUEUE_INVENTORY_RESULT, {
-          durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
+          arguments: queueArgs,
         });
         await ch.bindQueue(
-          QUEUE_INVENTORY_RESERVE,
-          EXCHANGE_INVENTORY,
-          RK_INVENTORY_RESERVE,
-        );
-        await ch.bindQueue(
-          QUEUE_INVENTORY_RESULT,
-          EXCHANGE_INVENTORY,
-          RK_INVENTORY_OK,
+          QUEUE_LOBBY_CREATED,
+          EXCHANGE_MATCHMAKING,
+          RK_LOBBY_CREATED,
         );
 
-        // ── Notifications ────────────────────────────
-        await ch.assertExchange(EXCHANGE_NOTIFICATIONS, 'fanout', {
+        // ── Security Broadcast (Fanout) ────────────────
+        await ch.assertExchange(EXCHANGE_SECURITY, 'fanout', { durable: true });
+        await ch.assertQueue(QUEUE_SECURITY_BROADCAST, {
+          durable: true,
+          arguments: queueArgs,
+        });
+        await ch.bindQueue(QUEUE_SECURITY_BROADCAST, EXCHANGE_SECURITY, '');
+
+        // ── Leaderboard Exchange (Topic) ──────────────
+        await ch.assertExchange(EXCHANGE_LEADERBOARD, 'topic', {
           durable: true,
         });
-        await ch.assertQueue(QUEUE_NOTIFICATIONS_SEND, {
+        await ch.assertQueue(QUEUE_LEADERBOARD_UPDATES, {
           durable: true,
-          arguments: {
-            'x-dead-letter-exchange': EXCHANGE_DLX,
-            'x-dead-letter-routing-key': 'dead',
-          },
+          arguments: queueArgs,
         });
         await ch.bindQueue(
-          QUEUE_NOTIFICATIONS_SEND,
-          EXCHANGE_NOTIFICATIONS,
-          '',
+          QUEUE_LEADERBOARD_UPDATES,
+          EXCHANGE_LEADERBOARD,
+          'leaderboard.global.*',
         );
 
-        logger.log('AMQP topology declared (5 exchanges, 9 queues, DLX)');
+        // ── Lobby Maintenance (Direct) ────────────────
+        await ch.assertQueue(QUEUE_LOBBY_MAINTENANCE, {
+          durable: true,
+          arguments: queueArgs,
+        });
+        await ch.bindQueue(
+          QUEUE_LOBBY_MAINTENANCE,
+          EXCHANGE_MATCHMAKING,
+          'lobby.maintenance',
+        );
+
+        logger.log(
+          'AMQP Game Topology Declared (7 exchanges, 11 queues, DLX, 3 vhosts)',
+        );
         return ch;
       },
       inject: [AMQP_CONNECTION],
@@ -165,9 +203,5 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
   exports: [AMQP_CONNECTION, AMQP_CHANNEL],
 })
 export class AmqpModule implements OnModuleDestroy {
-  constructor() {}
-
-  async onModuleDestroy() {
-    // Connection cleanup handled by NestJS lifecycle
-  }
+  async onModuleDestroy() {}
 }

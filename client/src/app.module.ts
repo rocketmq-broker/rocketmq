@@ -1,22 +1,32 @@
 import { Module } from '@nestjs/common';
 import { AmqpModule } from './amqp';
-import { InventoryServiceModule } from './inventory-service/inventory-service.module';
-import { NotificationServiceModule } from './notification-service/notification-service.module';
-import { OrderGatewayModule } from './order-gateway/order-gateway.module';
-import { OrderServiceModule } from './order-service/order-service.module';
-import { PaymentServiceModule } from './payment-service/payment-service.module';
+import { GameEngineModule } from './game-engine/game-engine.module';
+import { LiveAlertModule } from './live-alert/live-alert.module';
+import { TelemetryProcessorModule } from './telemetry-processor/telemetry-processor.module';
+
+// New Clustered Advanced Telemetry Microservices
+import { MatchmakingModule } from './matchmaking/matchmaking.module';
+import { AntiCheatModule } from './anti-cheat/anti-cheat.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { SystemMonitorModule } from './system-monitor/system-monitor.module';
+import { LobbyMaintenanceModule } from './lobby-maintenance/lobby-maintenance.module';
 
 @Module({
   imports: [
     // Shared AMQP connection + topology declaration
     AmqpModule,
 
-    // ── Microservices ───────────────────────────
-    OrderGatewayModule, // HTTP API → publishes to orders.exchange
-    OrderServiceModule, // orders.created → validates → payments.process
-    PaymentServiceModule, // payments.process → charges → inventory.reserve
-    InventoryServiceModule, // inventory.reserve → reserves stock → notifications
-    NotificationServiceModule, // notifications.send → emails/logs + DLQ monitor
+    // ── Real-Time Game Telemetry & Analytics Platform ───────────────────
+    GameEngineModule, // Publishes ticks and actions forever
+    TelemetryProcessorModule, // Analytics & speedhack cheat detection
+    LiveAlertModule, // Warning dashboard, matchmaking gateway, and metric logger
+
+    // ── Clustered Topology Testing Microservices ────────────────────────
+    MatchmakingModule, // Groups matches and emits lobby.created
+    AntiCheatModule, // Broadcasts bans over security.broadcast fanout
+    LeaderboardModule, // Computes real-time rankings and broadcasts updates
+    SystemMonitorModule, // Triggers DLQ dead-lettering for system anomalies
+    LobbyMaintenanceModule, // Monitors lobby pings and sweeps old rooms
   ],
 })
 export class AppModule {}
