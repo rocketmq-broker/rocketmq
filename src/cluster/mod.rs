@@ -63,15 +63,22 @@ pub enum ClusterFrame {
 
     // Quorum Queues (Data Replication)
     ReplicatePublish {
+        term: u64,
+        leader_id: u64,
         queue_name: String,
         msg_id: u64,
         body: Vec<u8>,
+        commit_index: u64,
     },
     ReplicateAck {
+        term: u64,
+        leader_id: u64,
         queue_name: String,
         msg_id: u64,
+        commit_index: u64,
     },
     ReplicateResponse {
+        term: u64,
         msg_id: u64,
         success: bool,
     },
@@ -92,6 +99,8 @@ pub struct ClusterManager {
     pub listen_addr: String,
     pub peers: DashMap<u64, PeerConnection>,
     pub members: RwLock<HashMap<u64, MemberInfo>>,
+    pub current_term: AtomicU64,
+    pub leader_id: AtomicU64,
     // Pending quorum replications waiting for votes: msg_id -> (needed, received)
     pub pending_replications: DashMap<u64, tokio::sync::oneshot::Sender<bool>>,
     pub replication_votes: DashMap<u64, AtomicU64>,
@@ -116,6 +125,8 @@ impl ClusterManager {
             listen_addr,
             peers: DashMap::new(),
             members: RwLock::new(members),
+            current_term: AtomicU64::new(1),
+            leader_id: AtomicU64::new(node_id),
             pending_replications: DashMap::new(),
             replication_votes: DashMap::new(),
         }
@@ -157,10 +168,16 @@ impl ClusterManager {
         // Start vote with 1 (local node always votes yes)
         self.replication_votes.insert(msg_id, AtomicU64::new(1));
 
+        let term = self.current_term.load(Ordering::SeqCst);
+        let leader = self.node_id;
+
         let frame = ClusterFrame::ReplicatePublish {
+            term,
+            leader_id: leader,
             queue_name: queue_name.to_string(),
             msg_id,
             body: body.to_vec(),
+            commit_index: msg_id,
         };
 
         self.broadcast(frame).await;
@@ -191,9 +208,15 @@ impl ClusterManager {
         self.pending_replications.insert(msg_id, tx);
         self.replication_votes.insert(msg_id, AtomicU64::new(1));
 
+        let term = self.current_term.load(Ordering::SeqCst);
+        let leader = self.node_id;
+
         let frame = ClusterFrame::ReplicateAck {
+            term,
+            leader_id: leader,
             queue_name: queue_name.to_string(),
             msg_id,
+            commit_index: msg_id,
         };
 
         self.broadcast(frame).await;
@@ -416,51 +439,89 @@ async fn handle_connection(
                         );
                     }
                 }
-                ClusterFrame::ReplicatePublish {
+                 ClusterFrame::ReplicatePublish {
+                    term,
+                    leader_id,
                     queue_name,
                     msg_id,
                     body,
+                    commit_index: _,
                 } => {
-                    let success = if let Some(mut q) = broker.queues.get_mut(&queue_name) {
-                        let msg = crate::queue::message::Message::new_routed(
-                            msg_id,
-                            Vec::new(),
-                            body,
-                            "".to_string(),
-                            "".to_string(),
-                        );
-                        q.messages
-                            .push_back(crate::queue::message::QueueMessage::Full(msg));
-                        true
-                    } else {
+                    let local_term = manager.current_term.load(Ordering::SeqCst);
+                    let success = if term < local_term {
                         false
-                    };
-                    let res = ClusterFrame::ReplicateResponse { msg_id, success };
-                    let _ = tx.send(res).await;
-                }
-                ClusterFrame::ReplicateAck { queue_name, msg_id } => {
-                    let success = if let Some(mut q) = broker.queues.get_mut(&queue_name) {
-                        let mut found = false;
-                        let mut temp = std::collections::VecDeque::new();
-                        while let Some(msg) = q.messages.pop_front() {
-                            if msg.id() == msg_id {
-                                found = true;
-                            } else {
-                                temp.push_back(msg);
+                    } else {
+                        if term > local_term {
+                            manager.current_term.store(term, Ordering::SeqCst);
+                            manager.leader_id.store(leader_id, Ordering::SeqCst);
+                        }
+                        if let Some(mut q) = broker.queues.get_mut(&queue_name) {
+                            // Durability: write to local WAL on follower
+                            if let Some(wal) = broker.wal() {
+                                let _ = wal.log_enqueue(&queue_name, msg_id, "", "", &[], &body);
                             }
+                            let msg = crate::queue::message::Message::new_routed(
+                                msg_id,
+                                Vec::new(),
+                                body,
+                                "".to_string(),
+                                "".to_string(),
+                            );
+                            q.messages
+                                .push_back(crate::queue::message::QueueMessage::Full(msg));
+                            true
+                        } else {
+                            false
                         }
-                        while let Some(msg) = temp.pop_front() {
-                            q.messages.push_back(msg);
-                        }
-                        found
-                    } else {
-                        false
                     };
-                    let res = ClusterFrame::ReplicateResponse { msg_id, success };
+                    let res = ClusterFrame::ReplicateResponse { term, msg_id, success };
                     let _ = tx.send(res).await;
                 }
-                ClusterFrame::ReplicateResponse { msg_id, success: _ } => {
-                    manager.vote_replication(msg_id);
+                ClusterFrame::ReplicateAck {
+                    term,
+                    leader_id,
+                    queue_name,
+                    msg_id,
+                    commit_index: _,
+                } => {
+                    let local_term = manager.current_term.load(Ordering::SeqCst);
+                    let success = if term < local_term {
+                        false
+                    } else {
+                        if term > local_term {
+                            manager.current_term.store(term, Ordering::SeqCst);
+                            manager.leader_id.store(leader_id, Ordering::SeqCst);
+                        }
+                        if let Some(mut q) = broker.queues.get_mut(&queue_name) {
+                            // Durability: log Ack on follower WAL
+                            if let Some(wal) = broker.wal() {
+                                let _ = wal.log_ack(msg_id);
+                            }
+                            let mut found = false;
+                            let mut temp = std::collections::VecDeque::new();
+                            while let Some(msg) = q.messages.pop_front() {
+                                if msg.id() == msg_id {
+                                    found = true;
+                                } else {
+                                    temp.push_back(msg);
+                                }
+                            }
+                            while let Some(msg) = temp.pop_front() {
+                                q.messages.push_back(msg);
+                            }
+                            found
+                        } else {
+                            false
+                        }
+                    };
+                    let res = ClusterFrame::ReplicateResponse { term, msg_id, success };
+                    let _ = tx.send(res).await;
+                }
+                ClusterFrame::ReplicateResponse { term, msg_id, success } => {
+                    let local_term = manager.current_term.load(Ordering::SeqCst);
+                    if term == local_term && success {
+                        manager.vote_replication(msg_id);
+                    }
                 }
             }
         }
