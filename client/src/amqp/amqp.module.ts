@@ -39,28 +39,79 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
       useFactory: async () => {
         const logger = new Logger('AmqpModule');
 
-        // ── Auto-declare Virtual Hosts via Management API before connecting ──
-        const mgmtUrl = 'http://127.0.0.1:15672/api/vhosts/';
+        // ── Cluster node endpoints for failover ──
+        const clusterNodes = [
+          process.env.AMQP_URL || 'amqp://guest:guest@127.0.0.1:5672/',
+          'amqp://guest:guest@127.0.0.1:5673/',
+          'amqp://guest:guest@127.0.0.1:5674/',
+        ];
+
+        // ── Auto-declare Virtual Hosts via any reachable Management API ──
+        const mgmtPorts = [15672, 15673, 15674];
         const authHeader =
           'Basic ' + Buffer.from('guest:guest').toString('base64');
 
-        for (const vhost of ['gaming', 'security', 'analytics']) {
-          try {
-            await fetch(`${mgmtUrl}${encodeURIComponent(vhost)}`, {
-              method: 'PUT',
-              headers: { Authorization: authHeader },
-            });
-            logger.log(`Declared virtual host: "${vhost}"`);
-          } catch (err) {
-            logger.warn(
-              `Failed to auto-create vhost "${vhost}" (is management service up?): ${err.message}`,
-            );
+        for (const port of mgmtPorts) {
+          let reachable = false;
+          for (const vhost of ['gaming', 'security', 'analytics']) {
+            try {
+              await fetch(
+                `http://127.0.0.1:${port}/api/vhosts/${encodeURIComponent(vhost)}`,
+                {
+                  method: 'PUT',
+                  headers: { Authorization: authHeader },
+                  signal: AbortSignal.timeout(1000),
+                },
+              );
+              reachable = true;
+              logger.log(
+                `Declared virtual host: "${vhost}" via mgmt port ${port}`,
+              );
+            } catch {
+              // Try next port
+            }
           }
+          if (reachable) break;
         }
 
-        const conn = await amqp.connect(AMQP_URL);
-        logger.log(`Connected to AMQP at ${AMQP_URL}`);
-        return conn;
+        // ── Failover connection: try each cluster node ──
+        const connectWithFailover = async (): Promise<amqp.ChannelModel> => {
+          for (const url of clusterNodes) {
+            try {
+              const conn = await amqp.connect(url);
+              logger.log(`Connected to AMQP cluster node at ${url}`);
+
+              // Auto-reconnect on unexpected close
+              conn.on('close', () => {
+                logger.warn(
+                  `AMQP connection to ${url} closed, reconnecting in 2s...`,
+                );
+                setTimeout(async () => {
+                  try {
+                    await connectWithFailover();
+                  } catch (err) {
+                    logger.error(`Reconnect failed: ${err.message}`);
+                  }
+                }, 2000);
+              });
+
+              conn.on('error', (err) => {
+                logger.error(`AMQP connection error: ${err.message}`);
+              });
+
+              return conn;
+            } catch (err) {
+              logger.warn(
+                `Failed to connect to ${url}: ${err.message}, trying next node...`,
+              );
+            }
+          }
+          throw new Error(
+            'All AMQP cluster nodes unreachable: ' + clusterNodes.join(', '),
+          );
+        };
+
+        return connectWithFailover();
       },
     },
     {
