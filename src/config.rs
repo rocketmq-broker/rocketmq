@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: config.rs
+// Description: Global configuration defaults, system environment variable parsing, and options.
+
 //! Centralized broker configuration constants.
 //!
 //! All tunable defaults live here to avoid magic numbers scattered
@@ -7,110 +26,124 @@ use std::time::Duration;
 
 // ─── Network ───────────────────────────────────────────
 
-/// Address and port the AMQP listener binds to.
 pub const AMQP_LISTEN_ADDR: &str = "127.0.0.1:5672";
 
-/// Address and port the AMQPS (TLS) listener binds to.
 pub const AMQPS_LISTEN_ADDR: &str = "127.0.0.1:5671";
 
 // ─── TLS ───────────────────────────────────────────────
 
-/// Path to the TLS certificate PEM file.
-/// Auto-generated self-signed cert if not present.
+/// Gets the file path for the SSL/TLS certificate.
+///
+/// Gets the file path for the SSL/TLS certificate.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_tls_cert_path() -> String {
     format!("{}/tls/server.pem", get_data_dir())
 }
 
-/// Path to the TLS private key PEM file.
+/// Gets the file path for the SSL/TLS private key.
+///
+/// Gets the file path for the SSL/TLS private key.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_tls_key_path() -> String {
     format!("{}/tls/server.key", get_data_dir())
 }
 
 // ─── Management HTTP API ──────────────────────────────
 
-/// Address and port for the management HTTP API (RabbitMQ-compatible).
 pub const MANAGEMENT_LISTEN_ADDR: &str = "127.0.0.1:15672";
 
 // ─── AMQP Delivery Pipeline ───────────────────────────
 
-/// Capacity of the per-connection AMQP delivery channel.
-/// Controls how many outgoing frames can be buffered before backpressure.
 pub const DELIVERY_CHANNEL_CAPACITY: usize = 256;
 
-/// How often the delivery task polls for messages to push to consumers.
 pub const DELIVERY_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
 // ─── Background Tasks ─────────────────────────────────
 
-/// How often to check queue TTL expiration (x-expires).
 pub const QUEUE_TTL_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
-/// How often to run message TTL expiration sweeps.
 pub const MESSAGE_TTL_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
-/// How often to evict stale entries from the dedup cache.
 pub const DEDUP_EVICTION_INTERVAL: Duration = Duration::from_secs(10);
 
-/// How long a dedup entry is kept before eviction (5 minutes).
 pub const DEDUP_WINDOW: Duration = Duration::from_secs(300);
 
-/// How often to flush delayed messages that are ready for delivery.
 pub const DELAY_FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 
 // ─── Persistence ───────────────────────────────────────
 
-/// Root data directory.
+/// Executes the standard get data dir lifecycle step.
+///
+/// Executes the required business logic for get data dir.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_data_dir() -> String {
     std::env::var("ROCKETMQ_DATA_DIR").unwrap_or_else(|_| "data".to_string())
 }
 
-/// Path to the WAL file for crash recovery.
+/// Executes the standard get wal path lifecycle step.
+///
+/// Executes the required business logic for get wal path.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_wal_path() -> String {
     format!("{}/broker.wal", get_data_dir())
 }
 
-/// Path to the user/permissions database.
+/// Executes the standard get user db path lifecycle step.
+///
+/// Executes the required business logic for get user db path.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_user_db_path() -> String {
     format!("{}/users.json", get_data_dir())
 }
 
-/// How often to check if WAL compaction is needed.
 pub const WAL_COMPACT_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Minimum number of WAL entries before compaction is triggered.
 pub const WAL_COMPACT_THRESHOLD: u64 = 1000;
 
 // ─── Authentication ────────────────────────────────────
 
-/// bcrypt cost factor. 10 is the industry-standard default:
-/// fast enough for login, slow enough for brute-force resistance.
 pub const BCRYPT_COST: u32 = 10;
 
-/// Name of the built-in guest user.
 pub const DEFAULT_GUEST_USER: &str = "guest";
 
-/// Default password for the guest user.
 pub const DEFAULT_GUEST_PASS: &str = "guest";
 
-/// Name of the built-in admin user.
 pub const DEFAULT_ADMIN_USER: &str = "admin";
 
-/// Default password for the admin user.
 pub const DEFAULT_ADMIN_PASS: &str = "1234";
 
 // ─── Logging ───────────────────────────────────────────
 
-/// Default RUST_LOG filter when RUST_LOG env var is not set.
 pub const DEFAULT_LOG_FILTER: &str = "rocketmq=info";
 
 // ─── AMQP Connection ──────────────────────────────────
 
-/// Fallback heartbeat timeout when client doesn't negotiate one.
 pub const FALLBACK_HEARTBEAT_SECS: u64 = 60;
 
 // ─── Clustering ────────────────────────────────────────
 
-/// Get the Node ID from the environment (ROCKETMQ_NODE_ID), default to 1.
+/// Retrieves the unique identifier of this node from configuration or system state.
+///
+/// Retrieves the unique identifier of this node from configuration or system state.
+///
+/// # Returns
+///
+/// * `u64` - The evaluated outcome or operation handle.
 pub fn get_node_id() -> u64 {
     std::env::var("ROCKETMQ_NODE_ID")
         .ok()
@@ -118,12 +151,24 @@ pub fn get_node_id() -> u64 {
         .unwrap_or(1)
 }
 
-/// Get the cluster internal bind address from the environment (ROCKETMQ_CLUSTER_ADDR), default to 127.0.0.1:5680.
+/// Retrieves the cluster communication address from the configuration.
+///
+/// Retrieves the cluster communication address from the configuration.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_cluster_addr() -> String {
     std::env::var("ROCKETMQ_CLUSTER_ADDR").unwrap_or_else(|_| "127.0.0.1:5680".to_string())
 }
 
-/// Get seed nodes from the environment (ROCKETMQ_CLUSTER_SEEDS), default to empty list.
+/// Retrieves the list of seed nodes for joining the cluster.
+///
+/// Retrieves the list of seed nodes for joining the cluster.
+///
+/// # Returns
+///
+/// * `Vec<String>` - The evaluated outcome or operation handle.
 pub fn get_cluster_seeds() -> Vec<String> {
     std::env::var("ROCKETMQ_CLUSTER_SEEDS")
         .map(|v| {
@@ -135,7 +180,13 @@ pub fn get_cluster_seeds() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Get the AMQP bind address, honoring the environment variable (ROCKETMQ_AMQP_PORT) if present.
+/// Gets the local TCP socket address to bind the AMQP listener.
+///
+/// Gets the local TCP socket address to bind the AMQP listener.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_amqp_listen_addr() -> String {
     let host = std::env::var("ROCKETMQ_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     if let Ok(port) = std::env::var("ROCKETMQ_AMQP_PORT") {
@@ -145,7 +196,13 @@ pub fn get_amqp_listen_addr() -> String {
     }
 }
 
-/// Get the AMQPS bind address, honoring the environment variable (ROCKETMQ_AMQPS_PORT) if present.
+/// Gets the local TCP socket address to bind the AMQPS (TLS) listener.
+///
+/// Gets the local TCP socket address to bind the AMQPS (TLS) listener.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_amqps_listen_addr() -> String {
     let host = std::env::var("ROCKETMQ_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     if let Ok(port) = std::env::var("ROCKETMQ_AMQPS_PORT") {
@@ -155,7 +212,13 @@ pub fn get_amqps_listen_addr() -> String {
     }
 }
 
-/// Get the Management HTTP bind address, honoring the environment variable (ROCKETMQ_MGMT_PORT) if present.
+/// Executes the standard get mgmt listen addr lifecycle step.
+///
+/// Executes the required business logic for get mgmt listen addr.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn get_mgmt_listen_addr() -> String {
     let host = std::env::var("ROCKETMQ_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     if let Ok(port) = std::env::var("ROCKETMQ_MGMT_PORT") {
