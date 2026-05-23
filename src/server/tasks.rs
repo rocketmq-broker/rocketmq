@@ -53,7 +53,7 @@ pub fn spawn_all(broker: Broker) {
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn queue_ttl_task(broker: Broker) {
-    let mut interval = tokio::time::interval(crate::config::QUEUE_TTL_CHECK_INTERVAL);
+    let mut interval = tokio::time::interval(crate::config::queue_ttl_check_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -85,7 +85,7 @@ async fn queue_ttl_task(broker: Broker) {
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn message_ttl_task(broker: Broker) {
-    let mut interval = tokio::time::interval(crate::config::MESSAGE_TTL_CHECK_INTERVAL);
+    let mut interval = tokio::time::interval(crate::config::message_ttl_check_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -121,7 +121,7 @@ async fn message_ttl_task(broker: Broker) {
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn dedup_eviction_task(broker: Broker) {
-    let mut interval = tokio::time::interval(crate::config::DEDUP_EVICTION_INTERVAL);
+    let mut interval = tokio::time::interval(crate::config::dedup_eviction_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -131,7 +131,7 @@ async fn dedup_eviction_task(broker: Broker) {
         let before = broker.dedup_cache.len();
         broker
             .dedup_cache
-            .retain(|_, ts| now.duration_since(*ts) < crate::config::DEDUP_WINDOW);
+            .retain(|_, ts| now.duration_since(*ts) < crate::config::dedup_window());
         let evicted = before - broker.dedup_cache.len();
         if evicted > 0 {
             debug!(evicted, "dedup cache entries evicted");
@@ -147,7 +147,7 @@ async fn dedup_eviction_task(broker: Broker) {
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn delay_flush_task(broker: Broker) {
-    let mut interval = tokio::time::interval(crate::config::DELAY_FLUSH_INTERVAL);
+    let mut interval = tokio::time::interval(crate::config::delay_flush_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -178,7 +178,7 @@ async fn delay_flush_task(broker: Broker) {
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn wal_compact_task(broker: Broker) {
-    let mut interval = tokio::time::interval(crate::config::WAL_COMPACT_INTERVAL);
+    let mut interval = tokio::time::interval(crate::config::wal_compact_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -195,7 +195,7 @@ async fn wal_compact_task(broker: Broker) {
         };
 
         let entry_count = entries.len() as u64;
-        if entry_count < crate::config::WAL_COMPACT_THRESHOLD {
+        if entry_count < crate::config::wal_compact_threshold() {
             continue;
         }
 

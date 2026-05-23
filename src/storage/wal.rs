@@ -39,7 +39,7 @@ use tracing::{info, warn};
 const WAL_HEADER_SIZE: usize = 9; // total_len(4) + crc32(4) + entry_type(1)
 const SEGMENT_EXT: &str = "seg";
 const SEGMENT_ID_WIDTH: usize = 16;
-const DEFAULT_MAX_SEGMENT_SIZE: u64 = 64 * 1024 * 1024; // 64 MB
+
 
 /// Executes the standard segment path lifecycle step.
 ///
@@ -558,12 +558,8 @@ impl Wal {
             .unwrap_or_else(|| Path::new("data"))
             .join("segments");
 
-        // Read max size from environment or use a 64MB default.
-        // For testing we can configure a smaller segment size like 64KB or 1MB.
-        let max_size = std::env::var("ROCKETMQ_MAX_SEGMENT_SIZE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_MAX_SEGMENT_SIZE); // 64 MB default
+        // Max segment size from broker config (default 64MB).
+        let max_size = crate::config::get_max_segment_size();
 
         let segment_manager = Arc::new(SegmentManager::new(segments_dir, max_size)?);
         let entries = segment_manager.read_all_entries()?;

@@ -60,40 +60,40 @@ impl AuthBackend {
 
         // Seed default guest user (like RabbitMQ)
         let guest = UserEntry::new(
-            crate::config::DEFAULT_GUEST_USER,
-            crate::config::DEFAULT_GUEST_PASS,
+            crate::config::default_guest_user(),
+            crate::config::default_guest_pass(),
             vec![UserTag::Administrator],
         );
         backend
             .users
-            .insert(crate::config::DEFAULT_GUEST_USER.to_string(), guest);
+            .insert(crate::config::default_guest_user().to_string(), guest);
 
         // Grant guest full access to default vhost "/"
         backend.permissions.insert(
             (
-                crate::config::DEFAULT_GUEST_USER.to_string(),
+                crate::config::default_guest_user().to_string(),
                 "/".to_string(),
             ),
-            Permission::full_access(crate::config::DEFAULT_GUEST_USER, "/"),
+            Permission::full_access(crate::config::default_guest_user(), "/"),
         );
 
         // Seed admin user
         let admin = UserEntry::new(
-            crate::config::DEFAULT_ADMIN_USER,
-            crate::config::DEFAULT_ADMIN_PASS,
+            crate::config::default_admin_user(),
+            crate::config::default_admin_pass(),
             vec![UserTag::Administrator],
         );
         backend
             .users
-            .insert(crate::config::DEFAULT_ADMIN_USER.to_string(), admin);
+            .insert(crate::config::default_admin_user().to_string(), admin);
 
         // Grant admin full access to default vhost "/"
         backend.permissions.insert(
             (
-                crate::config::DEFAULT_ADMIN_USER.to_string(),
+                crate::config::default_admin_user().to_string(),
                 "/".to_string(),
             ),
-            Permission::full_access(crate::config::DEFAULT_ADMIN_USER, "/"),
+            Permission::full_access(crate::config::default_admin_user(), "/"),
         );
 
         backend
@@ -113,10 +113,10 @@ impl AuthBackend {
             .ok_or_else(|| format!("user '{}' not found", username))?;
 
         // RabbitMQ rule: guest can only connect from localhost
-        if username == crate::config::DEFAULT_GUEST_USER && !is_loopback(&peer_addr) {
+        if username == crate::config::default_guest_user() && !is_loopback(&peer_addr) {
             return Err(format!(
                 "user '{}' can only connect via localhost",
-                crate::config::DEFAULT_GUEST_USER
+                crate::config::default_guest_user()
             ));
         }
 
@@ -245,7 +245,7 @@ impl AuthBackend {
     ///
     /// * `Result<(), String>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn delete_user(&self, username: &str) -> Result<(), String> {
-        if username == crate::config::DEFAULT_GUEST_USER {
+        if username == crate::config::default_guest_user() {
             return Err("cannot delete the default guest user".to_string());
         }
         self.users

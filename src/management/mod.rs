@@ -48,8 +48,7 @@ use handlers::*;
 ///
 /// * `Result<(), Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
-    let www_dir = std::env::var("ROCKETMQ_WWW_DIR")
-        .unwrap_or_else(|_| "src/management/www".to_string());
+    let www_dir = crate::config::get_www_dir();
 
     let app = Router::new()
         // Health & Overview

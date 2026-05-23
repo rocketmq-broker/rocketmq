@@ -78,7 +78,7 @@ pub fn spawn_amqp_on_stream(
 
         // Create AMQP delivery channel — server pushes raw frame bytes here
         let (amqp_tx, mut amqp_rx) =
-            tokio::sync::mpsc::channel::<Vec<u8>>(crate::config::DELIVERY_CHANNEL_CAPACITY);
+            tokio::sync::mpsc::channel::<Vec<u8>>(crate::config::delivery_channel_capacity());
 
         broker.connections.insert(
             conn_id,
@@ -118,7 +118,7 @@ pub fn spawn_amqp_on_stream(
         let heartbeat_interval = if heartbeat_secs > 0 {
             Duration::from_secs(heartbeat_secs as u64)
         } else {
-            Duration::from_secs(crate::config::FALLBACK_HEARTBEAT_SECS)
+            Duration::from_secs(crate::config::fallback_heartbeat_secs())
         };
         let heartbeat_timeout = heartbeat_interval * 2;
 

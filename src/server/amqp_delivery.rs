@@ -39,7 +39,7 @@ use crate::state::Broker;
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub fn spawn_delivery_task(broker: Broker) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(crate::config::DELIVERY_POLL_INTERVAL);
+        let mut interval = tokio::time::interval(crate::config::delivery_poll_interval());
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {

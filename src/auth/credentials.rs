@@ -156,7 +156,7 @@ pub struct UserStore {
 ///
 /// * `String` - The evaluated outcome or operation handle.
 fn hash_password(password: &str) -> String {
-    bcrypt::hash(password, crate::config::BCRYPT_COST).expect("bcrypt hash should not fail")
+    bcrypt::hash(password, crate::config::bcrypt_cost()).expect("bcrypt hash should not fail")
 }
 
 #[cfg(test)]
