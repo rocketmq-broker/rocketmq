@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: permissions.rs
+// Description: User virtual host access permission models.
+
 //! Per-vhost permission model (RabbitMQ-compatible).
 //!
 //! Each permission entry grants a user configure/write/read access
@@ -6,15 +25,9 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-/// A permission entry for a user on a specific vhost.
+/// Defines access rules (configure, write, read) for a user on a virtual host.
 ///
-/// Each field is a regex pattern matched against resource names:
-/// - `configure`: declare/delete queues and exchanges
-/// - `write`: publish to exchange, bind queue to exchange
-/// - `read`: consume from queue, basic.get, queue.purge
-///
-/// Empty string `""` means no access.
-/// `".*"` means full access to all resources.
+/// Defines access rules (configure, write, read) for a user on a virtual host.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Permission {
     pub username: String,
@@ -25,6 +38,21 @@ pub struct Permission {
 }
 
 impl Permission {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - `&str`: The unique identifier string of the resource.
+    /// * `vhost` - `&str`: Target virtual host namespace string.
+    /// * `configure` - `&str`: The `configure` argument.
+    /// * `write` - `&str`: The `write` argument.
+    /// * `read` - `&str`: The `read` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(username: &str, vhost: &str, configure: &str, write: &str, read: &str) -> Self {
         Self {
             username: username.to_string(),
@@ -35,21 +63,51 @@ impl Permission {
         }
     }
 
-    /// Full access permission (configure=.*, write=.*, read=.*).
+    /// Executes the standard full access lifecycle step.
+    ///
+    /// Executes the required business logic for full access.
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - `&str`: The unique identifier string of the resource.
+    /// * `vhost` - `&str`: Target virtual host namespace string.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn full_access(username: &str, vhost: &str) -> Self {
         Self::new(username, vhost, ".*", ".*", ".*")
     }
 
-    /// No access permission (all empty).
+    /// Executes the standard no access lifecycle step.
+    ///
+    /// Executes the required business logic for no access.
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - `&str`: The unique identifier string of the resource.
+    /// * `vhost` - `&str`: Target virtual host namespace string.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn no_access(username: &str, vhost: &str) -> Self {
         Self::new(username, vhost, "", "", "")
     }
 }
 
-/// Check if a resource name matches a permission pattern.
+/// Executes the standard matches resource lifecycle step.
 ///
-/// The pattern is a regex anchored to the full string.
-/// Empty pattern means no access.
+/// Executes the required business logic for matches resource.
+///
+/// # Arguments
+///
+/// * `pattern` - `&str`: The `pattern` argument.
+/// * `resource` - `&str`: The `resource` argument.
+///
+/// # Returns
+///
+/// * `bool` - The evaluated outcome or operation handle.
 pub fn matches_resource(pattern: &str, resource: &str) -> bool {
     if pattern.is_empty() {
         return false;
@@ -84,6 +142,9 @@ pub fn matches_resource(pattern: &str, resource: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// Executes the standard full access matches everything lifecycle step.
+    ///
+    /// Executes the required business logic for full access matches everything.
     #[test]
     fn full_access_matches_everything() {
         assert!(matches_resource(".*", "anything"));
@@ -91,12 +152,18 @@ mod tests {
         assert!(matches_resource(".*", "amq.gen-abc123"));
     }
 
+    /// Executes the standard empty pattern denies all lifecycle step.
+    ///
+    /// Executes the required business logic for empty pattern denies all.
     #[test]
     fn empty_pattern_denies_all() {
         assert!(!matches_resource("", "anything"));
         assert!(!matches_resource("", ""));
     }
 
+    /// Executes the standard prefix pattern lifecycle step.
+    ///
+    /// Executes the required business logic for prefix pattern.
     #[test]
     fn prefix_pattern() {
         assert!(matches_resource("^app\\..*", "app.orders"));
@@ -105,6 +172,9 @@ mod tests {
         assert!(!matches_resource("^app\\..*", "xapp.fake"));
     }
 
+    /// Executes the standard exact match lifecycle step.
+    ///
+    /// Executes the required business logic for exact match.
     #[test]
     fn exact_match() {
         assert!(matches_resource("^my-queue$", "my-queue"));
@@ -112,6 +182,9 @@ mod tests {
         assert!(!matches_resource("^my-queue$", "not-my-queue"));
     }
 
+    /// Executes the standard auto anchoring lifecycle step.
+    ///
+    /// Executes the required business logic for auto anchoring.
     #[test]
     fn auto_anchoring() {
         // Pattern without anchors is auto-anchored
@@ -120,6 +193,9 @@ mod tests {
         assert!(!matches_resource("orders", "my-orders"));
     }
 
+    /// Executes the standard amq gen pattern lifecycle step.
+    ///
+    /// Executes the required business logic for amq gen pattern.
     #[test]
     fn amq_gen_pattern() {
         // RabbitMQ default: guest can use auto-generated queues
@@ -127,6 +203,9 @@ mod tests {
         assert!(!matches_resource("^amq\\.gen.*", "my-queue"));
     }
 
+    /// Executes the standard alternation lifecycle step.
+    ///
+    /// Executes the required business logic for alternation.
     #[test]
     fn alternation() {
         assert!(matches_resource("^(app|service)\\..*", "app.orders"));
@@ -134,12 +213,18 @@ mod tests {
         assert!(!matches_resource("^(app|service)\\..*", "admin.logs"));
     }
 
+    /// Executes the standard invalid regex denies lifecycle step.
+    ///
+    /// Executes the required business logic for invalid regex denies.
     #[test]
     fn invalid_regex_denies() {
         // Invalid regex should not panic, just deny
         assert!(!matches_resource("[invalid", "anything"));
     }
 
+    /// Executes the standard permission constructors lifecycle step.
+    ///
+    /// Executes the required business logic for permission constructors.
     #[test]
     fn permission_constructors() {
         let full = Permission::full_access("admin", "/");
