@@ -38,6 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy compiled binary from builder
 COPY --from=builder /usr/src/rocketmq/target/release/rocketmq /usr/bin/rocketmq
 
+# Copy built-in management UI static assets
+COPY --from=builder /usr/src/rocketmq/src/management/www /app/src/management/www
+
 # Create data directory
 RUN mkdir -p data
 
