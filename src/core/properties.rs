@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: properties.rs
+// Description: AMQP Content Header properties serialization and structures.
+
 //! AMQP 0-9-1 Basic content header properties.
 //!
 //! The 14 standard properties are transmitted in content header frames
@@ -7,13 +26,9 @@ use std::io::{self, Read, Write};
 
 use crate::core::types::*;
 
-/// The 14 standard AMQP Basic properties.
+/// Represents the schema or state for basic properties.
 ///
-/// Property flags bitmap (bit 15 = first property):
-/// 15: content_type, 14: content_encoding, 13: headers,
-/// 12: delivery_mode, 11: priority, 10: correlation_id,
-///  9: reply_to, 8: expiration, 7: message_id, 6: timestamp,
-///  5: type_field, 4: user_id, 3: app_id, 2: cluster_id
+/// Defines details for basic properties inside the broker ecosystem.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BasicProperties {
     pub content_type: Option<String>,
@@ -33,7 +48,13 @@ pub struct BasicProperties {
 }
 
 impl BasicProperties {
-    /// Build the property flags u16 from which fields are present.
+    /// Executes the standard flags lifecycle step.
+    ///
+    /// Executes the required business logic for flags.
+    ///
+    /// # Returns
+    ///
+    /// * `u16` - The evaluated outcome or operation handle.
     pub fn flags(&self) -> u16 {
         let mut f: u16 = 0;
         if self.content_type.is_some() {
@@ -81,7 +102,17 @@ impl BasicProperties {
         f
     }
 
-    /// Write the property flags and present values.
+    /// Executes the standard encode lifecycle step.
+    ///
+    /// Executes the required business logic for encode.
+    ///
+    /// # Arguments
+    ///
+    /// * `w` - `&mut impl Write`: The `w` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn encode(&self, w: &mut impl Write) -> io::Result<()> {
         write_short(w, self.flags())?;
 
@@ -130,7 +161,17 @@ impl BasicProperties {
         Ok(())
     }
 
-    /// Read properties from a buffer given the property flags.
+    /// Executes the standard decode lifecycle step.
+    ///
+    /// Executes the required business logic for decode.
+    ///
+    /// # Arguments
+    ///
+    /// * `r` - `&mut impl Read`: The `r` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<Self>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn decode(r: &mut impl Read) -> io::Result<Self> {
         let flags = read_short(r)?;
         let mut p = Self::default();
@@ -186,6 +227,9 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    /// Executes the standard empty properties roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for empty properties roundtrip.
     #[test]
     fn empty_properties_roundtrip() {
         let p = BasicProperties::default();
@@ -196,6 +240,9 @@ mod tests {
         assert_eq!(decoded, p);
     }
 
+    /// Executes the standard all properties roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for all properties roundtrip.
     #[test]
     fn all_properties_roundtrip() {
         let mut headers = FieldTable::new();
@@ -225,6 +272,9 @@ mod tests {
         assert_eq!(decoded, p);
     }
 
+    /// Executes the standard partial properties roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for partial properties roundtrip.
     #[test]
     fn partial_properties_roundtrip() {
         let p = BasicProperties {
@@ -242,6 +292,9 @@ mod tests {
         assert_eq!(decoded, p);
     }
 
+    /// Executes the standard flags bitmap individual lifecycle step.
+    ///
+    /// Executes the required business logic for flags bitmap individual.
     #[test]
     fn flags_bitmap_individual() {
         let mut p = BasicProperties::default();

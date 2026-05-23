@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: method.rs
+// Description: AMQP Method frame definitions and generated decoders.
+
 //! AMQP 0-9-1 class and method ID constants.
 //!
 //! These correspond exactly to the AMQP 0-9-1 specification.
@@ -116,7 +135,17 @@ pub const NOT_ALLOWED: u16 = 530;
 pub const NOT_IMPLEMENTED: u16 = 540;
 pub const INTERNAL_ERROR: u16 = 541;
 
-/// Returns true if this reply code is a connection-level exception.
+/// Executes the standard is connection error lifecycle step.
+///
+/// Executes the required business logic for is connection error.
+///
+/// # Arguments
+///
+/// * `code` - `u16`: The `code` argument.
+///
+/// # Returns
+///
+/// * `bool` - The evaluated outcome or operation handle.
 pub fn is_connection_error(code: u16) -> bool {
     matches!(
         code,
@@ -134,7 +163,17 @@ pub fn is_connection_error(code: u16) -> bool {
     )
 }
 
-/// Human-readable name for a reply code.
+/// Executes the standard reply text lifecycle step.
+///
+/// Executes the required business logic for reply text.
+///
+/// # Arguments
+///
+/// * `code` - `u16`: The `code` argument.
+///
+/// # Returns
+///
+/// * `&'static str` - The evaluated outcome or operation handle.
 pub fn reply_text(code: u16) -> &'static str {
     match code {
         REPLY_SUCCESS => "REPLY-SUCCESS",
@@ -164,6 +203,9 @@ pub fn reply_text(code: u16) -> &'static str {
 mod tests {
     use super::*;
 
+    /// Executes the standard connection errors classified lifecycle step.
+    ///
+    /// Executes the required business logic for connection errors classified.
     #[test]
     fn connection_errors_classified() {
         assert!(is_connection_error(FRAME_ERROR));
@@ -174,6 +216,9 @@ mod tests {
         assert!(!is_connection_error(REPLY_SUCCESS));
     }
 
+    /// Executes the standard reply text known lifecycle step.
+    ///
+    /// Executes the required business logic for reply text known.
     #[test]
     fn reply_text_known() {
         assert_eq!(reply_text(NOT_FOUND), "NOT-FOUND");
@@ -181,11 +226,17 @@ mod tests {
         assert_eq!(reply_text(REPLY_SUCCESS), "REPLY-SUCCESS");
     }
 
+    /// Executes the standard reply text unknown lifecycle step.
+    ///
+    /// Executes the required business logic for reply text unknown.
     #[test]
     fn reply_text_unknown() {
         assert_eq!(reply_text(999), "UNKNOWN");
     }
 
+    /// Executes the standard class ids correct lifecycle step.
+    ///
+    /// Executes the required business logic for class ids correct.
     #[test]
     fn class_ids_correct() {
         assert_eq!(CLASS_CONNECTION, 10);
@@ -196,6 +247,9 @@ mod tests {
         assert_eq!(CLASS_TX, 90);
     }
 
+    /// Executes the standard method ids connection lifecycle step.
+    ///
+    /// Executes the required business logic for method ids connection.
     #[test]
     fn method_ids_connection() {
         assert_eq!(METHOD_CONNECTION_START, 10);
@@ -204,6 +258,9 @@ mod tests {
         assert_eq!(METHOD_CONNECTION_CLOSE, 50);
     }
 
+    /// Executes the standard method ids basic lifecycle step.
+    ///
+    /// Executes the required business logic for method ids basic.
     #[test]
     fn method_ids_basic() {
         assert_eq!(METHOD_BASIC_PUBLISH, 40);

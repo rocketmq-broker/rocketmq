@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_codec.rs
+// Description: AMQP frame encoder and decoder implementation over AsyncRead/AsyncWrite.
+
 //! AMQP 0-9-1 frame codec.
 //!
 //! Frame format: type(1) | channel(2) | size(4) | payload(size) | frame-end(1=0xCE)
@@ -21,21 +40,19 @@ pub const FRAME_BODY: u8 = 3;
 pub const FRAME_HEARTBEAT: u8 = 8;
 pub const FRAME_END: u8 = 0xCE;
 
-/// The 8-byte protocol header sent by the client to initiate an AMQP 0-9-1 connection.
 pub const PROTOCOL_HEADER: [u8; 8] = [b'A', b'M', b'Q', b'P', 0, 0, 9, 1];
 
-/// Default frame-max before negotiation (128 KB).
 pub const DEFAULT_FRAME_MAX: u32 = 131_072;
 
-/// Default channel-max before negotiation.
 pub const DEFAULT_CHANNEL_MAX: u16 = 2047;
 
-/// Default heartbeat interval (seconds).
 pub const DEFAULT_HEARTBEAT: u16 = 60;
 
 // ─── Frame Structures ─────────────────────────────────
 
-/// A raw AMQP frame as read from the wire.
+/// Represents the schema or state for amqp frame.
+///
+/// Defines details for amqp frame inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct AmqpFrame {
     pub frame_type: u8,
@@ -43,7 +60,9 @@ pub struct AmqpFrame {
     pub payload: Vec<u8>,
 }
 
-/// A decoded method frame payload.
+/// Represents the schema or state for method frame.
+///
+/// Defines details for method frame inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct MethodFrame {
     pub class_id: u16,
@@ -51,7 +70,9 @@ pub struct MethodFrame {
     pub arguments: Vec<u8>,
 }
 
-/// A decoded content header frame payload.
+/// Represents the schema or state for content header.
+///
+/// Defines details for content header inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct ContentHeader {
     pub class_id: u16,
@@ -61,7 +82,20 @@ pub struct ContentHeader {
 
 // ─── Frame Encoding ───────────────────────────────────
 
-/// Encode a method frame to wire bytes.
+/// Executes the standard encode method frame lifecycle step.
+///
+/// Executes the required business logic for encode method frame.
+///
+/// # Arguments
+///
+/// * `channel` - `u16`: The `channel` argument.
+/// * `class_id` - `u16`: The `class_id` argument.
+/// * `method_id` - `u16`: The `method_id` argument.
+/// * `args` - `&[u8]`: The `args` argument.
+///
+/// # Returns
+///
+/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn encode_method_frame(channel: u16, class_id: u16, method_id: u16, args: &[u8]) -> Vec<u8> {
     let payload_size = 4 + args.len(); // class_id(2) + method_id(2) + args
     let mut buf = Vec::with_capacity(8 + payload_size);
@@ -75,7 +109,6 @@ pub fn encode_method_frame(channel: u16, class_id: u16, method_id: u16, args: &[
     buf
 }
 
-/// Encode a content header frame.
 pub fn encode_content_header(
     channel: u16,
     class_id: u16,
@@ -99,7 +132,18 @@ pub fn encode_content_header(
     buf
 }
 
-/// Encode a content body frame. Body should be <= frame_max - 8.
+/// Executes the standard encode body frame lifecycle step.
+///
+/// Executes the required business logic for encode body frame.
+///
+/// # Arguments
+///
+/// * `channel` - `u16`: The `channel` argument.
+/// * `body` - `&[u8]`: Deserialized JSON payload representation containing request parameters.
+///
+/// # Returns
+///
+/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn encode_body_frame(channel: u16, body: &[u8]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(8 + body.len());
     buf.push(FRAME_BODY);
@@ -110,15 +154,30 @@ pub fn encode_body_frame(channel: u16, body: &[u8]) -> Vec<u8> {
     buf
 }
 
-/// Encode a heartbeat frame (always channel 0, empty payload).
+/// Executes the standard encode heartbeat lifecycle step.
+///
+/// Executes the required business logic for encode heartbeat.
+///
+/// # Returns
+///
+/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn encode_heartbeat() -> Vec<u8> {
     vec![FRAME_HEARTBEAT, 0, 0, 0, 0, 0, 0, FRAME_END]
 }
 
 // ─── Frame Decoding ───────────────────────────────────
 
-/// Decode a raw frame from wire bytes (including the 7-byte header and frame-end).
-/// Returns the frame and the number of bytes consumed.
+/// Executes the standard decode frame lifecycle step.
+///
+/// Executes the required business logic for decode frame.
+///
+/// # Arguments
+///
+/// * `data` - `&[u8]`: The `data` argument.
+///
+/// # Returns
+///
+/// * `io::Result<(AmqpFrame, usize)>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
     if data.len() < 8 {
         return Err(io::Error::new(
@@ -157,7 +216,17 @@ pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
     ))
 }
 
-/// Parse a method frame payload into class_id, method_id, and argument bytes.
+/// Executes the standard decode method lifecycle step.
+///
+/// Executes the required business logic for decode method.
+///
+/// # Arguments
+///
+/// * `payload` - `&[u8]`: The `payload` argument.
+///
+/// # Returns
+///
+/// * `io::Result<MethodFrame>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn decode_method(payload: &[u8]) -> io::Result<MethodFrame> {
     if payload.len() < 4 {
         return Err(io::Error::new(
@@ -175,7 +244,17 @@ pub fn decode_method(payload: &[u8]) -> io::Result<MethodFrame> {
     })
 }
 
-/// Parse a content header payload.
+/// Executes the standard decode content header lifecycle step.
+///
+/// Executes the required business logic for decode content header.
+///
+/// # Arguments
+///
+/// * `payload` - `&[u8]`: The `payload` argument.
+///
+/// # Returns
+///
+/// * `io::Result<ContentHeader>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn decode_content_header(payload: &[u8]) -> io::Result<ContentHeader> {
     if payload.len() < 14 {
         return Err(io::Error::new(
@@ -205,8 +284,19 @@ pub fn decode_content_header(payload: &[u8]) -> io::Result<ContentHeader> {
     })
 }
 
-/// Split content body into frames respecting frame_max.
-/// `frame_max` is the negotiated max frame size (including 8 bytes overhead).
+/// Executes the standard split body frames lifecycle step.
+///
+/// Executes the required business logic for split body frames.
+///
+/// # Arguments
+///
+/// * `channel` - `u16`: The `channel` argument.
+/// * `body` - `&[u8]`: Deserialized JSON payload representation containing request parameters.
+/// * `frame_max` - `u32`: The `frame_max` argument.
+///
+/// # Returns
+///
+/// * `Vec<Vec<u8>>` - The evaluated outcome or operation handle.
 pub fn split_body_frames(channel: u16, body: &[u8], frame_max: u32) -> Vec<Vec<u8>> {
     let max_body_per_frame = if frame_max > 8 {
         (frame_max - 8) as usize
@@ -230,11 +320,17 @@ mod tests {
     use super::*;
     use crate::core::method;
 
+    /// Executes the standard protocol header correct lifecycle step.
+    ///
+    /// Executes the required business logic for protocol header correct.
     #[test]
     fn protocol_header_correct() {
         assert_eq!(&PROTOCOL_HEADER, b"AMQP\x00\x00\x09\x01");
     }
 
+    /// Executes the standard heartbeat frame encode decode lifecycle step.
+    ///
+    /// Executes the required business logic for heartbeat frame encode decode.
     #[test]
     fn heartbeat_frame_encode_decode() {
         let hb = encode_heartbeat();
@@ -249,6 +345,9 @@ mod tests {
         assert!(frame.payload.is_empty());
     }
 
+    /// Executes the standard method frame roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for method frame roundtrip.
     #[test]
     fn method_frame_roundtrip() {
         let args = vec![0x00, 0x0A, 0x41, 0x42]; // some args
@@ -265,6 +364,9 @@ mod tests {
         assert_eq!(method.arguments, args);
     }
 
+    /// Executes the standard content header roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for content header roundtrip.
     #[test]
     fn content_header_roundtrip() {
         let props = BasicProperties {
@@ -284,6 +386,9 @@ mod tests {
         assert_eq!(header.properties.delivery_mode, Some(2));
     }
 
+    /// Executes the standard body frame roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for body frame roundtrip.
     #[test]
     fn body_frame_roundtrip() {
         let body = b"hello world";
@@ -295,6 +400,9 @@ mod tests {
         assert_eq!(frame.payload, body);
     }
 
+    /// Executes the standard body split single lifecycle step.
+    ///
+    /// Executes the required business logic for body split single.
     #[test]
     fn body_split_single() {
         let body = b"small";
@@ -302,6 +410,9 @@ mod tests {
         assert_eq!(frames.len(), 1);
     }
 
+    /// Executes the standard body split multiple lifecycle step.
+    ///
+    /// Executes the required business logic for body split multiple.
     #[test]
     fn body_split_multiple() {
         let body = vec![0x41; 100]; // 100 bytes
@@ -317,12 +428,18 @@ mod tests {
         assert_eq!(reconstructed, body);
     }
 
+    /// Executes the standard body split empty lifecycle step.
+    ///
+    /// Executes the required business logic for body split empty.
     #[test]
     fn body_split_empty() {
         let frames = split_body_frames(1, b"", 1024);
         assert!(frames.is_empty());
     }
 
+    /// Executes the standard frame bad end marker lifecycle step.
+    ///
+    /// Executes the required business logic for frame bad end marker.
     #[test]
     fn frame_bad_end_marker() {
         let mut wire = encode_heartbeat();
@@ -330,11 +447,17 @@ mod tests {
         assert!(decode_frame(&wire).is_err());
     }
 
+    /// Executes the standard frame too short lifecycle step.
+    ///
+    /// Executes the required business logic for frame too short.
     #[test]
     fn frame_too_short() {
         assert!(decode_frame(&[0, 0, 0]).is_err());
     }
 
+    /// Executes the standard frame incomplete payload lifecycle step.
+    ///
+    /// Executes the required business logic for frame incomplete payload.
     #[test]
     fn frame_incomplete_payload() {
         // Header says size=100 but only 10 bytes follow
@@ -342,16 +465,25 @@ mod tests {
         assert!(decode_frame(&wire).is_err());
     }
 
+    /// Executes the standard method payload too short lifecycle step.
+    ///
+    /// Executes the required business logic for method payload too short.
     #[test]
     fn method_payload_too_short() {
         assert!(decode_method(&[0, 0]).is_err());
     }
 
+    /// Executes the standard content header too short lifecycle step.
+    ///
+    /// Executes the required business logic for content header too short.
     #[test]
     fn content_header_too_short() {
         assert!(decode_content_header(&[0; 10]).is_err());
     }
 
+    /// Executes the standard method frame channel zero lifecycle step.
+    ///
+    /// Executes the required business logic for method frame channel zero.
     #[test]
     fn method_frame_channel_zero() {
         let wire = encode_method_frame(
