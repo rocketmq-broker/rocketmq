@@ -783,28 +783,25 @@ mod tests {
         };
 
         // Apply the op
-        match &op {
-            PendingOp::Publish {
+        if let PendingOp::Publish {
                 exchange,
                 routing_key,
                 headers,
                 body,
-            } => {
-                let msg_id = bs.alloc_msg_id();
-                if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
-                    let msg = crate::queue::Message::new_routed(
-                        msg_id,
-                        headers.clone(),
-                        body.clone(),
-                        exchange.clone(),
-                        routing_key.clone(),
-                    );
-                    queue
-                        .messages
-                        .push_back(crate::queue::message::QueueMessage::Full(msg));
-                }
+            } = &op {
+            let msg_id = bs.alloc_msg_id();
+            if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
+                let msg = crate::queue::Message::new_routed(
+                    msg_id,
+                    headers.clone(),
+                    body.clone(),
+                    exchange.clone(),
+                    routing_key.clone(),
+                );
+                queue
+                    .messages
+                    .push_back(crate::queue::message::QueueMessage::Full(msg));
             }
-            _ => {}
         }
 
         let q = bs.queues.get("q1").unwrap();
@@ -825,15 +822,12 @@ mod tests {
 
         // Simulate ack op
         let op = PendingOp::Ack { msg_id: 42 };
-        match &op {
-            PendingOp::Ack { msg_id } => {
-                for mut entry in bs.queues.iter_mut() {
-                    if entry.value_mut().inflight.remove(msg_id).is_some() {
-                        break;
-                    }
+        if let PendingOp::Ack { msg_id } = &op {
+            for mut entry in bs.queues.iter_mut() {
+                if entry.value_mut().inflight.remove(msg_id).is_some() {
+                    break;
                 }
             }
-            _ => {}
         }
 
         let q = bs.queues.get("q1").unwrap();

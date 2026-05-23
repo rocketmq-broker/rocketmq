@@ -107,12 +107,7 @@ impl BrokerConfig {
 
         Self {
             // ── Network ──────────────────────────────────────────
-            bind_host: resolve_string(
-                "ROCKETMQ_BIND_HOST",
-                &file_values,
-                "bind_host",
-                "127.0.0.1",
-            ),
+            bind_host: resolve_string("ROCKETMQ_BIND_HOST", &file_values, "bind_host", "127.0.0.1"),
             amqp_port: resolve_u16("ROCKETMQ_AMQP_PORT", &file_values, "amqp_port", 5672),
             amqps_port: resolve_u16("ROCKETMQ_AMQPS_PORT", &file_values, "amqps_port", 5671),
             mgmt_port: resolve_u16("ROCKETMQ_MGMT_PORT", &file_values, "mgmt_port", 15672),
@@ -161,12 +156,8 @@ impl BrokerConfig {
                 "127.0.0.1:5680",
             ),
             cluster_seeds: {
-                let raw = resolve_string(
-                    "ROCKETMQ_CLUSTER_SEEDS",
-                    &file_values,
-                    "cluster_seeds",
-                    "",
-                );
+                let raw =
+                    resolve_string("ROCKETMQ_CLUSTER_SEEDS", &file_values, "cluster_seeds", "");
                 raw.split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
@@ -186,24 +177,10 @@ impl BrokerConfig {
                 "default_pass",
                 "guest",
             ),
-            admin_user: resolve_string(
-                "ROCKETMQ_ADMIN_USER",
-                &file_values,
-                "admin_user",
-                "admin",
-            ),
-            admin_pass: resolve_string(
-                "ROCKETMQ_ADMIN_PASS",
-                &file_values,
-                "admin_pass",
-                "1234",
-            ),
-            bcrypt_cost: resolve_u64(
-                "ROCKETMQ_BCRYPT_COST",
-                &file_values,
-                "bcrypt_cost",
-                10,
-            ) as u32,
+            admin_user: resolve_string("ROCKETMQ_ADMIN_USER", &file_values, "admin_user", "admin"),
+            admin_pass: resolve_string("ROCKETMQ_ADMIN_PASS", &file_values, "admin_pass", "1234"),
+            bcrypt_cost: resolve_u64("ROCKETMQ_BCRYPT_COST", &file_values, "bcrypt_cost", 10)
+                as u32,
 
             // ── Connection ───────────────────────────────────────
             heartbeat_secs: resolve_u64(
@@ -260,12 +237,7 @@ impl BrokerConfig {
             )),
 
             // ── Logging ──────────────────────────────────────────
-            log_filter: resolve_string(
-                "RUST_LOG",
-                &file_values,
-                "log_filter",
-                "rocketmq=info",
-            ),
+            log_filter: resolve_string("RUST_LOG", &file_values, "log_filter", "rocketmq=info"),
 
             // ── Management UI ────────────────────────────────────
             www_dir: resolve_string(
@@ -341,16 +313,14 @@ fn resolve_string(
     conf_key: &str,
     default: &str,
 ) -> String {
-    if let Ok(v) = std::env::var(env_key) {
-        if !v.is_empty() {
+    if let Ok(v) = std::env::var(env_key)
+        && !v.is_empty() {
             return v;
         }
-    }
-    if let Some(v) = file_values.get(conf_key) {
-        if !v.is_empty() {
+    if let Some(v) = file_values.get(conf_key)
+        && !v.is_empty() {
             return v.clone();
         }
-    }
     default.to_string()
 }
 
@@ -361,16 +331,14 @@ fn resolve_u64(
     conf_key: &str,
     default: u64,
 ) -> u64 {
-    if let Ok(v) = std::env::var(env_key) {
-        if let Ok(n) = v.parse::<u64>() {
+    if let Ok(v) = std::env::var(env_key)
+        && let Ok(n) = v.parse::<u64>() {
             return n;
         }
-    }
-    if let Some(v) = file_values.get(conf_key) {
-        if let Ok(n) = v.parse::<u64>() {
+    if let Some(v) = file_values.get(conf_key)
+        && let Ok(n) = v.parse::<u64>() {
             return n;
         }
-    }
     default
 }
 
@@ -381,16 +349,14 @@ fn resolve_u16(
     conf_key: &str,
     default: u16,
 ) -> u16 {
-    if let Ok(v) = std::env::var(env_key) {
-        if let Ok(n) = v.parse::<u16>() {
+    if let Ok(v) = std::env::var(env_key)
+        && let Ok(n) = v.parse::<u16>() {
             return n;
         }
-    }
-    if let Some(v) = file_values.get(conf_key) {
-        if let Ok(n) = v.parse::<u16>() {
+    if let Some(v) = file_values.get(conf_key)
+        && let Ok(n) = v.parse::<u16>() {
             return n;
         }
-    }
     default
 }
 

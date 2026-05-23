@@ -244,8 +244,7 @@ impl ClusterManager {
         if connected_peers + 1 >= quorum {
             // We have a majority of nodes (including self) connected
             self.leader_id.store(self.node_id, Ordering::SeqCst);
-            self.last_leader_heartbeat
-                .store(now_ms(), Ordering::SeqCst);
+            self.last_leader_heartbeat.store(now_ms(), Ordering::SeqCst);
             info!(
                 "Node {} elected as leader for term {} (quorum {}/{})",
                 self.node_id,
@@ -281,7 +280,7 @@ impl ClusterManager {
     pub async fn broadcast(&self, frame: ClusterFrame) {
         for entry in self.peers.iter() {
             let tx = &entry.value().tx;
-            if let Err(_) = tx.send(frame.clone()).await {
+            if tx.send(frame.clone()).await.is_err() {
                 debug!("Failed to send cluster frame to peer {}", entry.key());
             }
         }
@@ -582,7 +581,10 @@ async fn handle_connection(
 
                     info!(
                         "Node {} received RequestVote from {} for term {} -> {}",
-                        manager.node_id, candidate_id, term, if grant { "GRANTED" } else { "DENIED" }
+                        manager.node_id,
+                        candidate_id,
+                        term,
+                        if grant { "GRANTED" } else { "DENIED" }
                     );
 
                     let resp = ClusterFrame::RequestVoteResponse {
@@ -591,23 +593,22 @@ async fn handle_connection(
                     };
                     let _ = tx.send(resp).await;
                 }
-                ClusterFrame::RequestVoteResponse {
-                    term,
-                    vote_granted,
-                } => {
+                ClusterFrame::RequestVoteResponse { term, vote_granted } => {
                     if vote_granted {
-                        debug!("Node {} received vote grant for term {}", manager.node_id, term);
+                        debug!(
+                            "Node {} received vote grant for term {}",
+                            manager.node_id, term
+                        );
                     }
                 }
-                ClusterFrame::LeaderHeartbeat {
-                    term,
-                    leader_id,
-                } => {
+                ClusterFrame::LeaderHeartbeat { term, leader_id } => {
                     let local_term = manager.current_term.load(Ordering::SeqCst);
                     if term >= local_term {
                         manager.current_term.store(term, Ordering::SeqCst);
                         manager.leader_id.store(leader_id, Ordering::SeqCst);
-                        manager.last_leader_heartbeat.store(now_ms(), Ordering::SeqCst);
+                        manager
+                            .last_leader_heartbeat
+                            .store(now_ms(), Ordering::SeqCst);
                         debug!("Leader heartbeat from node {} term {}", leader_id, term);
                     }
                 }
@@ -675,7 +676,7 @@ async fn handle_connection(
                         );
                     }
                 }
-                 ClusterFrame::ReplicatePublish {
+                ClusterFrame::ReplicatePublish {
                     term,
                     leader_id,
                     queue_name,
@@ -710,7 +711,11 @@ async fn handle_connection(
                             false
                         }
                     };
-                    let res = ClusterFrame::ReplicateResponse { term, msg_id, success };
+                    let res = ClusterFrame::ReplicateResponse {
+                        term,
+                        msg_id,
+                        success,
+                    };
                     let _ = tx.send(res).await;
                 }
                 ClusterFrame::ReplicateAck {
@@ -750,10 +755,18 @@ async fn handle_connection(
                             false
                         }
                     };
-                    let res = ClusterFrame::ReplicateResponse { term, msg_id, success };
+                    let res = ClusterFrame::ReplicateResponse {
+                        term,
+                        msg_id,
+                        success,
+                    };
                     let _ = tx.send(res).await;
                 }
-                ClusterFrame::ReplicateResponse { term, msg_id, success } => {
+                ClusterFrame::ReplicateResponse {
+                    term,
+                    msg_id,
+                    success,
+                } => {
                     let local_term = manager.current_term.load(Ordering::SeqCst);
                     if term == local_term && success {
                         manager.vote_replication(msg_id);
@@ -854,7 +867,7 @@ pub async fn start_peer_connector(
             }
 
             // 4. Election timeout: if we haven't heard from leader in 5s, start election
-            if !manager.is_leader() && manager.peers.len() > 0 {
+            if !manager.is_leader() && !manager.peers.is_empty() {
                 let last_hb = manager.last_leader_heartbeat.load(Ordering::SeqCst);
                 let elapsed = now_ms().saturating_sub(last_hb);
                 let leader_id = manager.leader_id.load(Ordering::SeqCst);

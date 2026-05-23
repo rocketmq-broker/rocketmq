@@ -18,21 +18,16 @@
 // Description: Raft consensus implementation for clustered state replication.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::cmp::min;
+use std::collections::HashMap;
 
 /// Defines the various states or variants of raft command.
 ///
 /// Defines details for raft command inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum RaftCommand {
-    Enqueue {
-        msg_id: u64,
-        body: Vec<u8>,
-    },
-    Ack {
-        msg_id: u64,
-    },
+    Enqueue { msg_id: u64, body: Vec<u8> },
+    Ack { msg_id: u64 },
 }
 
 /// Represents the schema or state for log entry.
@@ -60,20 +55,20 @@ pub enum RaftRole {
 /// Defines details for raft queue state inside the broker ecosystem.
 pub struct RaftQueueState {
     pub queue_name: String,
-    
+
     // Persistent state on all servers
     pub current_term: u64,
     pub voted_for: Option<u64>,
     pub log: Vec<LogEntry>,
-    
+
     // Volatile state on all servers
     pub commit_index: u64,
     pub last_applied: u64,
-    
+
     // Volatile state on leaders
     pub next_index: HashMap<u64, u64>,
     pub match_index: HashMap<u64, u64>,
-    
+
     // Node Identity
     pub role: RaftRole,
     pub leader_id: Option<u64>,
@@ -150,16 +145,16 @@ impl RaftQueueState {
         if !matches!(self.role, RaftRole::Leader) {
             return None; // Only leader can accept writes
         }
-        
+
         let new_index = self.last_log_index() + 1;
         let term = self.current_term;
-        
+
         self.log.push(LogEntry {
             index: new_index,
             term,
             command,
         });
-        
+
         Some((new_index, term))
     }
 

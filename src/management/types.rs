@@ -331,7 +331,7 @@ impl<T: Serialize> PaginatedResponse<T> {
         let page_count = if total_count == 0 {
             1
         } else {
-            (total_count + page_size - 1) / page_size
+            total_count.div_ceil(page_size)
         };
         let start = (page - 1) * page_size;
         let paged: Vec<T> = items.into_iter().skip(start).take(page_size).collect();

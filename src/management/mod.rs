@@ -21,7 +21,6 @@
 //!
 //! Provides runtime introspection and administration.
 
-
 use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -289,10 +288,9 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
         .fallback_service(ServeDir::new(&www_dir).append_index_html_on_directories(true))
         .layer(axum::middleware::map_response(
             |mut response: axum::response::Response| async move {
-                response.headers_mut().insert(
-                    "Permissions-Policy",
-                    "unload=(self)".parse().unwrap(),
-                );
+                response
+                    .headers_mut()
+                    .insert("Permissions-Policy", "unload=(self)".parse().unwrap());
                 response
             },
         ))
@@ -309,8 +307,7 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
             interval.tick().await;
-            let (pub_val, _pub_rate, del_val, _del_rate, ack_val, _ack_rate) =
-                types::get_rates();
+            let (pub_val, _pub_rate, del_val, _del_rate, ack_val, _ack_rate) = types::get_rates();
 
             let mut total_messages = 0u64;
             let mut total_inflight = 0u64;
@@ -321,8 +318,12 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
             }
             let total_all = total_messages + total_inflight;
             types::record_samples(
-                pub_val, del_val, ack_val,
-                total_all, total_messages, total_inflight,
+                pub_val,
+                del_val,
+                ack_val,
+                total_all,
+                total_messages,
+                total_inflight,
             );
         }
     });

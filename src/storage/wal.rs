@@ -40,7 +40,6 @@ const WAL_HEADER_SIZE: usize = 9; // total_len(4) + crc32(4) + entry_type(1)
 const SEGMENT_EXT: &str = "seg";
 const SEGMENT_ID_WIDTH: usize = 16;
 
-
 /// Executes the standard segment path lifecycle step.
 ///
 /// Executes the required business logic for segment path.

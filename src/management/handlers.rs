@@ -188,16 +188,32 @@ pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
         queue_totals: {
             // Record real samples into the history ring buffer
             record_samples(
-                pub_val, del_val, ack_val,
-                total_all as u64, total_messages as u64, total_inflight as u64,
+                pub_val,
+                del_val,
+                ack_val,
+                total_all as u64,
+                total_messages as u64,
+                total_inflight as u64,
             );
             QueueTotals {
                 messages: total_all,
                 messages_ready: total_messages,
                 messages_unacknowledged: total_inflight,
-                messages_details: Some(RateDetails::from_history(pub_rate - del_rate, "msg_total", total_all as u64)),
-                messages_ready_details: Some(RateDetails::from_history(pub_rate - del_rate, "msg_ready", total_messages as u64)),
-                messages_unacknowledged_details: Some(RateDetails::from_history(del_rate - ack_rate, "msg_unacked", total_inflight as u64)),
+                messages_details: Some(RateDetails::from_history(
+                    pub_rate - del_rate,
+                    "msg_total",
+                    total_all as u64,
+                )),
+                messages_ready_details: Some(RateDetails::from_history(
+                    pub_rate - del_rate,
+                    "msg_ready",
+                    total_messages as u64,
+                )),
+                messages_unacknowledged_details: Some(RateDetails::from_history(
+                    del_rate - ack_rate,
+                    "msg_unacked",
+                    total_inflight as u64,
+                )),
             }
         },
         listeners,
