@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: mod.rs
+// Description: Management HTTP server module initialization and routing.
+
 //! Management HTTP API — RabbitMQ-compatible REST endpoints on port 15672.
 //!
 //! Provides runtime introspection and administration.
@@ -7,6 +26,7 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
+use tower_http::services::ServeDir;
 use tracing::info;
 
 use crate::state::Broker;
@@ -16,11 +36,22 @@ pub mod types;
 
 use handlers::*;
 
-/// Spawn the management HTTP server on the configured port.
+/// Executes the standard serve lifecycle step.
+///
+/// Executes the required business logic for serve.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
+    let www_dir = std::env::var("ROCKETMQ_WWW_DIR")
+        .unwrap_or_else(|_| "src/management/www".to_string());
+
     let app = Router::new()
-        // Management UI (redirect or premium placeholder)
-        .route("/", get(serve_ui))
         // Health & Overview
         .route("/api/healthcheck", get(healthcheck))
         .route("/api/overview", get(overview))
@@ -228,82 +259,77 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/attempts/{node}/source", get(stub_empty_array))
         // Rebalance
         .route("/api/rebalance/queues", post(stub_no_content))
+        // Missing Compatibility Endpoints
+        .route("/api/version", get(get_version))
+        .route("/api/deprecated-features", get(stub_empty_array))
+        .route("/api/deprecated-features/used", get(stub_empty_array))
+        .route("/api/reset", delete(stub_no_content))
+        .route("/api/reset/{node}", delete(stub_no_content))
+        .route("/api/nodes/{name}/memory", get(get_node_memory))
+        .route(
+            "/api/topic-permissions/{vhost}/{user}",
+            get(stub_empty_array)
+                .put(stub_no_content)
+                .delete(stub_no_content),
+        )
+        .route(
+            "/api/vhost-limits/{vhost}/{name}",
+            put(stub_no_content).delete(stub_no_content),
+        )
+        .route(
+            "/api/user-limits/{user}/{name}",
+            put(stub_no_content).delete(stub_no_content),
+        )
+        .route("/api/connections/{name}/sessions", get(stub_empty_array))
         // Metrics
         .route("/api/metrics", get(prometheus_metrics))
         .layer(axum::middleware::from_fn_with_state(
             broker.clone(),
             auth_middleware,
         ))
-        .with_state(broker);
+        .fallback_service(ServeDir::new(&www_dir).append_index_html_on_directories(true))
+        .layer(axum::middleware::map_response(
+            |mut response: axum::response::Response| async move {
+                response.headers_mut().insert(
+                    "Permissions-Policy",
+                    "unload=(self)".parse().unwrap(),
+                );
+                response
+            },
+        ))
+        .with_state(broker.clone());
 
     let addr = crate::config::get_mgmt_listen_addr();
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!("Management HTTP API on http://{}", addr);
+
+    // Spawn a background task to record time-series samples every 5 seconds
+    // This ensures chart data accumulates even when nobody is viewing the dashboard
+    let sample_broker = broker;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let (pub_val, _pub_rate, del_val, _del_rate, ack_val, _ack_rate) =
+                types::get_rates();
+
+            let mut total_messages = 0u64;
+            let mut total_inflight = 0u64;
+            for entry in sample_broker.queues.iter() {
+                let q = entry.value();
+                total_messages += q.messages.len() as u64;
+                total_inflight += q.inflight.len() as u64;
+            }
+            let total_all = total_messages + total_inflight;
+            types::record_samples(
+                pub_val, del_val, ack_val,
+                total_all, total_messages, total_inflight,
+            );
+        }
+    });
+
     axum::serve(listener, app).await?;
     Ok(())
-}
-
-async fn serve_ui() -> axum::response::Html<&'static str> {
-    axum::response::Html(
-        r#"<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>RocketMQ Management API</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0d1117;
-            color: #c9d1d9;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            text-align: center;
-            padding: 2rem;
-            background-color: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-            max-width: 500px;
-        }
-        h1 {
-            color: #58a6ff;
-            margin-top: 0;
-        }
-        p {
-            line-height: 1.6;
-        }
-        a {
-            color: #58a6ff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        .badge {
-            background-color: #238636;
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚀 RocketMQ Cluster</h1>
-        <p>The backend management REST API is running successfully.</p>
-        <p>Please access the <span class="badge">NextJS Dashboard</span> at:</p>
-        <h2><a href="http://localhost:3000" target="_blank">http://localhost:3000</a></h2>
-    </div>
-</body>
-</html>"#,
-    )
 }
 
 async fn auth_middleware(
@@ -312,10 +338,13 @@ async fn auth_middleware(
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, StatusCode> {
     let path = req.uri().path();
-    // Bypass auth for metrics, health checks, and static UI routes
+    // Bypass auth for metrics, health checks, version, deprecated-features, and static UI routes
     if path == "/api/health"
         || path == "/api/healthcheck"
         || path == "/api/metrics"
+        || path == "/api/version"
+        || path == "/api/deprecated-features"
+        || path == "/api/deprecated-features/used"
         || !path.starts_with("/api/")
     {
         return Ok(next.run(req).await);

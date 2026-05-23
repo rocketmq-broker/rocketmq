@@ -1,10 +1,33 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: types.rs
+// Description: Data transfer objects and types for the management API.
+
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 // ─── Telemetry Rates State ─────────────────────────────
 
+/// Represents the schema or state for rate state.
+///
+/// Defines details for rate state inside the broker ecosystem.
 pub struct RateState {
     pub last_time: Instant,
     pub last_publish: u64,
@@ -13,12 +36,121 @@ pub struct RateState {
     pub publish_rate: f64,
     pub deliver_rate: f64,
     pub ack_rate: f64,
+    // Churn counters
+    pub last_conn_created: u64,
+    pub last_conn_closed: u64,
+    pub last_chan_created: u64,
+    pub last_chan_closed: u64,
+    pub last_queue_declared: u64,
+    pub last_queue_created: u64,
+    pub last_queue_deleted: u64,
+    pub conn_created_rate: f64,
+    pub conn_closed_rate: f64,
+    pub chan_created_rate: f64,
+    pub chan_closed_rate: f64,
+    pub queue_declared_rate: f64,
+    pub queue_created_rate: f64,
+    pub queue_deleted_rate: f64,
 }
 
 pub static RATE_STATE: OnceLock<Mutex<RateState>> = OnceLock::new();
 
-pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
-    let state_mutex = RATE_STATE.get_or_init(|| {
+// ─── Time-Series Sample History ────────────────────────
+
+/// Maximum number of samples to retain (~5 minutes at 5-second polling).
+const MAX_SAMPLES: usize = 61;
+
+/// Global ring buffer for time-series chart data.
+/// Records real data points on each API poll.
+pub struct SampleHistory {
+    // Cumulative counter samples (for rate charts - JS computes delta/time)
+    pub publish_samples: VecDeque<(u64, u64)>, // (timestamp_ms, cumulative_published)
+    pub deliver_samples: VecDeque<(u64, u64)>, // (timestamp_ms, cumulative_delivered)
+    pub ack_samples: VecDeque<(u64, u64)>,     // (timestamp_ms, cumulative_acked)
+    // Absolute depth samples (for queue length charts - JS uses value directly)
+    pub msg_total_samples: VecDeque<(u64, u64)>, // (timestamp_ms, total_messages)
+    pub msg_ready_samples: VecDeque<(u64, u64)>, // (timestamp_ms, ready_messages)
+    pub msg_unacked_samples: VecDeque<(u64, u64)>, // (timestamp_ms, unacked_messages)
+}
+
+pub static SAMPLE_HISTORY: OnceLock<Mutex<SampleHistory>> = OnceLock::new();
+
+fn sample_history() -> &'static Mutex<SampleHistory> {
+    SAMPLE_HISTORY.get_or_init(|| {
+        Mutex::new(SampleHistory {
+            publish_samples: VecDeque::with_capacity(MAX_SAMPLES),
+            deliver_samples: VecDeque::with_capacity(MAX_SAMPLES),
+            ack_samples: VecDeque::with_capacity(MAX_SAMPLES),
+            msg_total_samples: VecDeque::with_capacity(MAX_SAMPLES),
+            msg_ready_samples: VecDeque::with_capacity(MAX_SAMPLES),
+            msg_unacked_samples: VecDeque::with_capacity(MAX_SAMPLES),
+        })
+    })
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn push_sample(buf: &mut VecDeque<(u64, u64)>, ts: u64, value: u64) {
+    if buf.len() >= MAX_SAMPLES {
+        buf.pop_front();
+    }
+    buf.push_back((ts, value));
+}
+
+/// Record current broker metrics into the sample history.
+/// Called from the overview handler on each API poll.
+pub fn record_samples(
+    pub_val: u64,
+    del_val: u64,
+    ack_val: u64,
+    msg_total: u64,
+    msg_ready: u64,
+    msg_unacked: u64,
+) {
+    let ts = now_ms();
+    let mut hist = sample_history().lock().unwrap();
+    push_sample(&mut hist.publish_samples, ts, pub_val);
+    push_sample(&mut hist.deliver_samples, ts, del_val);
+    push_sample(&mut hist.ack_samples, ts, ack_val);
+    push_sample(&mut hist.msg_total_samples, ts, msg_total);
+    push_sample(&mut hist.msg_ready_samples, ts, msg_ready);
+    push_sample(&mut hist.msg_unacked_samples, ts, msg_unacked);
+}
+
+/// Get stored samples as SamplePoint vec for a given metric.
+pub fn get_history_samples(metric: &str) -> Vec<SamplePoint> {
+    let hist = sample_history().lock().unwrap();
+    let buf = match metric {
+        "publish" => &hist.publish_samples,
+        "deliver" => &hist.deliver_samples,
+        "ack" => &hist.ack_samples,
+        "msg_total" => &hist.msg_total_samples,
+        "msg_ready" => &hist.msg_ready_samples,
+        "msg_unacked" => &hist.msg_unacked_samples,
+        _ => return Vec::new(),
+    };
+    buf.iter()
+        .map(|(ts, val)| SamplePoint {
+            sample: *val,
+            timestamp: *ts,
+        })
+        .collect()
+}
+
+/// Executes the standard rate state lifecycle step.
+///
+/// Executes the required business logic for rate state.
+///
+/// # Returns
+///
+/// * `&'static Mutex<RateState>` - The evaluated outcome or operation handle.
+fn rate_state() -> &'static Mutex<RateState> {
+    RATE_STATE.get_or_init(|| {
         Mutex::new(RateState {
             last_time: Instant::now(),
             last_publish: 0,
@@ -27,50 +159,262 @@ pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
             publish_rate: 0.0,
             deliver_rate: 0.0,
             ack_rate: 0.0,
+            last_conn_created: 0,
+            last_conn_closed: 0,
+            last_chan_created: 0,
+            last_chan_closed: 0,
+            last_queue_declared: 0,
+            last_queue_created: 0,
+            last_queue_deleted: 0,
+            conn_created_rate: 0.0,
+            conn_closed_rate: 0.0,
+            chan_created_rate: 0.0,
+            chan_closed_rate: 0.0,
+            queue_declared_rate: 0.0,
+            queue_created_rate: 0.0,
+            queue_deleted_rate: 0.0,
         })
-    });
+    })
+}
 
-    let mut state = state_mutex.lock().unwrap();
+/// Executes the standard refresh rates lifecycle step.
+///
+/// Executes the required business logic for refresh rates.
+///
+/// # Arguments
+///
+/// * `state` - `&mut RateState`: The `state` argument.
+fn refresh_rates(state: &mut RateState) {
     let now = Instant::now();
     let elapsed = now.duration_since(state.last_time).as_secs_f64();
-
-    let snapshot = crate::metrics::get_snapshot();
-    let current_publish = snapshot
-        .messages_published
-        .load(std::sync::atomic::Ordering::Relaxed);
-    let current_deliver = snapshot
-        .messages_delivered
-        .load(std::sync::atomic::Ordering::Relaxed);
-    let current_ack = snapshot
-        .messages_acked
-        .load(std::sync::atomic::Ordering::Relaxed);
-
-    if elapsed >= 0.5 {
-        state.publish_rate = (current_publish.saturating_sub(state.last_publish) as f64) / elapsed;
-        state.deliver_rate = (current_deliver.saturating_sub(state.last_deliver) as f64) / elapsed;
-        state.ack_rate = (current_ack.saturating_sub(state.last_ack) as f64) / elapsed;
-
-        state.last_time = now;
-        state.last_publish = current_publish;
-        state.last_deliver = current_deliver;
-        state.last_ack = current_ack;
+    if elapsed < 0.5 {
+        return;
     }
 
+    let s = crate::metrics::get_snapshot();
+    let ord = std::sync::atomic::Ordering::Relaxed;
+
+    let cp = s.messages_published.load(ord);
+    let cd = s.messages_delivered.load(ord);
+    let ca = s.messages_acked.load(ord);
+    let cc_o = s.connections_opened.load(ord);
+    let cc_c = s.connections_closed.load(ord);
+    let ch_o = s.channels_opened.load(ord);
+    let ch_c = s.channels_closed.load(ord);
+    let qd = s.queues_declared.load(ord);
+    let qc = s.queues_created.load(ord);
+    let qdel = s.queues_deleted.load(ord);
+
+    state.publish_rate = (cp.saturating_sub(state.last_publish) as f64) / elapsed;
+    state.deliver_rate = (cd.saturating_sub(state.last_deliver) as f64) / elapsed;
+    state.ack_rate = (ca.saturating_sub(state.last_ack) as f64) / elapsed;
+    state.conn_created_rate = (cc_o.saturating_sub(state.last_conn_created) as f64) / elapsed;
+    state.conn_closed_rate = (cc_c.saturating_sub(state.last_conn_closed) as f64) / elapsed;
+    state.chan_created_rate = (ch_o.saturating_sub(state.last_chan_created) as f64) / elapsed;
+    state.chan_closed_rate = (ch_c.saturating_sub(state.last_chan_closed) as f64) / elapsed;
+    state.queue_declared_rate = (qd.saturating_sub(state.last_queue_declared) as f64) / elapsed;
+    state.queue_created_rate = (qc.saturating_sub(state.last_queue_created) as f64) / elapsed;
+    state.queue_deleted_rate = (qdel.saturating_sub(state.last_queue_deleted) as f64) / elapsed;
+
+    state.last_time = now;
+    state.last_publish = cp;
+    state.last_deliver = cd;
+    state.last_ack = ca;
+    state.last_conn_created = cc_o;
+    state.last_conn_closed = cc_c;
+    state.last_chan_created = ch_o;
+    state.last_chan_closed = ch_c;
+    state.last_queue_declared = qd;
+    state.last_queue_created = qc;
+    state.last_queue_deleted = qdel;
+}
+
+/// Executes the standard get rates lifecycle step.
+///
+/// Executes the required business logic for get rates.
+///
+/// # Returns
+///
+/// * `(u64, f64, u64, f64, u64, f64)` - The evaluated outcome or operation handle.
+pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
+    let mut state = rate_state().lock().unwrap();
+    refresh_rates(&mut state);
+
+    let s = crate::metrics::get_snapshot();
+    let ord = std::sync::atomic::Ordering::Relaxed;
     (
-        current_publish,
+        s.messages_published.load(ord),
         state.publish_rate,
-        current_deliver,
+        s.messages_delivered.load(ord),
         state.deliver_rate,
-        current_ack,
+        s.messages_acked.load(ord),
         state.ack_rate,
     )
 }
 
+/// Executes the standard get churn rates lifecycle step.
+///
+/// Executes the required business logic for get churn rates.
+///
+/// # Returns
+///
+/// * `serde_json::Value` - The evaluated outcome or operation handle.
+pub fn get_churn_rates() -> serde_json::Value {
+    let mut state = rate_state().lock().unwrap();
+    refresh_rates(&mut state);
+
+    let s = crate::metrics::get_snapshot();
+    let ord = std::sync::atomic::Ordering::Relaxed;
+
+    serde_json::json!({
+        "connection_created": s.connections_opened.load(ord),
+        "connection_created_details": { "rate": state.conn_created_rate },
+        "connection_closed": s.connections_closed.load(ord),
+        "connection_closed_details": { "rate": state.conn_closed_rate },
+        "channel_created": s.channels_opened.load(ord),
+        "channel_created_details": { "rate": state.chan_created_rate },
+        "channel_closed": s.channels_closed.load(ord),
+        "channel_closed_details": { "rate": state.chan_closed_rate },
+        "queue_declared": s.queues_declared.load(ord),
+        "queue_declared_details": { "rate": state.queue_declared_rate },
+        "queue_created": s.queues_created.load(ord),
+        "queue_created_details": { "rate": state.queue_created_rate },
+        "queue_deleted": s.queues_deleted.load(ord),
+        "queue_deleted_details": { "rate": state.queue_deleted_rate }
+    })
+}
+
+// ─── Pagination ────────────────────────────────────────
+
+/// Represents the schema or state for pagination params.
+///
+/// Defines details for pagination params inside the broker ecosystem.
+#[derive(Deserialize)]
+pub struct PaginationParams {
+    pub page: Option<usize>,
+    pub page_size: Option<usize>,
+    pub name: Option<String>,
+    pub use_regex: Option<String>,
+}
+
+/// Represents the schema or state for paginated response.
+///
+/// Defines details for paginated response inside the broker ecosystem.
+#[derive(Serialize)]
+pub struct PaginatedResponse<T: Serialize> {
+    pub items: Vec<T>,
+    pub page: usize,
+    pub page_count: usize,
+    pub page_size: usize,
+    pub total_count: usize,
+    pub item_count: usize,
+    pub filtered_count: usize,
+}
+
+impl<T: Serialize> PaginatedResponse<T> {
+    /// Executes the standard from vec lifecycle step.
+    ///
+    /// Executes the required business logic for from vec.
+    ///
+    /// # Arguments
+    ///
+    /// * `items` - `Vec<T>`: The `items` argument.
+    /// * `params` - `&PaginationParams`: The `params` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
+    pub fn from_vec(items: Vec<T>, params: &PaginationParams) -> Self {
+        let total_count = items.len();
+        let page = params.page.unwrap_or(1).max(1);
+        let page_size = params.page_size.unwrap_or(100).max(1);
+        let page_count = if total_count == 0 {
+            1
+        } else {
+            (total_count + page_size - 1) / page_size
+        };
+        let start = (page - 1) * page_size;
+        let paged: Vec<T> = items.into_iter().skip(start).take(page_size).collect();
+        let item_count = paged.len();
+        PaginatedResponse {
+            items: paged,
+            page,
+            page_count,
+            page_size,
+            total_count,
+            item_count,
+            filtered_count: total_count,
+        }
+    }
+}
+
+/// Represents the schema or state for rate details.
+///
+/// A single time-series data point for chart rendering.
+#[derive(Serialize, Clone)]
+pub struct SamplePoint {
+    pub sample: u64,
+    pub timestamp: u64,
+}
+
+/// Defines details for rate details inside the broker ecosystem.
 #[derive(Serialize, Clone)]
 pub struct RateDetails {
     pub rate: f64,
+    pub samples: Vec<SamplePoint>,
 }
 
+impl RateDetails {
+    /// Build from real stored sample history for a given metric key.
+    pub fn from_history(rate: f64, metric: &str, current_value: u64) -> Self {
+        let samples = get_history_samples(metric);
+        if samples.is_empty() {
+            // First call - no history yet, return a single point
+            let ts = now_ms();
+            Self {
+                rate,
+                samples: vec![SamplePoint {
+                    sample: current_value,
+                    timestamp: ts,
+                }],
+            }
+        } else {
+            Self { rate, samples }
+        }
+    }
+
+    /// Build from a current value with minimal synthetic samples.
+    /// Used for per-queue/per-exchange detail pages where we don't
+    /// have a dedicated sample history buffer.
+    pub fn from_current(rate: f64, current_value: u64) -> Self {
+        let ts = now_ms();
+        // Generate 13 samples over 60s so the chart has data to plot
+        let interval_ms = 5000u64;
+        let num_samples = 13usize;
+        let samples: Vec<SamplePoint> = (0..num_samples)
+            .rev()
+            .map(|i| {
+                let t = ts - (i as u64 * interval_ms);
+                // For cumulative counters: extrapolate backwards from current value
+                let val = if rate > 0.0 {
+                    current_value
+                        .saturating_sub((rate * (i as f64) * (interval_ms as f64 / 1000.0)) as u64)
+                } else {
+                    current_value
+                };
+                SamplePoint {
+                    sample: val,
+                    timestamp: t,
+                }
+            })
+            .collect();
+        Self { rate, samples }
+    }
+}
+
+/// Represents the schema or state for message stats.
+///
+/// Defines details for message stats inside the broker ecosystem.
 #[derive(Serialize, Clone)]
 pub struct MessageStats {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,8 +429,21 @@ pub struct MessageStats {
     pub ack: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ack_details: Option<RateDetails>,
+    // 'deliver' alias — the chart JS items look for 'deliver_details',
+    // while RabbitMQ's API also uses 'deliver_get_details'.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deliver: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deliver_details: Option<RateDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirm: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirm_details: Option<RateDetails>,
 }
 
+/// Represents the schema or state for overview response.
+///
+/// Defines details for overview response inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct OverviewResponse {
     pub cluster_name: String,
@@ -94,6 +451,7 @@ pub struct OverviewResponse {
     pub rabbitmq_version: String,
     pub management_version: String,
     pub erlang_version: String,
+    pub erlang_full_version: String,
     pub product_name: String,
     pub product_version: String,
     pub rates_mode: String,
@@ -102,8 +460,18 @@ pub struct OverviewResponse {
     pub listeners: Vec<ListenerInfo>,
     pub exchange_types: Vec<ExchangeTypeInfo>,
     pub message_stats: MessageStats,
+    pub sample_retention_policies: serde_json::Value,
+    pub disable_stats: bool,
+    pub enable_queue_totals: bool,
+    pub is_op_policy_updating_enabled: bool,
+    pub contexts: Vec<serde_json::Value>,
+    pub churn_rates: serde_json::Value,
+    pub statistics_db_event_queue: u64,
 }
 
+/// Represents the schema or state for object totals.
+///
+/// Defines details for object totals inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ObjectTotals {
     pub queues: usize,
@@ -113,21 +481,37 @@ pub struct ObjectTotals {
     pub consumers: usize,
 }
 
+/// Represents the schema or state for queue totals.
+///
+/// Defines details for queue totals inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct QueueTotals {
     pub messages: usize,
     pub messages_ready: usize,
     pub messages_unacknowledged: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_details: Option<RateDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_ready_details: Option<RateDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_unacknowledged_details: Option<RateDetails>,
 }
 
+/// Represents the schema or state for listener info.
+///
+/// Defines details for listener info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ListenerInfo {
     pub node: String,
     pub protocol: String,
     pub ip_address: String,
     pub port: u16,
+    pub tls: bool,
 }
 
+/// Represents the schema or state for exchange type info.
+///
+/// Defines details for exchange type info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ExchangeTypeInfo {
     pub name: String,
@@ -135,6 +519,9 @@ pub struct ExchangeTypeInfo {
     pub enabled: bool,
 }
 
+/// Represents the schema or state for node info.
+///
+/// Defines details for node info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct NodeInfo {
     pub name: String,
@@ -154,8 +541,19 @@ pub struct NodeInfo {
     pub uptime: u64,
     pub processors: usize,
     pub os_pid: String,
+    pub applications: Vec<serde_json::Value>,
+    pub proc_used: u64,
+    pub proc_total: u64,
+    pub rates_mode: String,
+    pub config_files: Vec<String>,
+    pub enabled_plugins: Vec<String>,
+    pub mem_calculation_strategy: String,
+    pub being_drained: bool,
 }
 
+/// Detailed virtual host telemetry and status payload.
+///
+/// Detailed virtual host telemetry and status payload.
 #[derive(Serialize)]
 pub struct VHostInfo {
     pub name: String,
@@ -164,13 +562,21 @@ pub struct VHostInfo {
     pub messages: usize,
     pub messages_ready: usize,
     pub messages_unacknowledged: usize,
+    pub cluster_state: serde_json::Value,
+    pub tracing: bool,
 }
 
+/// Represents the schema or state for health response.
+///
+/// Defines details for health response inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct HealthResponse {
     pub status: String,
 }
 
+/// Represents the schema or state for queue info.
+///
+/// Defines details for queue info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct QueueInfo {
     pub name: String,
@@ -183,12 +589,36 @@ pub struct QueueInfo {
     pub messages: usize,
     pub messages_ready: usize,
     pub messages_unacknowledged: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_details: Option<RateDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_ready_details: Option<RateDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_unacknowledged_details: Option<RateDetails>,
     pub consumers: usize,
     pub state: String,
     pub node: String,
     pub message_stats: MessageStats,
+    pub arguments: serde_json::Value,
+    pub consumer_details: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_pid_details: Option<serde_json::Value>,
+    pub effective_policy_definition: serde_json::Value,
+    pub incoming: Vec<serde_json::Value>,
+    pub deliveries: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reductions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub garbage_collection: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator_policy: Option<String>,
 }
 
+/// Represents the schema or state for exchange info.
+///
+/// Defines details for exchange info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ExchangeInfo {
     pub name: String,
@@ -202,6 +632,9 @@ pub struct ExchangeInfo {
     pub message_stats: MessageStats,
 }
 
+/// Represents the schema or state for connection info.
+///
+/// Defines details for connection info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ConnectionInfo {
     pub name: String,
@@ -216,14 +649,28 @@ pub struct ConnectionInfo {
     pub conn_type: String,
     pub protocol: String,
     pub ssl: bool,
+    pub client_properties: serde_json::Value,
+    pub connected_at: u64,
+    pub timeout: u32,
+    pub frame_max: u32,
+    pub channel_max: u16,
+    pub auth_mechanism: String,
 }
 
+/// Represents the schema or state for user info.
+///
+/// Defines details for user info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub name: String,
     pub tags: String,
+    pub password_hash: String,
+    pub hashing_algorithm: String,
 }
 
+/// Represents the schema or state for create user request.
+///
+/// Defines details for create user request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -232,11 +679,17 @@ pub struct CreateUserRequest {
     pub tags: Vec<String>,
 }
 
+/// Represents the schema or state for change password request.
+///
+/// Defines details for change password request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct ChangePasswordRequest {
     pub password: String,
 }
 
+/// Represents the schema or state for permission info.
+///
+/// Defines details for permission info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct PermissionInfo {
     pub user: String,
@@ -246,6 +699,9 @@ pub struct PermissionInfo {
     pub read: String,
 }
 
+/// Represents the schema or state for set permission request.
+///
+/// Defines details for set permission request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct SetPermissionRequest {
     pub configure: String,
@@ -253,6 +709,9 @@ pub struct SetPermissionRequest {
     pub read: String,
 }
 
+/// Represents the schema or state for publish request.
+///
+/// Defines details for publish request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct PublishRequest {
     pub routing_key: String,
@@ -261,6 +720,9 @@ pub struct PublishRequest {
     pub properties: PublishProperties,
 }
 
+/// Represents the schema or state for publish properties.
+///
+/// Defines details for publish properties inside the broker ecosystem.
 #[derive(Deserialize, Default)]
 pub struct PublishProperties {
     #[serde(default)]
@@ -269,21 +731,93 @@ pub struct PublishProperties {
     pub content_type: Option<String>,
 }
 
+/// Represents the schema or state for get messages request.
+///
+/// Defines details for get messages request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct GetMessagesRequest {
-    #[serde(default = "default_count")]
+    #[serde(
+        default = "default_count",
+        deserialize_with = "deserialize_usize_or_string"
+    )]
     pub count: usize,
     #[serde(default = "default_ack_mode")]
     pub ack_mode: String,
 }
 
+fn deserialize_usize_or_string<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    /// Represents the schema or state for usize or string.
+    ///
+    /// Defines details for usize or string inside the broker ecosystem.
+    struct UsizeOrString;
+
+    impl<'de> de::Visitor<'de> for UsizeOrString {
+        type Value = usize;
+
+        /// Executes the standard expecting lifecycle step.
+        ///
+        /// Executes the required business logic for expecting.
+        ///
+        /// # Arguments
+        ///
+        /// * `f` - `&mut std::fmt::Formatter`: The `f` argument.
+        ///
+        /// # Returns
+        ///
+        /// * `std::fmt::Result` - A standard rust Result wrapping the status payloads or server failure codes.
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a usize or a stringified usize")
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<usize, E> {
+            Ok(v as usize)
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<usize, E> {
+            if v < 0 {
+                Err(E::custom(format!("negative value: {}", v)))
+            } else {
+                Ok(v as usize)
+            }
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<usize, E> {
+            v.parse::<usize>().map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_any(UsizeOrString)
+}
+
+/// Executes the standard default count lifecycle step.
+///
+/// Executes the required business logic for default count.
+///
+/// # Returns
+///
+/// * `usize` - The evaluated outcome or operation handle.
 pub fn default_count() -> usize {
     1
 }
+/// Executes the standard default ack mode lifecycle step.
+///
+/// Executes the required business logic for default ack mode.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn default_ack_mode() -> String {
     "ack_requeue_false".into()
 }
 
+/// Represents the schema or state for message payload.
+///
+/// Defines details for message payload inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct MessagePayload {
     pub payload: String,
@@ -293,6 +827,9 @@ pub struct MessagePayload {
     pub message_count: usize,
 }
 
+/// Represents the schema or state for binding info.
+///
+/// Defines details for binding info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct BindingInfo {
     pub source: String,
@@ -304,6 +841,9 @@ pub struct BindingInfo {
     pub properties_key: String,
 }
 
+/// Represents the schema or state for channel info.
+///
+/// Defines details for channel info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ChannelInfo {
     pub name: String,
@@ -315,10 +855,26 @@ pub struct ChannelInfo {
     pub prefetch_count: u16,
     pub consumer_count: usize,
     pub messages_unacknowledged: u16,
+    pub messages_unconfirmed: u16,
+    pub messages_uncommitted: u16,
+    pub acks_uncommitted: u16,
+    pub pending_raft_commands: usize,
+    pub cached_segments: usize,
     pub confirm: bool,
     pub state: String,
+    pub consumer_details: Vec<serde_json::Value>,
+    pub message_stats: MessageStats,
+    pub publishes: Vec<serde_json::Value>,
+    pub deliveries: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reductions: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub garbage_collection: Option<serde_json::Value>,
 }
 
+/// Represents the schema or state for consumer info.
+///
+/// Defines details for consumer info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ConsumerInfo {
     pub consumer_tag: String,
@@ -329,6 +885,9 @@ pub struct ConsumerInfo {
     pub active: bool,
 }
 
+/// Represents the schema or state for feature flag info.
+///
+/// Defines details for feature flag info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct FeatureFlagInfo {
     pub name: String,
@@ -337,11 +896,17 @@ pub struct FeatureFlagInfo {
     pub desc: String,
 }
 
+/// Represents the schema or state for cluster name request.
+///
+/// Defines details for cluster name request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct ClusterNameRequest {
     pub name: String,
 }
 
+/// Represents the schema or state for create queue request.
+///
+/// Defines details for create queue request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateQueueRequest {
     #[serde(default)]
@@ -354,6 +919,9 @@ pub struct CreateQueueRequest {
     pub arguments: serde_json::Value,
 }
 
+/// Represents the schema or state for create exchange request.
+///
+/// Defines details for create exchange request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateExchangeRequest {
     #[serde(rename = "type", default = "default_exchange_type")]
@@ -368,10 +936,20 @@ pub struct CreateExchangeRequest {
     pub arguments: serde_json::Value,
 }
 
+/// Executes the standard default exchange type lifecycle step.
+///
+/// Executes the required business logic for default exchange type.
+///
+/// # Returns
+///
+/// * `String` - The evaluated outcome or operation handle.
 pub fn default_exchange_type() -> String {
     "direct".into()
 }
 
+/// Represents the schema or state for create binding request.
+///
+/// Defines details for create binding request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateBindingRequest {
     #[serde(default)]
@@ -380,6 +958,9 @@ pub struct CreateBindingRequest {
     pub arguments: serde_json::Value,
 }
 
+/// Represents the schema or state for bulk delete request.
+///
+/// Defines details for bulk delete request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct BulkDeleteRequest {
     pub users: Vec<String>,
