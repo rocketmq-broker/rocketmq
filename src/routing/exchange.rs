@@ -1,5 +1,27 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: exchange.rs
+// Description: Exchange types (direct, fanout, topic, headers) and routing logic.
+
 use std::collections::HashMap;
 
+/// Defines the various states or variants of exchange type.
+///
+/// Defines details for exchange type inside the broker ecosystem.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExchangeType {
     Direct,
@@ -9,6 +31,17 @@ pub enum ExchangeType {
 }
 
 impl ExchangeType {
+    /// Executes the standard from str lifecycle step.
+    ///
+    /// Executes the required business logic for from str.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - `&str`: The `s` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Self>` - The evaluated outcome or operation handle.
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "direct" => Some(Self::Direct),
@@ -19,6 +52,13 @@ impl ExchangeType {
         }
     }
 
+    /// Executes the standard as str lifecycle step.
+    ///
+    /// Executes the required business logic for as str.
+    ///
+    /// # Returns
+    ///
+    /// * `&'static str` - The evaluated outcome or operation handle.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Direct => "direct",
@@ -28,7 +68,13 @@ impl ExchangeType {
         }
     }
 
-    /// Serialize to a single byte for WAL persistence.
+    /// Executes the standard to byte lifecycle step.
+    ///
+    /// Executes the required business logic for to byte.
+    ///
+    /// # Returns
+    ///
+    /// * `u8` - The evaluated outcome or operation handle.
     pub fn to_byte(&self) -> u8 {
         match self {
             Self::Direct => 0x00,
@@ -39,12 +85,18 @@ impl ExchangeType {
     }
 }
 
+/// Defines the various states or variants of headers match.
+///
+/// Defines details for headers match inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub enum HeadersMatch {
     All(HashMap<String, String>),
     Any(HashMap<String, String>),
 }
 
+/// Represents the schema or state for binding.
+///
+/// Defines details for binding inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct Binding {
     pub queue_name: String,
@@ -52,6 +104,9 @@ pub struct Binding {
     pub headers_match: Option<HeadersMatch>,
 }
 
+/// Represents the schema or state for exchange.
+///
+/// Defines details for exchange inside the broker ecosystem.
 pub struct Exchange {
     pub name: String,
     pub kind: ExchangeType,
@@ -61,6 +116,19 @@ pub struct Exchange {
 }
 
 impl Exchange {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - `String`: The unique identifier string of the resource.
+    /// * `kind` - `ExchangeType`: The `kind` argument.
+    /// * `durable` - `bool`: The `durable` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(name: String, kind: ExchangeType, durable: bool) -> Self {
         Self {
             name,
@@ -71,6 +139,13 @@ impl Exchange {
         }
     }
 
+    /// Executes the standard add binding lifecycle step.
+    ///
+    /// Executes the required business logic for add binding.
+    ///
+    /// # Arguments
+    ///
+    /// * `binding` - `Binding`: The `binding` argument.
     pub fn add_binding(&mut self, binding: Binding) {
         // Avoid duplicate bindings (same queue + routing key)
         let exists = self
@@ -82,11 +157,31 @@ impl Exchange {
         }
     }
 
+    /// Executes the standard remove binding lifecycle step.
+    ///
+    /// Executes the required business logic for remove binding.
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - `&str`: The unique identifier string of the resource.
+    /// * `routing_key` - `&str`: The `routing_key` argument.
     pub fn remove_binding(&mut self, queue_name: &str, routing_key: &str) {
         self.bindings
             .retain(|b| !(b.queue_name == queue_name && b.routing_key == routing_key));
     }
 
+    /// Executes the standard route lifecycle step.
+    ///
+    /// Executes the required business logic for route.
+    ///
+    /// # Arguments
+    ///
+    /// * `routing_key` - `&str`: The `routing_key` argument.
+    /// * `headers` - `&HashMap<String, String>`: The `headers` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<String>` - The evaluated outcome or operation handle.
     pub fn route(&self, routing_key: &str, headers: &HashMap<String, String>) -> Vec<String> {
         match self.kind {
             ExchangeType::Direct => self.route_direct(routing_key),
@@ -96,6 +191,17 @@ impl Exchange {
         }
     }
 
+    /// Executes the standard route direct lifecycle step.
+    ///
+    /// Executes the required business logic for route direct.
+    ///
+    /// # Arguments
+    ///
+    /// * `routing_key` - `&str`: The `routing_key` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_direct(&self, routing_key: &str) -> Vec<String> {
         self.bindings
             .iter()
@@ -104,10 +210,28 @@ impl Exchange {
             .collect()
     }
 
+    /// Executes the standard route fanout lifecycle step.
+    ///
+    /// Executes the required business logic for route fanout.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_fanout(&self) -> Vec<String> {
         self.bindings.iter().map(|b| b.queue_name.clone()).collect()
     }
 
+    /// Executes the standard route topic lifecycle step.
+    ///
+    /// Executes the required business logic for route topic.
+    ///
+    /// # Arguments
+    ///
+    /// * `routing_key` - `&str`: The `routing_key` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_topic(&self, routing_key: &str) -> Vec<String> {
         self.bindings
             .iter()
@@ -116,6 +240,17 @@ impl Exchange {
             .collect()
     }
 
+    /// Executes the standard route headers lifecycle step.
+    ///
+    /// Executes the required business logic for route headers.
+    ///
+    /// # Arguments
+    ///
+    /// * `msg_headers` - `&HashMap<String, String>`: The `msg_headers` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_headers(&self, msg_headers: &HashMap<String, String>) -> Vec<String> {
         self.bindings
             .iter()
@@ -133,15 +268,36 @@ impl Exchange {
     }
 }
 
-/// AMQP topic pattern matching.
-/// `*` matches exactly one word, `#` matches zero or more words.
-/// Words are separated by `.`.
+/// Executes the standard topic matches lifecycle step.
+///
+/// Executes the required business logic for topic matches.
+///
+/// # Arguments
+///
+/// * `pattern` - `&str`: The `pattern` argument.
+/// * `routing_key` - `&str`: The `routing_key` argument.
+///
+/// # Returns
+///
+/// * `bool` - The evaluated outcome or operation handle.
 fn topic_matches(pattern: &str, routing_key: &str) -> bool {
     let pattern_parts: Vec<&str> = pattern.split('.').collect();
     let key_parts: Vec<&str> = routing_key.split('.').collect();
     topic_match_recursive(&pattern_parts, &key_parts)
 }
 
+/// Executes the standard topic match recursive lifecycle step.
+///
+/// Executes the required business logic for topic match recursive.
+///
+/// # Arguments
+///
+/// * `pattern` - `&[&str]`: The `pattern` argument.
+/// * `key` - `&[&str]`: The `key` argument.
+///
+/// # Returns
+///
+/// * `bool` - The evaluated outcome or operation handle.
 fn topic_match_recursive(pattern: &[&str], key: &[&str]) -> bool {
     match (pattern.first(), key.first()) {
         (None, None) => true,
@@ -167,6 +323,13 @@ fn topic_match_recursive(pattern: &[&str], key: &[&str]) -> bool {
     }
 }
 
+/// Executes the standard create default exchanges lifecycle step.
+///
+/// Executes the required business logic for create default exchanges.
+///
+/// # Returns
+///
+/// * `HashMap<String, Exchange>` - The evaluated outcome or operation handle.
 pub fn create_default_exchanges() -> HashMap<String, Exchange> {
     let mut exchanges = HashMap::new();
 
@@ -199,6 +362,9 @@ pub fn create_default_exchanges() -> HashMap<String, Exchange> {
 mod tests {
     use super::*;
 
+    /// Executes the standard direct routing lifecycle step.
+    ///
+    /// Executes the required business logic for direct routing.
     #[test]
     fn direct_routing() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
@@ -219,6 +385,9 @@ mod tests {
         assert!(ex.route("unknown", &empty).is_empty());
     }
 
+    /// Executes the standard fanout routing lifecycle step.
+    ///
+    /// Executes the required business logic for fanout routing.
     #[test]
     fn fanout_routing() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Fanout, false);
@@ -240,6 +409,9 @@ mod tests {
         assert!(routed.contains(&"q2".to_string()));
     }
 
+    /// Executes the standard topic routing lifecycle step.
+    ///
+    /// Executes the required business logic for topic routing.
     #[test]
     fn topic_routing() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Topic, false);
@@ -278,6 +450,9 @@ mod tests {
         assert_eq!(routed, vec!["all_logs"]);
     }
 
+    /// Executes the standard headers routing lifecycle step.
+    ///
+    /// Executes the required business logic for headers routing.
     #[test]
     fn headers_routing() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Headers, false);
@@ -302,6 +477,9 @@ mod tests {
         assert!(ex.route("", &partial).is_empty());
     }
 
+    /// Executes the standard no duplicate bindings lifecycle step.
+    ///
+    /// Executes the required business logic for no duplicate bindings.
     #[test]
     fn no_duplicate_bindings() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
@@ -317,6 +495,9 @@ mod tests {
 
     // ── ExchangeType parsing ────────────────────────────────────────────
 
+    /// Executes the standard exchange type from str lifecycle step.
+    ///
+    /// Executes the required business logic for exchange type from str.
     #[test]
     fn exchange_type_from_str() {
         assert_eq!(ExchangeType::from_str("direct"), Some(ExchangeType::Direct));
@@ -330,6 +511,9 @@ mod tests {
         assert_eq!(ExchangeType::from_str(""), None);
     }
 
+    /// Executes the standard exchange type as str roundtrip lifecycle step.
+    ///
+    /// Executes the required business logic for exchange type as str roundtrip.
     #[test]
     fn exchange_type_as_str_roundtrip() {
         for kind in [
@@ -345,6 +529,9 @@ mod tests {
 
     // ── Binding removal ─────────────────────────────────────────────────
 
+    /// Executes the standard remove binding by queue and key lifecycle step.
+    ///
+    /// Executes the required business logic for remove binding by queue and key.
     #[test]
     fn remove_binding_by_queue_and_key() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
@@ -364,6 +551,9 @@ mod tests {
         assert_eq!(ex.bindings[0].queue_name, "q2");
     }
 
+    /// Executes the standard remove nonexistent binding is noop lifecycle step.
+    ///
+    /// Executes the required business logic for remove nonexistent binding is noop.
     #[test]
     fn remove_nonexistent_binding_is_noop() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
@@ -379,6 +569,9 @@ mod tests {
 
     // ── Topic edge cases ────────────────────────────────────────────────
 
+    /// Executes the standard topic hash matches everything lifecycle step.
+    ///
+    /// Executes the required business logic for topic hash matches everything.
     #[test]
     fn topic_hash_matches_everything() {
         assert!(topic_matches("#", "a.b.c"));
@@ -386,12 +579,18 @@ mod tests {
         assert!(topic_matches("#", ""));
     }
 
+    /// Executes the standard topic hash in middle lifecycle step.
+    ///
+    /// Executes the required business logic for topic hash in middle.
     #[test]
     fn topic_hash_in_middle() {
         assert!(topic_matches("a.#.z", "a.b.c.z"));
         assert!(topic_matches("a.#.z", "a.z")); // # matches zero words
     }
 
+    /// Executes the standard topic star requires exactly one word lifecycle step.
+    ///
+    /// Executes the required business logic for topic star requires exactly one word.
     #[test]
     fn topic_star_requires_exactly_one_word() {
         assert!(topic_matches("a.*.c", "a.b.c"));
@@ -399,6 +598,9 @@ mod tests {
         assert!(!topic_matches("*", "a.b")); // * is one word only
     }
 
+    /// Executes the standard topic exact match lifecycle step.
+    ///
+    /// Executes the required business logic for topic exact match.
     #[test]
     fn topic_exact_match() {
         assert!(topic_matches("a.b.c", "a.b.c"));
@@ -406,11 +608,17 @@ mod tests {
         assert!(!topic_matches("a.b", "a.b.c"));
     }
 
+    /// Executes the standard topic empty pattern matches empty key lifecycle step.
+    ///
+    /// Executes the required business logic for topic empty pattern matches empty key.
     #[test]
     fn topic_empty_pattern_matches_empty_key() {
         assert!(topic_matches("", ""));
     }
 
+    /// Executes the standard topic star does not match empty lifecycle step.
+    ///
+    /// Executes the required business logic for topic star does not match empty.
     #[test]
     fn topic_star_does_not_match_empty() {
         assert!(!topic_matches("a.*", "a"));
@@ -418,6 +626,9 @@ mod tests {
 
     // ── Headers Any ─────────────────────────────────────────────────────
 
+    /// Executes the standard headers any routing lifecycle step.
+    ///
+    /// Executes the required business logic for headers any routing.
     #[test]
     fn headers_any_routing() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Headers, false);
@@ -444,6 +655,9 @@ mod tests {
 
     // ── Edge cases ──────────────────────────────────────────────────────
 
+    /// Executes the standard exchange no bindings routes nothing lifecycle step.
+    ///
+    /// Executes the required business logic for exchange no bindings routes nothing.
     #[test]
     fn exchange_no_bindings_routes_nothing() {
         let ex = Exchange::new("empty".into(), ExchangeType::Direct, false);
@@ -451,6 +665,9 @@ mod tests {
         assert!(ex.route("anything", &empty).is_empty());
     }
 
+    /// Executes the standard fanout ignores routing key lifecycle step.
+    ///
+    /// Executes the required business logic for fanout ignores routing key.
     #[test]
     fn fanout_ignores_routing_key() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Fanout, false);
@@ -466,6 +683,9 @@ mod tests {
         assert_eq!(routed, vec!["q1"]);
     }
 
+    /// Executes the standard direct multiple queues same key lifecycle step.
+    ///
+    /// Executes the required business logic for direct multiple queues same key.
     #[test]
     fn direct_multiple_queues_same_key() {
         let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
@@ -487,6 +707,9 @@ mod tests {
 
     // ── Default exchanges ───────────────────────────────────────────────
 
+    /// Executes the standard default exchanges correct types lifecycle step.
+    ///
+    /// Executes the required business logic for default exchanges correct types.
     #[test]
     fn default_exchanges_correct_types() {
         let exchanges = create_default_exchanges();
@@ -509,6 +732,9 @@ mod tests {
         );
     }
 
+    /// Executes the standard default exchanges are durable lifecycle step.
+    ///
+    /// Executes the required business logic for default exchanges are durable.
     #[test]
     fn default_exchanges_are_durable() {
         let exchanges = create_default_exchanges();
