@@ -329,6 +329,24 @@ pub async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
                 enabled_plugins: vec!["rabbitmq_management".to_string()],
                 mem_calculation_strategy: "rss".into(),
                 being_drained: false,
+                db_dir: "data/mnesia".into(),
+                log_files: vec!["data/log/rocketmq.log".into()],
+                log_file: "data/log/rocketmq.log".into(),
+                cluster_links: vec![],
+                net_ticktime: 60,
+                run_queue: 1,
+                metrics_gc_queue_length: serde_json::json!({}),
+                ra_open_file_metrics: serde_json::json!({}),
+                exchange_types: vec![
+                    serde_json::json!({"name": "direct", "description": "Direct exchange", "enabled": true}),
+                    serde_json::json!({"name": "fanout", "description": "Fanout exchange", "enabled": true}),
+                    serde_json::json!({"name": "topic", "description": "Topic exchange", "enabled": true}),
+                    serde_json::json!({"name": "headers", "description": "Headers exchange", "enabled": true}),
+                ],
+                auth_mechanisms: vec![
+                    serde_json::json!({"name": "PLAIN", "description": "SASL PLAIN authentication", "enabled": true}),
+                    serde_json::json!({"name": "AMQPLAIN", "description": "AMQPLAIN authentication", "enabled": true}),
+                ],
             });
         }
     }
@@ -359,6 +377,24 @@ pub async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
             enabled_plugins: vec!["rabbitmq_management".to_string()],
             mem_calculation_strategy: "rss".into(),
             being_drained: false,
+            db_dir: "data/mnesia".into(),
+            log_files: vec!["data/log/rocketmq.log".into()],
+            log_file: "data/log/rocketmq.log".into(),
+            cluster_links: vec![],
+            net_ticktime: 60,
+            run_queue: 1,
+            metrics_gc_queue_length: serde_json::json!({}),
+            ra_open_file_metrics: serde_json::json!({}),
+            exchange_types: vec![
+                serde_json::json!({"name": "direct", "description": "Direct exchange", "enabled": true}),
+                serde_json::json!({"name": "fanout", "description": "Fanout exchange", "enabled": true}),
+                serde_json::json!({"name": "topic", "description": "Topic exchange", "enabled": true}),
+                serde_json::json!({"name": "headers", "description": "Headers exchange", "enabled": true}),
+            ],
+            auth_mechanisms: vec![
+                serde_json::json!({"name": "PLAIN", "description": "SASL PLAIN authentication", "enabled": true}),
+                serde_json::json!({"name": "AMQPLAIN", "description": "AMQPLAIN authentication", "enabled": true}),
+            ],
         });
     }
 
@@ -369,9 +405,13 @@ pub async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
 
 pub async fn get_node(
     State(broker): State<Broker>,
-    Path(_name): Path<String>,
-) -> Json<Vec<NodeInfo>> {
-    list_nodes(State(broker)).await
+    Path(name): Path<String>,
+) -> Result<Json<NodeInfo>, StatusCode> {
+    let Json(nodes) = list_nodes(State(broker)).await;
+    match nodes.into_iter().find(|n| n.name == name) {
+        Some(node) => Ok(Json(node)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 /// Executes the standard get cluster name lifecycle step.

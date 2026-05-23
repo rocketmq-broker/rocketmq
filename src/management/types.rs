@@ -549,6 +549,17 @@ pub struct NodeInfo {
     pub enabled_plugins: Vec<String>,
     pub mem_calculation_strategy: String,
     pub being_drained: bool,
+    // Fields required by node.ejs template
+    pub db_dir: String,
+    pub log_files: Vec<String>,
+    pub log_file: String,
+    pub cluster_links: Vec<serde_json::Value>,
+    pub net_ticktime: u64,
+    pub run_queue: u64,
+    pub metrics_gc_queue_length: serde_json::Value,
+    pub ra_open_file_metrics: serde_json::Value,
+    pub exchange_types: Vec<serde_json::Value>,
+    pub auth_mechanisms: Vec<serde_json::Value>,
 }
 
 /// Detailed virtual host telemetry and status payload.
