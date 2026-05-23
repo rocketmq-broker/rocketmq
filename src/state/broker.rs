@@ -784,11 +784,12 @@ mod tests {
 
         // Apply the op
         if let PendingOp::Publish {
-                exchange,
-                routing_key,
-                headers,
-                body,
-            } = &op {
+            exchange,
+            routing_key,
+            headers,
+            body,
+        } = &op
+        {
             let msg_id = bs.alloc_msg_id();
             if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
                 let msg = crate::queue::Message::new_routed(

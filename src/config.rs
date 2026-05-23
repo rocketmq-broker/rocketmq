@@ -314,13 +314,15 @@ fn resolve_string(
     default: &str,
 ) -> String {
     if let Ok(v) = std::env::var(env_key)
-        && !v.is_empty() {
-            return v;
-        }
+        && !v.is_empty()
+    {
+        return v;
+    }
     if let Some(v) = file_values.get(conf_key)
-        && !v.is_empty() {
-            return v.clone();
-        }
+        && !v.is_empty()
+    {
+        return v.clone();
+    }
     default.to_string()
 }
 
@@ -332,13 +334,15 @@ fn resolve_u64(
     default: u64,
 ) -> u64 {
     if let Ok(v) = std::env::var(env_key)
-        && let Ok(n) = v.parse::<u64>() {
-            return n;
-        }
+        && let Ok(n) = v.parse::<u64>()
+    {
+        return n;
+    }
     if let Some(v) = file_values.get(conf_key)
-        && let Ok(n) = v.parse::<u64>() {
-            return n;
-        }
+        && let Ok(n) = v.parse::<u64>()
+    {
+        return n;
+    }
     default
 }
 
@@ -350,13 +354,15 @@ fn resolve_u16(
     default: u16,
 ) -> u16 {
     if let Ok(v) = std::env::var(env_key)
-        && let Ok(n) = v.parse::<u16>() {
-            return n;
-        }
+        && let Ok(n) = v.parse::<u16>()
+    {
+        return n;
+    }
     if let Some(v) = file_values.get(conf_key)
-        && let Ok(n) = v.parse::<u16>() {
-            return n;
-        }
+        && let Ok(n) = v.parse::<u16>()
+    {
+        return n;
+    }
     default
 }
 
