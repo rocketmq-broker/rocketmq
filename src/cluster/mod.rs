@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: mod.rs
+// Description: Clustering support, node discovery, peer synchronization, and group coordination.
+
 //! Clustering and High Availability module (Sprint 5).
 //!
 //! Implements node discovery, gossip membership, metadata synchronization,
@@ -20,6 +39,9 @@ pub mod raft;
 
 // ─── Cluster Protocol Definitions ────────────────────
 
+/// Represents the schema or state for member info.
+///
+/// Defines details for member info inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemberInfo {
     pub node_id: u64,
@@ -28,6 +50,9 @@ pub struct MemberInfo {
     pub is_active: bool,
 }
 
+/// Defines the various states or variants of cluster frame.
+///
+/// Defines details for cluster frame inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClusterFrame {
     // Discovery & Membership
@@ -105,6 +130,9 @@ pub enum ClusterFrame {
 
 // ─── Peer Connection Handle ──────────────────────────
 
+/// Represents the schema or state for peer connection.
+///
+/// Defines details for peer connection inside the broker ecosystem.
 pub struct PeerConnection {
     pub node_id: u64,
     pub addr: String,
@@ -113,6 +141,9 @@ pub struct PeerConnection {
 
 // ─── Cluster Manager ─────────────────────────────────
 
+/// Represents the schema or state for cluster manager.
+///
+/// Defines details for cluster manager inside the broker ecosystem.
 pub struct ClusterManager {
     pub node_id: u64,
     pub listen_addr: String,
@@ -120,9 +151,7 @@ pub struct ClusterManager {
     pub members: RwLock<HashMap<u64, MemberInfo>>,
     pub current_term: AtomicU64,
     pub leader_id: AtomicU64,
-    /// The node this node voted for in the current term (0 = none).
     pub voted_for: AtomicU64,
-    /// Epoch ms of the last heartbeat received from the leader.
     pub last_leader_heartbeat: AtomicU64,
     // Pending quorum replications waiting for votes: msg_id -> (needed, received)
     pub pending_replications: DashMap<u64, tokio::sync::oneshot::Sender<bool>>,
@@ -130,6 +159,18 @@ pub struct ClusterManager {
 }
 
 impl ClusterManager {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - `u64`: The `node_id` argument.
+    /// * `listen_addr` - `String`: The `listen_addr` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(node_id: u64, listen_addr: String) -> Self {
         let mut members = HashMap::new();
         // Add self to membership list
@@ -157,12 +198,20 @@ impl ClusterManager {
         }
     }
 
-    /// Returns true if this node believes itself to be the cluster leader.
+    /// Executes the standard is leader lifecycle step.
+    ///
+    /// Executes the required business logic for is leader.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_leader(&self) -> bool {
         self.leader_id.load(Ordering::SeqCst) == self.node_id
     }
 
-    /// Trigger a leader election: increment term, vote for self, request votes.
+    /// Executes the standard start election lifecycle step.
+    ///
+    /// Executes the required business logic for start election.
     pub async fn start_election(&self) {
         let new_term = self.current_term.fetch_add(1, Ordering::SeqCst) + 1;
         self.voted_for.store(self.node_id, Ordering::SeqCst);
@@ -222,7 +271,13 @@ impl ClusterManager {
         }
     }
 
-    /// Broadcast a frame to all currently connected active peers.
+    /// Executes the standard broadcast lifecycle step.
+    ///
+    /// Executes the required business logic for broadcast.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame` - `ClusterFrame`: The `frame` argument.
     pub async fn broadcast(&self, frame: ClusterFrame) {
         for entry in self.peers.iter() {
             let tx = &entry.value().tx;
@@ -232,7 +287,13 @@ impl ClusterManager {
         }
     }
 
-    /// Handle replication consensus. If majority is reached, completes the replication.
+    /// Executes the standard vote replication lifecycle step.
+    ///
+    /// Executes the required business logic for vote replication.
+    ///
+    /// # Arguments
+    ///
+    /// * `msg_id` - `u64`: The `msg_id` argument.
     pub fn vote_replication(&self, msg_id: u64) {
         if let Some(entry) = self.replication_votes.get(&msg_id) {
             let count = entry.value().fetch_add(1, Ordering::SeqCst) + 1;
@@ -246,7 +307,19 @@ impl ClusterManager {
         }
     }
 
-    /// Replicate a publish event across the cluster and wait for consensus.
+    /// Executes the standard replicate publish lifecycle step.
+    ///
+    /// Executes the required business logic for replicate publish.
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - `&str`: The unique identifier string of the resource.
+    /// * `msg_id` - `u64`: The `msg_id` argument.
+    /// * `body` - `&[u8]`: Deserialized JSON payload representation containing request parameters.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub async fn replicate_publish(&self, queue_name: &str, msg_id: u64, body: &[u8]) -> bool {
         // If we have no peers, we are single-node, commit immediately.
         if self.peers.is_empty() {
@@ -288,7 +361,18 @@ impl ClusterManager {
         }
     }
 
-    /// Replicate an ack event across the cluster and wait for consensus.
+    /// Executes the standard replicate ack lifecycle step.
+    ///
+    /// Executes the required business logic for replicate ack.
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - `&str`: The unique identifier string of the resource.
+    /// * `msg_id` - `u64`: The `msg_id` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub async fn replicate_ack(&self, queue_name: &str, msg_id: u64) -> bool {
         if self.peers.is_empty() {
             return true;
@@ -328,6 +412,13 @@ impl ClusterManager {
 
 // ─── Utility Helper ──────────────────────────────────
 
+/// Executes the standard now ms lifecycle step.
+///
+/// Executes the required business logic for now ms.
+///
+/// # Returns
+///
+/// * `u64` - The evaluated outcome or operation handle.
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

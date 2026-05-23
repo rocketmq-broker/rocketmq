@@ -1,7 +1,29 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: raft.rs
+// Description: Raft consensus implementation for clustered state replication.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::cmp::min;
 
+/// Defines the various states or variants of raft command.
+///
+/// Defines details for raft command inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum RaftCommand {
     Enqueue {
@@ -13,6 +35,9 @@ pub enum RaftCommand {
     },
 }
 
+/// Represents the schema or state for log entry.
+///
+/// Defines details for log entry inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogEntry {
     pub index: u64,
@@ -20,6 +45,9 @@ pub struct LogEntry {
     pub command: RaftCommand,
 }
 
+/// Defines the various states or variants of raft role.
+///
+/// Defines details for raft role inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum RaftRole {
     Follower,
@@ -27,7 +55,9 @@ pub enum RaftRole {
     Leader,
 }
 
-/// Real Raft state for a specific Quorum Queue.
+/// Represents the schema or state for raft queue state.
+///
+/// Defines details for raft queue state inside the broker ecosystem.
 pub struct RaftQueueState {
     pub queue_name: String,
     
@@ -50,6 +80,17 @@ pub struct RaftQueueState {
 }
 
 impl RaftQueueState {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - `String`: The unique identifier string of the resource.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(queue_name: String) -> Self {
         // Initialize log with a dummy entry at index 0 to simplify logic
         let initial_log = vec![LogEntry {
@@ -72,15 +113,39 @@ impl RaftQueueState {
         }
     }
 
+    /// Executes the standard last log index lifecycle step.
+    ///
+    /// Executes the required business logic for last log index.
+    ///
+    /// # Returns
+    ///
+    /// * `u64` - The evaluated outcome or operation handle.
     pub fn last_log_index(&self) -> u64 {
         self.log.last().map(|e| e.index).unwrap_or(0)
     }
 
+    /// Executes the standard last log term lifecycle step.
+    ///
+    /// Executes the required business logic for last log term.
+    ///
+    /// # Returns
+    ///
+    /// * `u64` - The evaluated outcome or operation handle.
     pub fn last_log_term(&self) -> u64 {
         self.log.last().map(|e| e.term).unwrap_or(0)
     }
 
-    /// Appends a new command to the leader's log and returns its index and term
+    /// Executes the standard append local command lifecycle step.
+    ///
+    /// Executes the required business logic for append local command.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - `RaftCommand`: The `command` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<(u64, u64)>` - The evaluated outcome or operation handle.
     pub fn append_local_command(&mut self, command: RaftCommand) -> Option<(u64, u64)> {
         if !matches!(self.role, RaftRole::Leader) {
             return None; // Only leader can accept writes
@@ -98,7 +163,6 @@ impl RaftQueueState {
         Some((new_index, term))
     }
 
-    /// Handles an incoming AppendEntries RPC from a leader (Follower logic)
     pub fn handle_append_entries(
         &mut self,
         term: u64,
