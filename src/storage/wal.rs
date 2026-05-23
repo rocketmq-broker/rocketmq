@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: wal.rs
+// Description: Write-Ahead Log (WAL) implementation for crash recovery and persistence.
+
 //! Write-Ahead Log backing log-structured segment storage with auto-rotation.
 //!
 //! Binary format per entry:
@@ -22,7 +41,18 @@ const SEGMENT_EXT: &str = "seg";
 const SEGMENT_ID_WIDTH: usize = 16;
 const DEFAULT_MAX_SEGMENT_SIZE: u64 = 64 * 1024 * 1024; // 64 MB
 
-/// Build the canonical segment filename for a given ID.
+/// Executes the standard segment path lifecycle step.
+///
+/// Executes the required business logic for segment path.
+///
+/// # Arguments
+///
+/// * `dir` - `&Path`: The `dir` argument.
+/// * `id` - `u64`: The `id` argument.
+///
+/// # Returns
+///
+/// * `PathBuf` - The evaluated outcome or operation handle.
 fn segment_path(dir: &Path, id: u64) -> PathBuf {
     dir.join(format!(
         "{:0width$}.{}",
@@ -32,7 +62,17 @@ fn segment_path(dir: &Path, id: u64) -> PathBuf {
     ))
 }
 
-/// Scan a directory for segment files and return their IDs in sorted order.
+/// Executes the standard discover segment ids lifecycle step.
+///
+/// Executes the required business logic for discover segment ids.
+///
+/// # Arguments
+///
+/// * `dir` - `&Path`: The `dir` argument.
+///
+/// # Returns
+///
+/// * `io::Result<Vec<u64>>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn discover_segment_ids(dir: &Path) -> io::Result<Vec<u64>> {
     let mut ids = Vec::new();
     if !dir.exists() {
@@ -52,18 +92,38 @@ fn discover_segment_ids(dir: &Path) -> io::Result<Vec<u64>> {
     Ok(ids)
 }
 
-/// Helper for building WAL entry payloads with length-prefixed fields.
+/// Represents the schema or state for wal writer.
+///
+/// Defines details for wal writer inside the broker ecosystem.
 struct WalWriter {
     buf: Vec<u8>,
 }
 
 impl WalWriter {
+    /// Executes the standard with capacity lifecycle step.
+    ///
+    /// Executes the required business logic for with capacity.
+    ///
+    /// # Arguments
+    ///
+    /// * `cap` - `usize`: The `cap` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     fn with_capacity(cap: usize) -> Self {
         Self {
             buf: Vec::with_capacity(cap),
         }
     }
 
+    /// Executes the standard write str u16 lifecycle step.
+    ///
+    /// Executes the required business logic for write str u16.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - `&str`: The `s` argument.
     fn write_str_u16(&mut self, s: &str) {
         let bytes = s.as_bytes();
         self.buf
@@ -71,25 +131,56 @@ impl WalWriter {
         self.buf.extend_from_slice(bytes);
     }
 
+    /// Executes the standard write bytes u32 lifecycle step.
+    ///
+    /// Executes the required business logic for write bytes u32.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - `&[u8]`: The `data` argument.
     fn write_bytes_u32(&mut self, data: &[u8]) {
         self.buf
             .extend_from_slice(&(data.len() as u32).to_be_bytes());
         self.buf.extend_from_slice(data);
     }
 
+    /// Executes the standard write u8 lifecycle step.
+    ///
+    /// Executes the required business logic for write u8.
+    ///
+    /// # Arguments
+    ///
+    /// * `v` - `u8`: The `v` argument.
     fn write_u8(&mut self, v: u8) {
         self.buf.push(v);
     }
 
+    /// Executes the standard write u64 lifecycle step.
+    ///
+    /// Executes the required business logic for write u64.
+    ///
+    /// # Arguments
+    ///
+    /// * `v` - `u64`: The `v` argument.
     fn write_u64(&mut self, v: u64) {
         self.buf.extend_from_slice(&v.to_be_bytes());
     }
 
+    /// Executes the standard finish lifecycle step.
+    ///
+    /// Executes the required business logic for finish.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<u8>` - The evaluated outcome or operation handle.
     fn finish(self) -> Vec<u8> {
         self.buf
     }
 }
 
+/// Defines the various states or variants of entry type.
+///
+/// Defines details for entry type inside the broker ecosystem.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryType {
@@ -102,6 +193,17 @@ pub enum EntryType {
 
 impl TryFrom<u8> for EntryType {
     type Error = ();
+    /// Executes the standard try from lifecycle step.
+    ///
+    /// Executes the required business logic for try from.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - `u8`: The `value` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ()>` - A standard rust Result wrapping the status payloads or server failure codes.
     fn try_from(value: u8) -> Result<Self, ()> {
         match value {
             0x01 => Ok(Self::DeclareQueue),
@@ -114,14 +216,18 @@ impl TryFrom<u8> for EntryType {
     }
 }
 
-/// A single WAL entry with its decoded type and raw data payload.
+/// Represents the schema or state for wal entry.
+///
+/// Defines details for wal entry inside the broker ecosystem.
 #[derive(Debug)]
 pub struct WalEntry {
     pub entry_type: EntryType,
     pub data: Vec<u8>,
 }
 
-/// Single segment file representation
+/// Represents the schema or state for segment.
+///
+/// Defines details for segment inside the broker ecosystem.
 pub struct Segment {
     pub id: u64,
     pub path: PathBuf,
@@ -131,6 +237,18 @@ pub struct Segment {
 }
 
 impl Segment {
+    /// Executes the standard append lifecycle step.
+    ///
+    /// Executes the required business logic for append.
+    ///
+    /// # Arguments
+    ///
+    /// * `entry_type` - `EntryType`: The `entry_type` argument.
+    /// * `data` - `&[u8]`: The `data` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<(u64, u32)>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn append(&mut self, entry_type: EntryType, data: &[u8]) -> io::Result<(u64, u32)> {
         let total_len = (1 + data.len()) as u32; // entry_type + data
         let mut entry_buf = Vec::with_capacity(WAL_HEADER_SIZE + data.len());
@@ -161,7 +279,9 @@ impl Segment {
     }
 }
 
-/// Manages multiple segment files with auto-rotation.
+/// Represents the schema or state for segment manager.
+///
+/// Defines details for segment manager inside the broker ecosystem.
 pub struct SegmentManager {
     pub dir: PathBuf,
     pub active: Mutex<Segment>,
@@ -169,6 +289,18 @@ pub struct SegmentManager {
 }
 
 impl SegmentManager {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `dir` - `PathBuf`: The `dir` argument.
+    /// * `max_segment_size` - `u64`: The `max_segment_size` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<Self>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn new(dir: PathBuf, max_segment_size: u64) -> io::Result<Self> {
         std::fs::create_dir_all(&dir)?;
 
@@ -197,6 +329,18 @@ impl SegmentManager {
         })
     }
 
+    /// Executes the standard append lifecycle step.
+    ///
+    /// Executes the required business logic for append.
+    ///
+    /// # Arguments
+    ///
+    /// * `entry_type` - `EntryType`: The `entry_type` argument.
+    /// * `data` - `&[u8]`: The `data` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<(u64, u64, u32)>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn append(&self, entry_type: EntryType, data: &[u8]) -> io::Result<(u64, u64, u32)> {
         let mut active = self.active.lock().unwrap();
         let entry_size = (WAL_HEADER_SIZE + data.len()) as u64;
@@ -328,6 +472,13 @@ impl SegmentManager {
         Ok((headers, body))
     }
 
+    /// Executes the standard read all entries lifecycle step.
+    ///
+    /// Executes the required business logic for read all entries.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn read_all_entries(&self) -> io::Result<Vec<WalEntry>> {
         let segment_ids = discover_segment_ids(&self.dir)?;
         let mut all_entries = Vec::new();
@@ -339,6 +490,13 @@ impl SegmentManager {
         Ok(all_entries)
     }
 
+    /// Executes the standard truncate lifecycle step.
+    ///
+    /// Executes the required business logic for truncate.
+    ///
+    /// # Returns
+    ///
+    /// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn truncate(&self) -> io::Result<()> {
         let mut active = self.active.lock().unwrap();
         active.writer.flush()?;
@@ -372,7 +530,9 @@ impl SegmentManager {
     }
 }
 
-/// Write-Ahead Log writer. backed by auto-rotating segment files.
+/// Represents the schema or state for wal.
+///
+/// Defines details for wal inside the broker ecosystem.
 pub struct Wal {
     pub segment_manager: Arc<SegmentManager>,
     path: PathBuf,
@@ -380,7 +540,17 @@ pub struct Wal {
 }
 
 impl Wal {
-    /// Open or create a WAL in the given directory or parent folder.
+    /// Executes the standard open lifecycle step.
+    ///
+    /// Executes the required business logic for open.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - `impl AsRef<Path>`: The `path` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<Self>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let segments_dir = path
@@ -412,31 +582,59 @@ impl Wal {
         })
     }
 
-    /// Append an entry to the WAL active segment.
+    /// Executes the standard append lifecycle step.
+    ///
+    /// Executes the required business logic for append.
+    ///
+    /// # Arguments
+    ///
+    /// * `entry_type` - `EntryType`: The `entry_type` argument.
+    /// * `data` - `&[u8]`: The `data` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn append(&self, entry_type: EntryType, data: &[u8]) -> std::io::Result<u64> {
         let _ = self.segment_manager.append(entry_type, data)?;
         let seq = self.entry_count.fetch_add(1, Ordering::SeqCst) + 1;
         Ok(seq)
     }
 
-    /// Read all entries from all segment files for replay.
+    /// Executes the standard read all lifecycle step.
+    ///
+    /// Executes the required business logic for read all.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn read_all(&self) -> std::io::Result<Vec<WalEntry>> {
         self.segment_manager.read_all_entries()
     }
 
-    /// Get the path to the WAL file.
+    /// Executes the standard path lifecycle step.
+    ///
+    /// Executes the required business logic for path.
+    ///
+    /// # Returns
+    ///
+    /// * `&Path` - The evaluated outcome or operation handle.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Truncate all segment files.
+    /// Executes the standard truncate lifecycle step.
+    ///
+    /// Executes the required business logic for truncate.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn truncate(&self) -> std::io::Result<()> {
         self.segment_manager.truncate()?;
         self.entry_count.store(0, Ordering::SeqCst);
         Ok(())
     }
 
-    /// Read a specific message payload from segments.
     pub fn read_message_payload(
         &self,
         segment_id: u64,
@@ -449,6 +647,18 @@ impl Wal {
 
     // ── Convenience builders ────────────────────────────────────────────
 
+    /// Executes the standard log declare queue lifecycle step.
+    ///
+    /// Executes the required business logic for log declare queue.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - `&str`: The unique identifier string of the resource.
+    /// * `durable` - `bool`: The `durable` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn log_declare_queue(&self, name: &str, durable: bool) -> std::io::Result<u64> {
         let mut w = WalWriter::with_capacity(2 + name.len() + 1);
         w.write_str_u16(name);
@@ -492,6 +702,17 @@ impl Wal {
         Ok((segment_id, offset, length))
     }
 
+    /// Executes the standard log ack lifecycle step.
+    ///
+    /// Executes the required business logic for log ack.
+    ///
+    /// # Arguments
+    ///
+    /// * `msg_id` - `u64`: The `msg_id` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn log_ack(&self, msg_id: u64) -> std::io::Result<u64> {
         self.append(EntryType::Ack, &msg_id.to_be_bytes())
     }
@@ -509,6 +730,19 @@ impl Wal {
         self.append(EntryType::DeclareExchange, &w.finish())
     }
 
+    /// Executes the standard log bind lifecycle step.
+    ///
+    /// Executes the required business logic for log bind.
+    ///
+    /// # Arguments
+    ///
+    /// * `exchange` - `&str`: The exchange instance reference.
+    /// * `queue` - `&str`: The queue instance reference.
+    /// * `routing_key` - `&str`: The `routing_key` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn log_bind(&self, exchange: &str, queue: &str, routing_key: &str) -> std::io::Result<u64> {
         let cap = 2 + exchange.len() + 2 + queue.len() + 2 + routing_key.len();
         let mut w = WalWriter::with_capacity(cap);
@@ -519,7 +753,17 @@ impl Wal {
     }
 }
 
-/// Read and validate all entries from a WAL file.
+/// Executes the standard read entries lifecycle step.
+///
+/// Executes the required business logic for read entries.
+///
+/// # Arguments
+///
+/// * `path` - `&Path`: The `path` argument.
+///
+/// # Returns
+///
+/// * `std::io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn read_entries(path: &Path) -> std::io::Result<Vec<WalEntry>> {
     let mut file = match File::open(path) {
         Ok(f) => f,
@@ -589,6 +833,17 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// Executes the standard tmp wal lifecycle step.
+    ///
+    /// Executes the required business logic for tmp wal.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - `&str`: The unique identifier string of the resource.
+    ///
+    /// # Returns
+    ///
+    /// * `PathBuf` - The evaluated outcome or operation handle.
     fn tmp_wal(name: &str) -> PathBuf {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
@@ -599,6 +854,9 @@ mod tests {
         dir.join("broker.wal")
     }
 
+    /// Executes the standard wal roundtrip declare queue lifecycle step.
+    ///
+    /// Executes the required business logic for wal roundtrip declare queue.
     #[test]
     fn wal_roundtrip_declare_queue() {
         let path = tmp_wal("test_declare.wal");
@@ -621,6 +879,9 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// Executes the standard wal roundtrip enqueue ack lifecycle step.
+    ///
+    /// Executes the required business logic for wal roundtrip enqueue ack.
     #[test]
     fn wal_roundtrip_enqueue_ack() {
         let path = tmp_wal("test_enqueue.wal");
@@ -650,6 +911,9 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// Executes the standard wal truncate lifecycle step.
+    ///
+    /// Executes the required business logic for wal truncate.
     #[test]
     fn wal_truncate() {
         let path = tmp_wal("test_truncate.wal");
