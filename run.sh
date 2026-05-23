@@ -16,8 +16,8 @@ echo -e "${CYAN}=======================================================${NC}"
 
 # Function to aggressively free up our ports
 clean_ports() {
-    echo -e "${YELLOW}Aggressively clearing cluster ports (3000, 3001, 5672-5674, 15672-15674, 5680-5682)...${NC}"
-    for port in 3000 3001 5672 5673 5674 15672 15673 15674 5680 5681 5682; do
+    echo -e "${YELLOW}Aggressressively clearing cluster ports (3001, 5672-5674, 15672-15674, 5680-5682)...${NC}"
+    for port in 3001 5672 5673 5674 15672 15673 15674 5680 5681 5682; do
         if command -v lsof >/dev/null 2>&1; then
             pids=$(lsof -t -i tcp:$port || true)
             if [ -n "$pids" ]; then
@@ -38,9 +38,6 @@ cleanup() {
     # Kill NestJS client
     pkill -f "node dist/main.js" || true
     pkill -f "nest start" || true
-
-    # Kill NextJS management console
-    pkill -f "next dev" || true
 
     # Kill Rust broker nodes
     pkill -f "target/debug/rocketmq" || true
@@ -70,11 +67,67 @@ cargo build
 echo -e "${YELLOW}Pre-building NestJS Client...${NC}"
 (cd client && npm run build)
 
-# ── Launching Rust Broker Nodes ─────────────────────────────────────────
+# ── Generating TLS Certificates ─────────────────────────────────────────
+echo -e "${YELLOW}Setting up valid and trusted TLS certificates...${NC}"
+mkdir -p data/tls
+if [ ! -f data/tls/server.pem ]; then
+    echo -e "${CYAN}Generating a new Root CA and server certificates...${NC}"
+    openssl genrsa -out data/tls/ca.key 4096
+    openssl req -x509 -new -nodes -key data/tls/ca.key -sha256 -days 3650 -subj '/CN=RocketMQ Local CA/O=Edilson Pateguana/C=MZ' -out data/tls/ca.pem
+    openssl genrsa -out data/tls/server.key 2048
+    
+    cat <<EOF > data/tls/openssl.cnf
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+req_extensions = req_ext
+distinguished_name = dn
+
+[dn]
+C = MZ
+O = Edilson Pateguana
+CN = localhost
+
+[req_ext]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = node1
+DNS.3 = node2
+DNS.4 = node3
+DNS.5 = rocketmq-node1
+DNS.6 = rocketmq-node2
+DNS.7 = rocketmq-node3
+IP.1 = 127.0.0.1
+EOF
+
+    openssl req -new -key data/tls/server.key -config data/tls/openssl.cnf -out data/tls/server.csr
+    openssl x509 -req -in data/tls/server.csr -CA data/tls/ca.pem -CAkey data/tls/ca.key -CAcreateserial -out data/tls/server.pem -days 3650 -sha256 -extfile data/tls/openssl.cnf -extensions req_ext
+    rm data/tls/server.csr data/tls/openssl.cnf
+    echo -e "${GREEN}TLS certificates generated successfully!${NC}"
+else
+    echo -e "${GREEN}TLS certificates already exist in data/tls/.${NC}"
+fi
 
 # Create separate data directories to avoid WAL/DB lock conflicts
-mkdir -p data/node1 data/node2 data/node3
+mkdir -p data/node1/tls data/node2/tls data/node3/tls
 rm -rf data/node1/* data/node2/* data/node3/*
+
+# Distribute certs to each node's tls folder
+mkdir -p data/node1/tls data/node2/tls data/node3/tls
+cp data/tls/server.pem data/node1/tls/
+cp data/tls/server.key data/node1/tls/
+cp data/tls/ca.pem data/node1/tls/
+
+cp data/tls/server.pem data/node2/tls/
+cp data/tls/server.key data/node2/tls/
+cp data/tls/ca.pem data/node2/tls/
+
+cp data/tls/server.pem data/node3/tls/
+cp data/tls/server.key data/node3/tls/
+cp data/tls/ca.pem data/node3/tls/
 
 echo -e "${GREEN}Launching Node 1 (Ports: AMQP 5672, AMQPS 5675, Mgmt 15672)...${NC}"
 ROCKETMQ_NODE_ID=1 \
@@ -126,22 +179,14 @@ AMQP_URL=amqp://guest:guest@127.0.0.1:5672/ \
 PORT=3001 \
 node client/dist/main.js > logs/client.log 2>&1 &
 
-# Wait for NestJS to set up the topology
-sleep 2
-
-# ── Launching NextJS Management Dashboard ──────────────────────────────────
-
-echo -e "${GREEN}Launching NextJS Management Dashboard (Port 3000)...${NC}"
-PORT=3000 \
-HOSTNAME=0.0.0.0 \
-npm --prefix managment run dev > logs/management.log 2>&1 &
+# ── Cluster Operational Summary ──────────────────────────────────────────
 
 echo -e "${CYAN}=======================================================${NC}"
 echo -e "${GREEN}🚀 ALL SERVICES ARE FULLY OPERATIONAL IN THE CLUSTER!${NC}"
-echo -e "   - Node 1: AMQP 127.0.0.1:5672 | Mgmt 127.0.0.1:15672"
-echo -e "   - Node 2: AMQP 127.0.0.1:5673 | Mgmt 127.0.0.1:15673"
-echo -e "   - Node 3: AMQP 127.0.0.1:5674 | Mgmt 127.0.0.1:15674"
-echo -e "   - Management Web UI: http://localhost:3000"
+echo -e "   - Node 1: AMQP 127.0.0.1:5672 | Mgmt http://localhost:15672"
+echo -e "   - Node 2: AMQP 127.0.0.1:5673 | Mgmt http://localhost:15673"
+echo -e "   - Node 3: AMQP 127.0.0.1:5674 | Mgmt http://localhost:15674"
+echo -e "   - Native Management UI: http://localhost:15672"
 echo -e "   - Log files saved to: ./logs/"
 echo -e "${CYAN}=======================================================${NC}"
 echo -e "${YELLOW}Tailing NestJS live cluster test telemetry... (Press Ctrl+C to stop all)${NC}\n"
