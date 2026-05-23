@@ -1,31 +1,52 @@
+/**
+ * Copyright (c) 2026 Edilson Pateguana
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Author: Edilson Pateguana
+ * Year: 2026
+ * File: amqp.module.ts
+ * Description: NestJS AMQP client integration and message broker gateway.
+ */
+
 import { Global, Logger, Module, OnModuleDestroy } from '@nestjs/common';
 import * as amqp from 'amqplib';
+import * as fs from 'fs';
 import {
-  AMQP_URL,
-  EXCHANGE_GAME,
   EXCHANGE_ANALYTICS,
-  EXCHANGE_METRICS,
   EXCHANGE_DLX,
-  EXCHANGE_MATCHMAKING,
-  EXCHANGE_SECURITY,
+  EXCHANGE_GAME,
   EXCHANGE_LEADERBOARD,
-  QUEUE_SESSION_TICKS,
-  QUEUE_SESSION_ACTIONS,
-  QUEUE_TELEMETRY,
+  EXCHANGE_MATCHMAKING,
+  EXCHANGE_METRICS,
+  EXCHANGE_SECURITY,
   QUEUE_ANTI_CHEAT,
+  QUEUE_DLQ,
+  QUEUE_LEADERBOARD_UPDATES,
+  QUEUE_LOBBY_CREATED,
+  QUEUE_LOBBY_MAINTENANCE,
   QUEUE_MATCHMAKING,
   QUEUE_METRICS_LOGS,
-  QUEUE_DLQ,
-  QUEUE_LOBBY_CREATED,
   QUEUE_SECURITY_BROADCAST,
-  QUEUE_LEADERBOARD_UPDATES,
-  QUEUE_LOBBY_MAINTENANCE,
-  RK_SESSION_TICK_PATTERN,
-  RK_SESSION_ACTION_PATTERN,
+  QUEUE_SESSION_ACTIONS,
+  QUEUE_SESSION_TICKS,
+  QUEUE_TELEMETRY,
   RK_ALL_SESSION_EVENTS,
   RK_ANTI_CHEAT_ALERT,
-  RK_MATCHMAKING_LOBBY,
   RK_LOBBY_CREATED,
+  RK_MATCHMAKING_LOBBY,
+  RK_SESSION_ACTION_PATTERN,
+  RK_SESSION_TICK_PATTERN,
 } from './constants';
 
 export const AMQP_CONNECTION = 'AMQP_CONNECTION';
@@ -40,10 +61,21 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
         const logger = new Logger('AmqpModule');
 
         // ── Cluster node endpoints for failover ──
+        const isTls = (process.env.AMQP_URL || '').startsWith('amqps:');
         const clusterNodes = [
-          process.env.AMQP_URL || 'amqp://guest:guest@127.0.0.1:5672/',
-          'amqp://guest:guest@127.0.0.1:5673/',
-          'amqp://guest:guest@127.0.0.1:5674/',
+          process.env.AMQP_URL ||
+            (isTls
+              ? 'amqps://guest:guest@127.0.0.1:5675/'
+              : 'amqp://guest:guest@127.0.0.1:5672/'),
+          isTls
+            ? 'amqps://guest:guest@127.0.0.1:5675/'
+            : 'amqp://guest:guest@127.0.0.1:5672/',
+          isTls
+            ? 'amqps://guest:guest@127.0.0.1:5676/'
+            : 'amqp://guest:guest@127.0.0.1:5673/',
+          isTls
+            ? 'amqps://guest:guest@127.0.0.1:5677/'
+            : 'amqp://guest:guest@127.0.0.1:5674/',
         ];
 
         // ── Auto-declare Virtual Hosts via any reachable Management API ──
@@ -75,10 +107,27 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
         }
 
         // ── Failover connection: try each cluster node ──
-        const connectWithFailover = async (): Promise<amqp.ChannelModel> => {
+        const connectWithFailover = async (): Promise<any> => {
           for (const url of clusterNodes) {
             try {
-              const conn = await amqp.connect(url);
+              const connectOptions: any = {};
+              if (url.startsWith('amqps:')) {
+                const caPath = process.env.CA_CERT_PATH || 'data/tls/ca.pem';
+                if (fs.existsSync(caPath)) {
+                  connectOptions.ca = [fs.readFileSync(caPath)];
+                  logger.log(
+                    `Loaded Root CA from ${caPath} for secure TLS verification`,
+                  );
+                } else {
+                  // Fallback: allow self-signed/untrusted certs in development if CA is not configured
+                  connectOptions.rejectUnauthorized = false;
+                  logger.warn(
+                    `CA cert not found at ${caPath}, using rejectUnauthorized=false fallback`,
+                  );
+                }
+              }
+
+              const conn = await amqp.connect(url, connectOptions);
               logger.log(`Connected to AMQP cluster node at ${url}`);
 
               // Auto-reconnect on unexpected close
@@ -86,12 +135,22 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
                 logger.warn(
                   `AMQP connection to ${url} closed, reconnecting in 2s...`,
                 );
-                setTimeout(async () => {
-                  try {
-                    await connectWithFailover();
-                  } catch (err) {
+                /**
+                 * Executes the standard set timeout lifecycle step.
+                 *
+                 * Performs client execution steps for set timeout.
+                 *
+                 * @param ( - The ( configuration payload.
+                 */
+                setTimeout(() => {
+                  /**
+                   * Executes the standard connect with failover lifecycle step.
+                   *
+                   * Performs client execution steps for connect with failover.
+                   */
+                  connectWithFailover().catch((err) => {
                     logger.error(`Reconnect failed: ${err.message}`);
-                  }
+                  });
                 }, 2000);
               });
 
@@ -237,6 +296,7 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
           durable: true,
           arguments: queueArgs,
         });
+
         await ch.bindQueue(
           QUEUE_LOBBY_MAINTENANCE,
           EXCHANGE_MATCHMAKING,
@@ -253,6 +313,17 @@ export const AMQP_CHANNEL = 'AMQP_CHANNEL';
   ],
   exports: [AMQP_CONNECTION, AMQP_CHANNEL],
 })
+
+/**
+ * Service class managing amqp module operations.
+ *
+ * Defines schemas, types, or services for amqp module inside the NestJS client.
+ */
 export class AmqpModule implements OnModuleDestroy {
+  /**
+   * Executes the standard on module destroy lifecycle step.
+   *
+   * Performs client execution steps for on module destroy.
+   */
   async onModuleDestroy() {}
 }

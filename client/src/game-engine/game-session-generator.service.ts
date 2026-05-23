@@ -1,3 +1,24 @@
+/**
+ * Copyright (c) 2026 Edilson Pateguana
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Author: Edilson Pateguana
+ * Year: 2026
+ * File: game-session-generator.service.ts
+ * Description: Core game session state generator and simulation orchestrator.
+ */
+
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as amqp from 'amqplib';
 import { AMQP_CHANNEL } from '../amqp/amqp.module';
@@ -7,6 +28,11 @@ import {
   RK_MATCHMAKING_LOBBY,
 } from '../amqp/constants';
 
+/**
+ * Structural definition for player.
+ *
+ * Defines schemas, types, or services for player inside the NestJS client.
+ */
 interface Player {
   id: string;
   name: string;
@@ -17,6 +43,11 @@ interface Player {
   score: number;
 }
 
+/**
+ * Structural definition for game session.
+ *
+ * Defines schemas, types, or services for game session inside the NestJS client.
+ */
 interface GameSession {
   id: string;
   map: string;
@@ -25,6 +56,11 @@ interface GameSession {
 }
 
 @Injectable()
+/**
+ * Service class managing game session generator service operations.
+ *
+ * Defines schemas, types, or services for game session generator service inside the NestJS client.
+ */
 export class GameSessionGeneratorService implements OnModuleInit {
   private readonly logger = new Logger('GameSessionGenerator');
   private sessions: GameSession[] = [];
@@ -94,22 +130,46 @@ export class GameSessionGeneratorService implements OnModuleInit {
     ];
   }
 
+  /**
+   * Executes the standard on module init lifecycle step.
+   *
+   * Performs client execution steps for on module init.
+   */
   onModuleInit() {
     this.logger.log(
       'Starting live multiplayer Game Session Loop (running forever)...',
     );
 
     // Core game loop
+    /**
+     * Executes the standard set interval lifecycle step.
+     *
+     * Performs client execution steps for set interval.
+     *
+     * @param ( - The ( configuration payload.
+     */
     setInterval(() => {
       this.generateGameTicks();
     }, 400);
 
     // Occasional special matchmaker actions
+    /**
+     * Executes the standard set interval lifecycle step.
+     *
+     * Performs client execution steps for set interval.
+     *
+     * @param ( - The ( configuration payload.
+     */
     setInterval(() => {
       this.triggerMatchmakingRequest();
     }, 4000);
   }
 
+  /**
+   * Executes the standard generate game ticks lifecycle step.
+   *
+   * Performs client execution steps for generate game ticks.
+   */
   private async generateGameTicks() {
     for (const session of this.sessions) {
       session.tickCount++;
@@ -188,6 +248,11 @@ export class GameSessionGeneratorService implements OnModuleInit {
     }
   }
 
+  /**
+   * Executes the standard trigger matchmaking request lifecycle step.
+   *
+   * Performs client execution steps for trigger matchmaking request.
+   */
   private async triggerMatchmakingRequest() {
     const randomUser = `Player_${Math.floor(Math.random() * 9000 + 1000)}`;
     const mmPayload = {
