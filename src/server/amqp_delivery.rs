@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_delivery.rs
+// Description: Background AMQP delivery task pushing queued messages to active subscribers.
+
 //! AMQP delivery pipeline — pushes queued messages to consumers as
 //! Basic.Deliver + Content-Header + Content-Body frames over the
 //! AMQP connection's delivery channel.
@@ -11,7 +30,13 @@ use crate::core::properties::BasicProperties;
 use crate::core::types::*;
 use crate::state::Broker;
 
-/// Spawn the AMQP delivery task. Runs on a fast tick to achieve low latency.
+/// Executes the standard spawn delivery task lifecycle step.
+///
+/// Executes the required business logic for spawn delivery task.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub fn spawn_delivery_task(broker: Broker) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(crate::config::DELIVERY_POLL_INTERVAL);
@@ -43,7 +68,13 @@ pub fn spawn_delivery_task(broker: Broker) {
     });
 }
 
-/// One delivery round: for each queue with messages, try to push to a consumer.
+/// Executes the standard deliver round lifecycle step.
+///
+/// Executes the required business logic for deliver round.
+///
+/// # Arguments
+///
+/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn deliver_round(broker: &Broker) {
     for mut entry in broker.queues.iter_mut() {
         let (queue_name, queue) = entry.pair_mut();
@@ -158,6 +189,7 @@ async fn deliver_round(broker: &Broker) {
                     break;
                 }
                 delivered += 1;
+                queue.stat_delivered += 1;
                 crate::metrics::record_delivered(queue_name);
                 debug!(
                     conn_id,
@@ -190,7 +222,6 @@ async fn deliver_round(broker: &Broker) {
     }
 }
 
-/// Build Basic.Deliver method arguments.
 fn build_deliver_args(
     consumer_tag: &str,
     delivery_tag: u64,
@@ -211,6 +242,9 @@ fn build_deliver_args(
 mod tests {
     use super::*;
 
+    /// Executes the standard deliver args encode lifecycle step.
+    ///
+    /// Executes the required business logic for deliver args encode.
     #[test]
     fn deliver_args_encode() {
         let args = build_deliver_args("ctag-1", 42, false, "amq.direct", "my.key");
@@ -222,6 +256,9 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "my.key");
     }
 
+    /// Executes the standard deliver args redelivered lifecycle step.
+    ///
+    /// Executes the required business logic for deliver args redelivered.
     #[test]
     fn deliver_args_redelivered() {
         let args = build_deliver_args("t", 1, true, "", "");
@@ -231,6 +268,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 1);
     }
 
+    /// Executes the standard deliver frame structure lifecycle step.
+    ///
+    /// Executes the required business logic for deliver frame structure.
     #[test]
     fn deliver_frame_structure() {
         let args = build_deliver_args("tag", 99, false, "ex", "rk");
@@ -241,6 +281,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_BASIC_DELIVER);
     }
 
+    /// Executes the standard full delivery frame set lifecycle step.
+    ///
+    /// Executes the required business logic for full delivery frame set.
     #[test]
     fn full_delivery_frame_set() {
         let args = build_deliver_args("tag", 1, false, "", "");

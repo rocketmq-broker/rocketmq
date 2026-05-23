@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_exchange.rs
+// Description: AMQP Exchange class method handlers (declare, delete, bind).
+
 //! AMQP 0-9-1 Exchange class handlers (class 40).
 
 use std::io::Cursor;
@@ -12,8 +31,6 @@ use crate::state::Broker;
 
 use super::auth_check::send_channel_error;
 
-/// Exchange.Declare: exchange(shortstr) type(shortstr) passive(bit) durable(bit)
-///   auto_delete(bit) internal(bit) no_wait(bit) arguments(table)
 pub async fn handle_declare(
     conn_id: u64,
     channel: u16,
@@ -140,7 +157,6 @@ pub async fn handle_declare(
     }
 }
 
-/// Exchange.Delete: exchange(shortstr) if_unused(bit) no_wait(bit)
 pub async fn handle_delete(
     conn_id: u64,
     channel: u16,
@@ -182,7 +198,6 @@ pub async fn handle_delete(
     }
 }
 
-/// Exchange.Bind (RabbitMQ extension)
 pub async fn handle_bind(
     conn_id: u64,
     channel: u16,
@@ -224,7 +239,6 @@ pub async fn handle_bind(
     }
 }
 
-/// Exchange.Unbind
 pub async fn handle_unbind(
     conn_id: u64,
     channel: u16,
@@ -260,6 +274,9 @@ pub async fn handle_unbind(
 mod tests {
     use super::*;
 
+    /// Executes the standard exchange declare args encode lifecycle step.
+    ///
+    /// Executes the required business logic for exchange declare args encode.
     #[test]
     fn exchange_declare_args_encode() {
         let mut args = Vec::new();
@@ -276,6 +293,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 0x02);
     }
 
+    /// Executes the standard exchange delete args encode lifecycle step.
+    ///
+    /// Executes the required business logic for exchange delete args encode.
     #[test]
     fn exchange_delete_args_encode() {
         let mut args = Vec::new();
@@ -288,6 +308,9 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "my.exchange");
     }
 
+    /// Executes the standard channel close error builds lifecycle step.
+    ///
+    /// Executes the required business logic for channel close error builds.
     #[test]
     fn channel_close_error_builds() {
         use super::super::auth_check::build_channel_close;

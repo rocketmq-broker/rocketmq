@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_loop.rs
+// Description: Main event loop for processing an individual client connection.
+
 //! AMQP 0-9-1 connection loop with content framing state machine.
 //!
 //! This handles:
@@ -24,7 +43,9 @@ use crate::server::handler::amqp_basic;
 use crate::server::handler::amqp_dispatch;
 use crate::state::{Broker, ConnectionState};
 
-/// Content framing state: tracks partially-received publish operations.
+/// Represents the schema or state for content state.
+///
+/// Defines details for content state inside the broker ecosystem.
 struct ContentState {
     exchange: String,
     routing_key: String,
@@ -35,14 +56,18 @@ struct ContentState {
     channel: u16,
 }
 
-/// Spawn a new AMQP 0-9-1 connection handler on a plain TCP stream.
+/// Spawns a green thread / tokio task to handle a plain AMQP connection.
+///
+/// # Arguments
+///
+/// * `stream` - `TcpStream`: The `stream` argument.
+/// * `addr` - `SocketAddr`: The `addr` argument.
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
     let boxed: Box<dyn crate::server::AsyncStream> = Box::new(stream);
     spawn_amqp_on_stream(boxed, addr, broker);
 }
 
-/// Spawn a new AMQP 0-9-1 connection handler on any async stream.
-/// TLS connections use this after the TLS handshake completes.
 pub fn spawn_amqp_on_stream(
     stream: Box<dyn crate::server::AsyncStream>,
     addr: SocketAddr,
@@ -63,6 +88,7 @@ pub fn spawn_amqp_on_stream(
                 amqp_tx,
             },
         );
+
         broker.conn_state.insert(conn_id, ConnectionState::new());
         crate::metrics::record_conn_opened();
 
@@ -272,7 +298,15 @@ pub fn spawn_amqp_on_stream(
     });
 }
 
-/// Send a Connection.Close frame for fatal protocol errors.
+/// Executes the standard send connection close lifecycle step.
+///
+/// Executes the required business logic for send connection close.
+///
+/// # Arguments
+///
+/// * `writer` - `&mut crate::server::AmqpWriter`: The `writer` argument.
+/// * `code` - `u16`: The `code` argument.
+/// * `text` - `&str`: The `text` argument.
 async fn send_connection_close(writer: &mut crate::server::AmqpWriter, code: u16, text: &str) {
     let close = amqp_connection::build_connection_close(code, text, 0, 0);
     let frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);
@@ -284,6 +318,9 @@ async fn send_connection_close(writer: &mut crate::server::AmqpWriter, code: u16
 mod tests {
     use super::*;
 
+    /// Executes the standard content state accumulates body lifecycle step.
+    ///
+    /// Executes the required business logic for content state accumulates body.
     #[test]
     fn content_state_accumulates_body() {
         let mut cs = ContentState {
@@ -302,6 +339,9 @@ mod tests {
         assert!(cs.body_received.len() as u64 >= cs.body_size);
     }
 
+    /// Executes the standard zero body publish lifecycle step.
+    ///
+    /// Executes the required business logic for zero body publish.
     #[test]
     fn zero_body_publish() {
         let cs = ContentState {

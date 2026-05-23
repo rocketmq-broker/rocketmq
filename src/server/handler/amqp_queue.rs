@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_queue.rs
+// Description: AMQP Queue class method handlers (declare, bind, purge, delete).
+
 //! AMQP 0-9-1 Queue class handlers (class 50).
 
 use std::io::Cursor;
@@ -13,8 +32,6 @@ use crate::state::Broker;
 
 use super::auth_check::send_channel_error;
 
-/// Queue.Declare: queue(shortstr) passive(bit) durable(bit) exclusive(bit)
-///   auto_delete(bit) no_wait(bit) arguments(table)
 pub async fn handle_declare(
     conn_id: u64,
     channel: u16,
@@ -154,6 +171,10 @@ pub async fn handle_declare(
         let _ = wal.log_declare_queue(&name, true);
     }
 
+    crate::metrics::record_queue_declared();
+    if is_new {
+        crate::metrics::record_queue_created();
+    }
     info!(conn_id, channel, queue = name.as_str(), "queue declared");
     if !no_wait {
         let (msg_count, consumer_count) = broker
@@ -165,7 +186,6 @@ pub async fn handle_declare(
     }
 }
 
-/// Queue.Delete: queue(shortstr) if_unused(bit) if_empty(bit) no_wait(bit)
 pub async fn handle_delete(
     conn_id: u64,
     channel: u16,
@@ -237,6 +257,7 @@ pub async fn handle_delete(
         });
     }
 
+    crate::metrics::record_queue_deleted();
     info!(
         conn_id,
         channel,
@@ -253,7 +274,6 @@ pub async fn handle_delete(
     }
 }
 
-/// Queue.Purge: queue(shortstr) no_wait(bit)
 pub async fn handle_purge(
     conn_id: u64,
     channel: u16,
@@ -312,7 +332,6 @@ pub async fn handle_purge(
     }
 }
 
-/// Queue.Bind: queue(shortstr) exchange(shortstr) routing_key(shortstr) no_wait(bit) arguments(table)
 pub async fn handle_bind(
     conn_id: u64,
     channel: u16,
@@ -399,7 +418,6 @@ pub async fn handle_bind(
     }
 }
 
-/// Queue.Unbind: queue(shortstr) exchange(shortstr) routing_key(shortstr) arguments(table)
 pub async fn handle_unbind(
     conn_id: u64,
     channel: u16,
@@ -477,6 +495,18 @@ async fn send_declare_ok(
 mod tests {
     use super::*;
 
+    /// Executes the standard make declare args lifecycle step.
+    ///
+    /// Executes the required business logic for make declare args.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - `&str`: The unique identifier string of the resource.
+    /// * `flags` - `u8`: The `flags` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<u8>` - The evaluated outcome or operation handle.
     fn make_declare_args(name: &str, flags: u8) -> Vec<u8> {
         let mut args = Vec::new();
         write_short(&mut args, 0).unwrap();
@@ -486,6 +516,9 @@ mod tests {
         args
     }
 
+    /// Executes the standard declare args parse lifecycle step.
+    ///
+    /// Executes the required business logic for declare args parse.
     #[test]
     fn declare_args_parse() {
         let args = make_declare_args("test.q", 0x06); // durable + exclusive
@@ -497,6 +530,9 @@ mod tests {
         assert_eq!(flags & 0x04, 0x04); // exclusive
     }
 
+    /// Executes the standard declare ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for declare ok frame.
     #[test]
     fn declare_ok_frame() {
         let mut args = Vec::new();
@@ -514,6 +550,9 @@ mod tests {
         assert_eq!(read_long(&mut r).unwrap(), 2);
     }
 
+    /// Executes the standard delete ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for delete ok frame.
     #[test]
     fn delete_ok_frame() {
         let mut args = Vec::new();
@@ -526,6 +565,9 @@ mod tests {
         assert_eq!(read_long(&mut r).unwrap(), 42);
     }
 
+    /// Executes the standard purge ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for purge ok frame.
     #[test]
     fn purge_ok_frame() {
         let mut args = Vec::new();
@@ -537,6 +579,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_QUEUE_PURGE_OK);
     }
 
+    /// Executes the standard bind args parse lifecycle step.
+    ///
+    /// Executes the required business logic for bind args parse.
     #[test]
     fn bind_args_parse() {
         let mut args = Vec::new();
@@ -554,6 +599,9 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "rk1");
     }
 
+    /// Executes the standard unbind args parse lifecycle step.
+    ///
+    /// Executes the required business logic for unbind args parse.
     #[test]
     fn unbind_args_parse() {
         let mut args = Vec::new();

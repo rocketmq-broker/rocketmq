@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: tasks.rs
+// Description: Background maintenance tasks (TTL expiration, dedup cache eviction, etc.).
+
 //! Background maintenance tasks for the broker.
 //!
 //! Each task runs on its own interval and performs housekeeping:
@@ -11,7 +30,13 @@ use tracing::{debug, info};
 use crate::state::Broker;
 use crate::storage::wal::EntryType;
 
-/// Spawn all background maintenance tasks.
+/// Executes the standard spawn all lifecycle step.
+///
+/// Executes the required business logic for spawn all.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub fn spawn_all(broker: Broker) {
     tokio::spawn(queue_ttl_task(broker.clone()));
     tokio::spawn(message_ttl_task(broker.clone()));
@@ -20,9 +45,13 @@ pub fn spawn_all(broker: Broker) {
     tokio::spawn(wal_compact_task(broker));
 }
 
-/// Periodically remove queues that have exceeded their x-expires TTL.
-/// A queue expires when it has no consumers, no messages, and has been idle
-/// longer than `options.expires`.
+/// Executes the standard queue ttl task lifecycle step.
+///
+/// Executes the required business logic for queue ttl task.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn queue_ttl_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::QUEUE_TTL_CHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -48,7 +77,13 @@ async fn queue_ttl_task(broker: Broker) {
     }
 }
 
-/// Periodically sweep queues and discard expired messages (message_ttl).
+/// Executes the standard message ttl task lifecycle step.
+///
+/// Executes the required business logic for message ttl task.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn message_ttl_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::MESSAGE_TTL_CHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -78,7 +113,13 @@ async fn message_ttl_task(broker: Broker) {
     }
 }
 
-/// Periodically evict stale entries from the dedup cache.
+/// Executes the standard dedup eviction task lifecycle step.
+///
+/// Executes the required business logic for dedup eviction task.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn dedup_eviction_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::DEDUP_EVICTION_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -98,7 +139,13 @@ async fn dedup_eviction_task(broker: Broker) {
     }
 }
 
-/// Flush delayed messages that are ready for delivery.
+/// Executes the standard delay flush task lifecycle step.
+///
+/// Executes the required business logic for delay flush task.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn delay_flush_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::DELAY_FLUSH_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -123,8 +170,13 @@ async fn delay_flush_task(broker: Broker) {
     }
 }
 
-/// Periodically compact the WAL by removing enqueue entries that have been acked.
-/// This prevents unbounded WAL growth.
+/// Executes the standard wal compact task lifecycle step.
+///
+/// Executes the required business logic for wal compact task.
+///
+/// # Arguments
+///
+/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
 async fn wal_compact_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::WAL_COMPACT_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

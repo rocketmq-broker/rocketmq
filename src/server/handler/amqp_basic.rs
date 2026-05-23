@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_basic.rs
+// Description: AMQP Basic class method handlers (publish, consume, ack, nack, deliver).
+
 //! AMQP 0-9-1 Basic class handlers (class 60).
 //!
 //! Handles Basic.Publish (with content framing), Basic.Consume, Basic.Cancel,
@@ -21,7 +40,17 @@ use crate::state::Broker;
 
 // ─── Basic.Publish ────────────────────────────────────
 
-/// Parse Basic.Publish arguments: ticket(short) exchange(shortstr) routing_key(shortstr) flags(octet)
+/// Executes the standard parse publish args lifecycle step.
+///
+/// Executes the required business logic for parse publish args.
+///
+/// # Arguments
+///
+/// * `args` - `&[u8]`: The `args` argument.
+///
+/// # Returns
+///
+/// * `(String, String, bool, bool)` - The evaluated outcome or operation handle.
 pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -33,8 +62,6 @@ pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
     (exchange, routing_key, mandatory, immediate)
 }
 
-/// Handle a fully assembled publish (method args + content header + body).
-/// Called after content framing is complete.
 pub async fn handle_publish(
     conn_id: u64,
     channel: u16,
@@ -216,6 +243,7 @@ pub async fn handle_publish(
             queue = queue_name.as_str(),
             "queued via AMQP"
         );
+        queue.stat_published += 1;
         crate::metrics::record_published(queue_name);
 
         // Background replication for non-confirm publishes
@@ -244,8 +272,19 @@ pub async fn handle_publish(
 
 // ─── Publisher Confirm Helpers ────────────────────────
 
-/// Allocate a delivery tag if the channel is in confirm mode.
-/// Returns Some(tag) if confirms are active, None otherwise.
+/// Executes the standard alloc confirm tag lifecycle step.
+///
+/// Executes the required business logic for alloc confirm tag.
+///
+/// # Arguments
+///
+/// * `conn_id` - `u64`: The `conn_id` argument.
+/// * `channel` - `u16`: The `channel` argument.
+/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
+///
+/// # Returns
+///
+/// * `Option<u64>` - The evaluated outcome or operation handle.
 fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64> {
     let mut cs = broker.conn_state.get_mut(&conn_id)?;
     let ch = cs.channels.get_mut(&channel)?;
@@ -257,7 +296,15 @@ fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64>
     Some(tag)
 }
 
-/// Send Basic.Ack from broker to publisher (confirm mode).
+/// Executes the standard send confirm ack lifecycle step.
+///
+/// Executes the required business logic for send confirm ack.
+///
+/// # Arguments
+///
+/// * `channel` - `u16`: The `channel` argument.
+/// * `delivery_tag` - `u64`: The `delivery_tag` argument.
+/// * `writer` - `&mut crate::server::AmqpWriter`: The `writer` argument.
 async fn send_confirm_ack(channel: u16, delivery_tag: u64, writer: &mut crate::server::AmqpWriter) {
     let mut args = Vec::new();
     write_longlong(&mut args, delivery_tag).unwrap();
@@ -422,6 +469,16 @@ pub async fn handle_cancel(
 
 // ─── Basic.Ack ────────────────────────────────────────
 
+/// Executes the standard handle ack lifecycle step.
+///
+/// Executes the required business logic for handle ack.
+///
+/// # Arguments
+///
+/// * `conn_id` - `u64`: The `conn_id` argument.
+/// * `channel` - `u16`: The `channel` argument.
+/// * `args` - `&[u8]`: The `args` argument.
+/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
@@ -440,6 +497,7 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
             if let Some(wal) = broker.wal() {
                 let _ = wal.log_ack(delivery_tag);
             }
+            entry.value_mut().stat_acked += 1;
             crate::metrics::record_acked();
             info!(conn_id, delivery_tag, "acked");
 
@@ -460,6 +518,16 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
 
 // ─── Basic.Reject ─────────────────────────────────────
 
+/// Executes the standard handle reject lifecycle step.
+///
+/// Executes the required business logic for handle reject.
+///
+/// # Arguments
+///
+/// * `conn_id` - `u64`: The `conn_id` argument.
+/// * `channel` - `u16`: The `channel` argument.
+/// * `args` - `&[u8]`: The `args` argument.
+/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
@@ -494,6 +562,16 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
 
 // ─── Basic.Nack ───────────────────────────────────────
 
+/// Executes the standard handle nack lifecycle step.
+///
+/// Executes the required business logic for handle nack.
+///
+/// # Arguments
+///
+/// * `conn_id` - `u64`: The `conn_id` argument.
+/// * `channel` - `u16`: The `channel` argument.
+/// * `args` - `&[u8]`: The `args` argument.
+/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
@@ -672,7 +750,6 @@ pub async fn handle_recover(
 
 // ─── Helpers ──────────────────────────────────────────
 
-/// Build a Basic.Deliver method frame (server→client).
 pub fn build_deliver_args(
     consumer_tag: &str,
     delivery_tag: u64,
@@ -693,6 +770,9 @@ pub fn build_deliver_args(
 mod tests {
     use super::*;
 
+    /// Executes the standard publish args parse lifecycle step.
+    ///
+    /// Executes the required business logic for publish args parse.
     #[test]
     fn publish_args_parse() {
         let mut args = Vec::new();
@@ -707,6 +787,9 @@ mod tests {
         assert!(!immediate);
     }
 
+    /// Executes the standard deliver args build lifecycle step.
+    ///
+    /// Executes the required business logic for deliver args build.
     #[test]
     fn deliver_args_build() {
         let args = build_deliver_args("ctag-1", 42, false, "amq.direct", "key1");
@@ -718,6 +801,9 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "key1");
     }
 
+    /// Executes the standard deliver args redelivered lifecycle step.
+    ///
+    /// Executes the required business logic for deliver args redelivered.
     #[test]
     fn deliver_args_redelivered() {
         let args = build_deliver_args("t", 1, true, "", "");
@@ -727,6 +813,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 1);
     }
 
+    /// Executes the standard consume args parse lifecycle step.
+    ///
+    /// Executes the required business logic for consume args parse.
     #[test]
     fn consume_args_parse() {
         let mut args = Vec::new();
@@ -742,6 +831,9 @@ mod tests {
         assert_eq!(flags & 0x02, 0x02);
     }
 
+    /// Executes the standard ack args parse lifecycle step.
+    ///
+    /// Executes the required business logic for ack args parse.
     #[test]
     fn ack_args_parse() {
         let mut args = Vec::new();
@@ -752,6 +844,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 0x01);
     }
 
+    /// Executes the standard reject args parse lifecycle step.
+    ///
+    /// Executes the required business logic for reject args parse.
     #[test]
     fn reject_args_parse() {
         let mut args = Vec::new();
@@ -762,6 +857,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
     }
 
+    /// Executes the standard qos args parse lifecycle step.
+    ///
+    /// Executes the required business logic for qos args parse.
     #[test]
     fn qos_args_parse() {
         let mut args = Vec::new();
@@ -774,6 +872,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
     }
 
+    /// Executes the standard get args parse lifecycle step.
+    ///
+    /// Executes the required business logic for get args parse.
     #[test]
     fn get_args_parse() {
         let mut args = Vec::new();
@@ -786,6 +887,9 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
     }
 
+    /// Executes the standard basic return frame structure lifecycle step.
+    ///
+    /// Executes the required business logic for basic return frame structure.
     #[test]
     fn basic_return_frame_structure() {
         let mut args = Vec::new();

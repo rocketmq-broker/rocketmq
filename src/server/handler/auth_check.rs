@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: auth_check.rs
+// Description: AMQP authentication and connection handshake validation helpers.
+
 //! Shared permission check helpers for AMQP handlers.
 //!
 //! Provides a `deny_access` helper that sends Channel.Close(403)
@@ -10,8 +29,6 @@ use crate::core::amqp_codec::encode_method_frame;
 use crate::core::method::*;
 use crate::state::Broker;
 
-/// Send a Channel.Close with ACCESS_REFUSED and flush.
-/// Returns true (meaning "the caller should return early").
 pub async fn deny_access(
     conn_id: u64,
     channel: u16,
@@ -37,10 +54,20 @@ pub async fn deny_access(
     true
 }
 
-/// Build the wire-format payload for a Channel.Close method frame.
+/// Executes the standard build channel close lifecycle step.
 ///
-/// This is the single canonical implementation — all handlers should
-/// call this instead of maintaining local copies.
+/// Executes the required business logic for build channel close.
+///
+/// # Arguments
+///
+/// * `code` - `u16`: The `code` argument.
+/// * `text` - `&str`: The `text` argument.
+/// * `class_id` - `u16`: The `class_id` argument.
+/// * `method_id` - `u16`: The `method_id` argument.
+///
+/// # Returns
+///
+/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
     use crate::core::types::{write_short, write_shortstr};
     let mut buf = Vec::with_capacity(4 + 1 + text.len() + 4);
@@ -51,11 +78,6 @@ pub fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16)
     buf
 }
 
-/// Send a Channel.Close frame with the given error code and flush.
-///
-/// This is the single reusable helper for all AMQP protocol error paths.
-/// Eliminates the 12-line boilerplate that was previously copy-pasted
-/// across every handler file.
 pub async fn send_channel_error(
     writer: &mut crate::server::AmqpWriter,
     channel: u16,
@@ -70,7 +92,18 @@ pub async fn send_channel_error(
     let _ = writer.flush().await;
 }
 
-/// Get the username and vhost for a connection from broker state.
+/// Executes the standard get conn auth lifecycle step.
+///
+/// Executes the required business logic for get conn auth.
+///
+/// # Arguments
+///
+/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// * `conn_id` - `u64`: The `conn_id` argument.
+///
+/// # Returns
+///
+/// * `(String, String)` - The evaluated outcome or operation handle.
 pub fn get_conn_auth(broker: &Broker, conn_id: u64) -> (String, String) {
     broker
         .conn_state
@@ -79,8 +112,6 @@ pub fn get_conn_auth(broker: &Broker, conn_id: u64) -> (String, String) {
         .unwrap_or_default()
 }
 
-/// Check if a user has 'configure' permission on a resource.
-/// If denied, sends Channel.Close(403) and returns true.
 pub async fn check_configure(
     conn_id: u64,
     channel: u16,
@@ -107,8 +138,6 @@ pub async fn check_configure(
     false // allowed
 }
 
-/// Check if a user has 'write' permission on a resource.
-/// If denied, sends Channel.Close(403) and returns true.
 pub async fn check_write(
     conn_id: u64,
     channel: u16,
@@ -129,8 +158,6 @@ pub async fn check_write(
     false // allowed
 }
 
-/// Check if a user has 'read' permission on a resource.
-/// If denied, sends Channel.Close(403) and returns true.
 pub async fn check_read(
     conn_id: u64,
     channel: u16,

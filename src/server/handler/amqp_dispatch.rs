@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_dispatch.rs
+// Description: AMQP dispatcher for routing messages to active channel consumers.
+
 //! AMQP 0-9-1 method dispatcher.
 //!
 //! Routes incoming method frames by class_id/method_id to the appropriate handler.
@@ -11,8 +30,6 @@ use crate::core::method::*;
 use crate::core::types::*;
 use crate::state::{Broker, ChannelState, ConnectionState};
 
-/// Dispatch a decoded AMQP method frame to the correct handler.
-/// Returns `false` if the connection should be closed.
 pub async fn dispatch_method(
     conn_id: u64,
     channel: u16,
@@ -281,6 +298,9 @@ async fn handle_channel_flow(
 mod tests {
     use super::*;
 
+    /// Executes the standard channel open ok frame valid lifecycle step.
+    ///
+    /// Executes the required business logic for channel open ok frame valid.
     #[test]
     fn channel_open_ok_frame_valid() {
         let mut args = Vec::new();
@@ -294,6 +314,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_CHANNEL_OPEN_OK);
     }
 
+    /// Executes the standard channel close ok frame valid lifecycle step.
+    ///
+    /// Executes the required business logic for channel close ok frame valid.
     #[test]
     fn channel_close_ok_frame_valid() {
         let frame = encode_method_frame(1, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE_OK, &[]);
@@ -303,6 +326,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_CHANNEL_CLOSE_OK);
     }
 
+    /// Executes the standard channel flow ok active lifecycle step.
+    ///
+    /// Executes the required business logic for channel flow ok active.
     #[test]
     fn channel_flow_ok_active() {
         let mut args = Vec::new();
@@ -314,6 +340,9 @@ mod tests {
         assert_eq!(m.arguments, vec![1]);
     }
 
+    /// Executes the standard channel flow ok inactive lifecycle step.
+    ///
+    /// Executes the required business logic for channel flow ok inactive.
     #[test]
     fn channel_flow_ok_inactive() {
         let mut args = Vec::new();

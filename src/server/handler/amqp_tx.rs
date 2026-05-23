@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: amqp_tx.rs
+// Description: AMQP Transaction (Tx) class method handlers for lightweight commits/rollbacks.
+
 //! AMQP 0-9-1 Tx class (class 90) and Confirm class (class 85).
 
 use tokio::io::AsyncWriteExt;
@@ -169,6 +188,9 @@ pub async fn handle_confirm_select(
 mod tests {
     use super::*;
 
+    /// Executes the standard tx select ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for tx select ok frame.
     #[test]
     fn tx_select_ok_frame() {
         let frame = encode_method_frame(1, CLASS_TX, METHOD_TX_SELECT_OK, &[]);
@@ -178,6 +200,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_TX_SELECT_OK);
     }
 
+    /// Executes the standard tx commit ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for tx commit ok frame.
     #[test]
     fn tx_commit_ok_frame() {
         let frame = encode_method_frame(1, CLASS_TX, METHOD_TX_COMMIT_OK, &[]);
@@ -187,6 +212,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_TX_COMMIT_OK);
     }
 
+    /// Executes the standard tx rollback ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for tx rollback ok frame.
     #[test]
     fn tx_rollback_ok_frame() {
         let frame = encode_method_frame(1, CLASS_TX, METHOD_TX_ROLLBACK_OK, &[]);
@@ -196,6 +224,9 @@ mod tests {
         assert_eq!(m.method_id, METHOD_TX_ROLLBACK_OK);
     }
 
+    /// Executes the standard confirm select ok frame lifecycle step.
+    ///
+    /// Executes the required business logic for confirm select ok frame.
     #[test]
     fn confirm_select_ok_frame() {
         let frame = encode_method_frame(1, CLASS_CONFIRM, METHOD_CONFIRM_SELECT_OK, &[]);

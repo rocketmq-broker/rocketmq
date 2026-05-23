@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: tls.rs
+// Description: Transport Layer Security (TLS) configuration and acceptor builder.
+
 //! TLS support for AMQPS (port 5671).
 //!
 //! On first run, self-signed certificates are generated and saved to
@@ -13,7 +32,6 @@ use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tracing::{info, warn};
 
-/// Build a TLS acceptor from cert/key files, generating self-signed certs if needed.
 pub fn build_tls_acceptor(
     cert_path: &str,
     key_path: &str,
@@ -34,7 +52,17 @@ pub fn build_tls_acceptor(
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-/// Load PEM-encoded certificates from a file.
+/// Executes the standard load certs lifecycle step.
+///
+/// Executes the required business logic for load certs.
+///
+/// # Arguments
+///
+/// * `path` - `&str`: The `path` argument.
+///
+/// # Returns
+///
+/// * `Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -48,7 +76,17 @@ fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::e
     Ok(certs)
 }
 
-/// Load a PEM-encoded private key from a file.
+/// Executes the standard load private key lifecycle step.
+///
+/// Executes the required business logic for load private key.
+///
+/// # Arguments
+///
+/// * `path` - `&str`: The `path` argument.
+///
+/// # Returns
+///
+/// * `Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -71,7 +109,18 @@ fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::e
     Err(format!("no private key found in {}", path).into())
 }
 
-/// Generate a self-signed certificate and key pair for development use.
+/// Executes the standard generate self signed lifecycle step.
+///
+/// Executes the required business logic for generate self signed.
+///
+/// # Arguments
+///
+/// * `cert_path` - `&str`: The `cert_path` argument.
+/// * `key_path` - `&str`: The `key_path` argument.
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn generate_self_signed(cert_path: &str, key_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     warn!("generating self-signed TLS certificate (for development only)");
 
