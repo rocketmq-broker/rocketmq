@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: delay.rs
+// Description: Delayed message delivery queues and timer management.
+
 //! Delayed message delivery.
 //!
 //! Messages published with an `x-delay` header (milliseconds) are held in a
@@ -9,20 +28,31 @@ use std::time::{Duration, Instant};
 
 use crate::queue::Message;
 
-/// A delayed message waiting to be enqueued.
+/// Represents the schema or state for delayed message.
+///
+/// Defines details for delayed message inside the broker ecosystem.
 pub struct DelayedMessage {
     pub deliver_at: Instant,
     pub queue_name: String,
     pub message: Message,
 }
 
-/// Thread-safe delay buffer using a BTreeMap keyed by delivery time.
+/// Tracks messages that have delayed delivery timelines.
+///
+/// Tracks messages that have delayed delivery timelines.
 pub struct DelayQueue {
     inner: Mutex<BTreeMap<(Instant, u64), DelayedMessage>>,
     next_id: std::sync::atomic::AtomicU64,
 }
 
 impl DelayQueue {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(BTreeMap::new()),
@@ -30,7 +60,15 @@ impl DelayQueue {
         }
     }
 
-    /// Schedule a message for delayed delivery.
+    /// Executes the standard schedule lifecycle step.
+    ///
+    /// Executes the required business logic for schedule.
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - `String`: The unique identifier string of the resource.
+    /// * `message` - `Message`: The `message` argument.
+    /// * `delay` - `Duration`: The `delay` argument.
     pub fn schedule(&self, queue_name: String, message: Message, delay: Duration) {
         let deliver_at = Instant::now() + delay;
         let id = self
@@ -44,7 +82,13 @@ impl DelayQueue {
         self.inner.lock().unwrap().insert((deliver_at, id), delayed);
     }
 
-    /// Drain all messages that are ready for delivery.
+    /// Executes the standard drain ready lifecycle step.
+    ///
+    /// Executes the required business logic for drain ready.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<DelayedMessage>` - The evaluated outcome or operation handle.
     pub fn drain_ready(&self) -> Vec<DelayedMessage> {
         let now = Instant::now();
         let mut inner = self.inner.lock().unwrap();
@@ -60,6 +104,13 @@ impl DelayQueue {
         ready
     }
 
+    /// Executes the standard len lifecycle step.
+    ///
+    /// Executes the required business logic for len.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The evaluated outcome or operation handle.
     pub fn len(&self) -> usize {
         self.inner.lock().unwrap().len()
     }

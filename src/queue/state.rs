@@ -1,3 +1,22 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: state.rs
+// Description: Individual queue state management, delivery tracking, and consumer subscription.
+
 use super::message::Message;
 use super::options::QueueOptions;
 use super::priority::PriorityQueue;
@@ -8,7 +27,9 @@ use std::time::Instant;
 /// Global atomic counter for unique consumer tag generation.
 static CONSUMER_TAG_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-/// Simple token-bucket rate limiter.
+/// Represents the schema or state for token bucket.
+///
+/// Defines details for token bucket inside the broker ecosystem.
 pub struct TokenBucket {
     pub rate: u32, // tokens per second
     pub tokens: f64,
@@ -16,6 +37,17 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `rate` - `u32`: The `rate` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(rate: u32) -> Self {
         Self {
             rate,
@@ -24,7 +56,9 @@ impl TokenBucket {
         }
     }
 
-    /// Refill tokens based on elapsed time.
+    /// Executes the standard refill lifecycle step.
+    ///
+    /// Executes the required business logic for refill.
     pub fn refill(&mut self) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
@@ -32,7 +66,13 @@ impl TokenBucket {
         self.last_refill = now;
     }
 
-    /// Try to consume one token. Returns true if allowed.
+    /// Executes the standard try consume lifecycle step.
+    ///
+    /// Executes the required business logic for try consume.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn try_consume(&mut self) -> bool {
         self.refill();
         if self.tokens >= 1.0 {
@@ -44,7 +84,9 @@ impl TokenBucket {
     }
 }
 
-/// Consumer group: a named set of consumers that share messages round-robin.
+/// Represents the schema or state for consumer group.
+///
+/// Defines details for consumer group inside the broker ecosystem.
 pub struct ConsumerGroup {
     pub name: String,
     pub members: Vec<(u64, u16)>, // (conn_id, channel_id)
@@ -52,6 +94,17 @@ pub struct ConsumerGroup {
 }
 
 impl ConsumerGroup {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - `String`: The unique identifier string of the resource.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -60,7 +113,18 @@ impl ConsumerGroup {
         }
     }
 
-    /// Add a member. Returns false if already a member.
+    /// Executes the standard add member lifecycle step.
+    ///
+    /// Executes the required business logic for add member.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - `u64`: The `conn_id` argument.
+    /// * `channel_id` - `u16`: The `channel_id` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn add_member(&mut self, conn_id: u64, channel_id: u16) -> bool {
         if self.members.contains(&(conn_id, channel_id)) {
             return false;
@@ -69,7 +133,18 @@ impl ConsumerGroup {
         true
     }
 
-    /// Remove a member. Returns true if found.
+    /// Executes the standard remove member lifecycle step.
+    ///
+    /// Executes the required business logic for remove member.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - `u64`: The `conn_id` argument.
+    /// * `channel_id` - `u16`: The `channel_id` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn remove_member(&mut self, conn_id: u64, channel_id: u16) -> bool {
         let before = self.members.len();
         self.members
@@ -77,7 +152,17 @@ impl ConsumerGroup {
         self.members.len() != before
     }
 
-    /// Pick the next member via round-robin, checking deliverability.
+    /// Executes the standard next target lifecycle step.
+    ///
+    /// Executes the required business logic for next target.
+    ///
+    /// # Arguments
+    ///
+    /// * `broker` - `&crate::state::Broker`: Thread-safe pointer to the global shared broker storage & state.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<(u64, u16)>` - The evaluated outcome or operation handle.
     pub fn next_target(&mut self, broker: &crate::state::Broker) -> Option<(u64, u16)> {
         if self.members.is_empty() {
             return None;
@@ -99,6 +184,9 @@ impl ConsumerGroup {
     }
 }
 
+/// Manages message queues, tracking unacknowledged and ready messages, and active consumers.
+///
+/// Manages message queues, tracking unacknowledged and ready messages, and active consumers.
 pub struct QueueState {
     pub options: QueueOptions,
     pub owner_conn_id: Option<u64>,
@@ -107,25 +195,40 @@ pub struct QueueState {
     pub inflight: HashMap<u64, Message>,
     pub next_listener: usize,
     pub consumer_count: usize,
-    /// Maps consumer_tag → (conn_id, channel_id)
     pub consumer_tags: HashMap<String, (u64, u16)>,
-    /// Last time this queue had activity (publish, consume, listen).
     pub last_activity: Instant,
-    /// Consumer groups for shared subscription patterns.
     pub groups: HashMap<String, ConsumerGroup>,
-    /// Optional rate limiter for this queue.
     pub rate_limiter: Option<TokenBucket>,
-    /// Stream mode: messages are not removed on ack (append-only log).
     pub stream_mode: bool,
-    /// Stream offset: monotonically increasing sequence number.
     pub stream_offset: u64,
+    pub stat_published: u64,
+    pub stat_delivered: u64,
+    pub stat_acked: u64,
 }
 
 impl QueueState {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new() -> Self {
         Self::with_options(QueueOptions::default())
     }
 
+    /// Executes the standard with options lifecycle step.
+    ///
+    /// Executes the required business logic for with options.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - `QueueOptions`: The `options` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn with_options(options: QueueOptions) -> Self {
         let rate_limiter = options.rate_limit.map(TokenBucket::new);
         let stream_mode = options.stream_mode;
@@ -143,10 +246,19 @@ impl QueueState {
             rate_limiter,
             stream_mode,
             stream_offset: 0,
+            stat_published: 0,
+            stat_delivered: 0,
+            stat_acked: 0,
         }
     }
 
-    /// Check rate limit. Returns true if publish is allowed.
+    /// Executes the standard check rate limit lifecycle step.
+    ///
+    /// Executes the required business logic for check rate limit.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn check_rate_limit(&mut self) -> bool {
         match &mut self.rate_limiter {
             Some(bucket) => bucket.try_consume(),
@@ -154,7 +266,6 @@ impl QueueState {
         }
     }
 
-    /// Add a consumer with an optional tag and optional group. Returns the assigned tag.
     pub fn add_consumer(
         &mut self,
         conn_id: u64,
@@ -184,7 +295,17 @@ impl QueueState {
         tag
     }
 
-    /// Cancel a consumer by tag. Returns true if found.
+    /// Executes the standard cancel consumer lifecycle step.
+    ///
+    /// Executes the required business logic for cancel consumer.
+    ///
+    /// # Arguments
+    ///
+    /// * `tag` - `&str`: The `tag` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn cancel_consumer(&mut self, tag: &str) -> bool {
         if let Some((conn_id, channel_id)) = self.consumer_tags.remove(tag) {
             self.listeners
@@ -202,9 +323,17 @@ impl QueueState {
         }
     }
 
-    /// Select a delivery target. If consumer groups exist, delivers to one member
-    /// per group (broadcast across groups, round-robin within). Otherwise, uses
-    /// the existing round-robin across all listeners.
+    /// Executes the standard next target lifecycle step.
+    ///
+    /// Executes the required business logic for next target.
+    ///
+    /// # Arguments
+    ///
+    /// * `broker` - `&crate::state::Broker`: Thread-safe pointer to the global shared broker storage & state.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<(u64, u16)>` - The evaluated outcome or operation handle.
     pub fn next_target(&mut self, broker: &crate::state::Broker) -> Option<(u64, u16)> {
         // If there are groups, use group-based delivery (return first available)
         if !self.groups.is_empty() {

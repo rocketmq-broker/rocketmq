@@ -1,5 +1,27 @@
+// Copyright (c) 2026 Edilson Pateguana
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author: Edilson Pateguana
+// Year: 2026
+// File: message.rs
+// Description: Message structures, envelope representation, and persistence adapters.
+
 use std::time::Instant;
 
+/// Represents the schema or state for message.
+///
+/// Defines details for message inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct Message {
     pub id: u64,
@@ -14,6 +36,19 @@ pub struct Message {
 }
 
 impl Message {
+    /// Executes the standard new lifecycle step.
+    ///
+    /// Executes the required business logic for new.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - `u64`: The `id` argument.
+    /// * `headers` - `Vec<u8>`: The `headers` argument.
+    /// * `body` - `Vec<u8>`: Deserialized JSON payload representation containing request parameters.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The evaluated outcome or operation handle.
     pub fn new(id: u64, headers: Vec<u8>, body: Vec<u8>) -> Self {
         Self {
             id,
@@ -48,11 +83,21 @@ impl Message {
         }
     }
 
+    /// Executes the standard is expired lifecycle step.
+    ///
+    /// Executes the required business logic for is expired.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_expired(&self) -> bool {
         self.expiration.is_some_and(|exp| Instant::now() >= exp)
     }
 }
 
+/// Represents the schema or state for message ref.
+///
+/// Defines details for message ref inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct MessageRef {
     pub id: u64,
@@ -67,6 +112,9 @@ pub struct MessageRef {
     pub routing_key: String,
 }
 
+/// Defines the various states or variants of queue message.
+///
+/// Defines details for queue message inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub enum QueueMessage {
     Ref(MessageRef),
@@ -74,6 +122,13 @@ pub enum QueueMessage {
 }
 
 impl QueueMessage {
+    /// Executes the standard id lifecycle step.
+    ///
+    /// Executes the required business logic for id.
+    ///
+    /// # Returns
+    ///
+    /// * `u64` - The evaluated outcome or operation handle.
     pub fn id(&self) -> u64 {
         match self {
             QueueMessage::Ref(r) => r.id,
@@ -81,6 +136,13 @@ impl QueueMessage {
         }
     }
 
+    /// Executes the standard priority lifecycle step.
+    ///
+    /// Executes the required business logic for priority.
+    ///
+    /// # Returns
+    ///
+    /// * `u8` - The evaluated outcome or operation handle.
     pub fn priority(&self) -> u8 {
         match self {
             QueueMessage::Ref(r) => r.priority,
@@ -88,6 +150,13 @@ impl QueueMessage {
         }
     }
 
+    /// Executes the standard expiration lifecycle step.
+    ///
+    /// Executes the required business logic for expiration.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Instant>` - The evaluated outcome or operation handle.
     pub fn expiration(&self) -> Option<Instant> {
         match self {
             QueueMessage::Ref(r) => r.expiration,
@@ -95,10 +164,24 @@ impl QueueMessage {
         }
     }
 
+    /// Executes the standard is expired lifecycle step.
+    ///
+    /// Executes the required business logic for is expired.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_expired(&self) -> bool {
         self.expiration().is_some_and(|exp| Instant::now() >= exp)
     }
 
+    /// Executes the standard redelivered lifecycle step.
+    ///
+    /// Executes the required business logic for redelivered.
+    ///
+    /// # Returns
+    ///
+    /// * `bool` - The evaluated outcome or operation handle.
     pub fn redelivered(&self) -> bool {
         match self {
             QueueMessage::Ref(r) => r.redelivered,
@@ -106,6 +189,13 @@ impl QueueMessage {
         }
     }
 
+    /// Executes the standard set redelivered lifecycle step.
+    ///
+    /// Executes the required business logic for set redelivered.
+    ///
+    /// # Arguments
+    ///
+    /// * `val` - `bool`: The `val` argument.
     pub fn set_redelivered(&mut self, val: bool) {
         match self {
             QueueMessage::Ref(r) => r.redelivered = val,
@@ -113,6 +203,13 @@ impl QueueMessage {
         }
     }
 
+    /// Executes the standard delivery count lifecycle step.
+    ///
+    /// Executes the required business logic for delivery count.
+    ///
+    /// # Returns
+    ///
+    /// * `u32` - The evaluated outcome or operation handle.
     pub fn delivery_count(&self) -> u32 {
         match self {
             QueueMessage::Ref(r) => r.delivery_count,
@@ -120,6 +217,13 @@ impl QueueMessage {
         }
     }
 
+    /// Executes the standard set delivery count lifecycle step.
+    ///
+    /// Executes the required business logic for set delivery count.
+    ///
+    /// # Arguments
+    ///
+    /// * `val` - `u32`: The `val` argument.
     pub fn set_delivery_count(&mut self, val: u32) {
         match self {
             QueueMessage::Ref(r) => r.delivery_count = val,
@@ -127,7 +231,17 @@ impl QueueMessage {
         }
     }
 
-    /// Resolve a `QueueMessage` to a full `Message`, loading from segment if needed.
+    /// Executes the standard resolve lifecycle step.
+    ///
+    /// Executes the required business logic for resolve.
+    ///
+    /// # Arguments
+    ///
+    /// * `wal` - `&crate::storage::wal::Wal`: The `wal` argument.
+    ///
+    /// # Returns
+    ///
+    /// * `std::io::Result<Message>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn resolve(self, wal: &crate::storage::wal::Wal) -> std::io::Result<Message> {
         match self {
             QueueMessage::Full(m) => Ok(m),
@@ -150,7 +264,13 @@ impl QueueMessage {
         }
     }
 
-    /// Unwrap the full message. Panics if it is a Ref.
+    /// Executes the standard unwrap full lifecycle step.
+    ///
+    /// Executes the required business logic for unwrap full.
+    ///
+    /// # Returns
+    ///
+    /// * `Message` - The evaluated outcome or operation handle.
     pub fn unwrap_full(self) -> Message {
         match self {
             QueueMessage::Full(m) => m,
