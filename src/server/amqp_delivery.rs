@@ -41,28 +41,9 @@ pub fn spawn_delivery_task(broker: Broker) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(crate::config::DELIVERY_POLL_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut round = 0u64;
 
         loop {
             interval.tick().await;
-            round += 1;
-
-            // Periodic state dump (every ~1 second)
-            if round.is_multiple_of(200) {
-                for entry in broker.queues.iter() {
-                    let (name, q) = entry.pair();
-                    if !q.messages.is_empty() || !q.consumer_tags.is_empty() {
-                        debug!(
-                            queue = name.as_str(),
-                            messages = q.messages.len(),
-                            consumers = q.consumer_tags.len(),
-                            listeners = q.listeners.len(),
-                            "delivery state"
-                        );
-                    }
-                }
-            }
-
             deliver_round(&broker).await;
         }
     });
