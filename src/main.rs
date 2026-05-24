@@ -56,18 +56,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    // Initialize OpenTelemetry meter provider
     let _meter_provider = metrics::init_meter_provider();
 
     let broker: state::Broker = Arc::new(state::BrokerState::new());
 
-    // Initialize WAL and replay any existing entries (crash recovery)
     let wal = storage::init_with_recovery(&broker)?;
 
-    // Store WAL handle in broker for handlers to use
     broker.set_wal(wal);
 
-    // Initialize Cluster Manager
     let node_id = get_node_id();
     let cluster_addr = get_cluster_addr();
     let seed_nodes = get_cluster_seeds();
@@ -81,17 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cluster_manager = Arc::new(cluster::ClusterManager::new(node_id, cluster_addr.clone()));
     broker.set_cluster(cluster_manager.clone());
 
-    // Start Cluster TCP Listener & Peer gossip tasks
     cluster::start_cluster_listener(broker.clone(), cluster_manager.clone(), cluster_addr).await?;
     cluster::start_peer_connector(broker.clone(), cluster_manager.clone(), seed_nodes).await;
 
-    // Spawn background maintenance tasks (queue TTL, message TTL, dedup eviction)
     server::tasks::spawn_all(broker.clone());
 
-    // Spawn AMQP delivery pipeline (pushes messages to consumers)
     server::amqp_delivery::spawn_delivery_task(broker.clone());
 
-    // Spawn Management HTTP API (port 15672)
     let mgmt_broker = broker.clone();
     tokio::spawn(async move {
         if let Err(e) = management::serve(mgmt_broker).await {
@@ -99,12 +91,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // ── Plain AMQP listener (port 5672) ──────────────
     let amqp_addr = get_amqp_listen_addr();
     let amqp_listener = tokio::net::TcpListener::bind(&amqp_addr).await?;
     info!("AMQP 0-9-1 on {}", amqp_addr);
 
-    // ── AMQPS (TLS) listener (port 5671) ─────────────
     let amqps_addr = get_amqps_listen_addr();
     let tls_acceptor =
         match server::tls::build_tls_acceptor(&get_tls_cert_path(), &get_tls_key_path()) {
@@ -119,7 +109,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-    // ── Plain AMQP accept loop ──────────────────────
     let plain_broker = broker.clone();
     tokio::spawn(async move {
         loop {
@@ -134,17 +123,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // ── TLS AMQPS accept loop (if configured) ────────
     if let Some((tls_listener, acceptor)) = tls_acceptor {
         tokio::spawn(handle_tls_accept(tls_listener, acceptor, broker.clone()));
     }
 
-    // Keep the main task alive pending forever (or until process shutdown)
     std::future::pending::<()>().await;
     Ok(())
 }
 
-/// Helper task to manage TLS connections accept loop without deep nesting.
 async fn handle_tls_accept(
     tls_listener: tokio::net::TcpListener,
     acceptor: tokio_rustls::TlsAcceptor,
@@ -168,7 +154,6 @@ async fn handle_tls_accept(
     }
 }
 
-/// Handles the individual TLS handshake on accepted TCP stream and boots the AMQP loop.
 async fn handle_tls_handshake(
     tcp_stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
