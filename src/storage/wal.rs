@@ -40,14 +40,7 @@ const WAL_HEADER_SIZE: usize = 9; // total_len(4) + crc32(4) + entry_type(1)
 const SEGMENT_EXT: &str = "seg";
 const SEGMENT_ID_WIDTH: usize = 16;
 
-/// # Arguments
-///
-/// * `dir` - `&Path`: The `dir` argument.
-/// * `id` - `u64`: The `id` argument.
-///
-/// # Returns
-///
-/// * `PathBuf` - The evaluated outcome or operation handle.
+/// Builds the filesystem path for a WAL segment file with the given ID.
 fn segment_path(dir: &Path, id: u64) -> PathBuf {
     dir.join(format!(
         "{:0width$}.{}",
@@ -57,13 +50,8 @@ fn segment_path(dir: &Path, id: u64) -> PathBuf {
     ))
 }
 
-/// # Arguments
-///
-/// * `dir` - `&Path`: The `dir` argument.
-///
-/// # Returns
-///
-/// * `io::Result<Vec<u64>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Scans the WAL directory for existing segment files and returns
+/// their numeric IDs in ascending order.
 fn discover_segment_ids(dir: &Path) -> io::Result<Vec<u64>> {
     let mut ids = Vec::new();
     if !dir.exists() {
@@ -83,30 +71,23 @@ fn discover_segment_ids(dir: &Path) -> io::Result<Vec<u64>> {
     Ok(ids)
 }
 
-/// Represents the schema or state for wal writer.
+/// Lightweight buffer builder for serializing WAL entry payloads.
 ///
-/// Defines details for wal writer inside the broker ecosystem.
+/// Provides helpers for writing length-prefixed strings (`u16`), byte
+/// slices (`u32`), and raw integers in big-endian byte order.
 struct WalWriter {
     buf: Vec<u8>,
 }
 
 impl WalWriter {
-    /// # Arguments
-    ///
-    /// * `cap` - `usize`: The `cap` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new writer pre-allocated with the given byte capacity.
     fn with_capacity(cap: usize) -> Self {
         Self {
             buf: Vec::with_capacity(cap),
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `s` - `&str`: The `s` argument.
+    /// Appends a string as a `u16`-length-prefixed byte sequence.
     fn write_str_u16(&mut self, s: &str) {
         let bytes = s.as_bytes();
         self.buf
@@ -114,40 +95,33 @@ impl WalWriter {
         self.buf.extend_from_slice(bytes);
     }
 
-    /// # Arguments
-    ///
-    /// * `data` - `&[u8]`: The `data` argument.
+    /// Appends a byte slice as a `u32`-length-prefixed payload.
     fn write_bytes_u32(&mut self, data: &[u8]) {
         self.buf
             .extend_from_slice(&(data.len() as u32).to_be_bytes());
         self.buf.extend_from_slice(data);
     }
 
-    /// # Arguments
-    ///
-    /// * `v` - `u8`: The `v` argument.
+    /// Appends a single raw byte.
     fn write_u8(&mut self, v: u8) {
         self.buf.push(v);
     }
 
-    /// # Arguments
-    ///
-    /// * `v` - `u64`: The `v` argument.
+    /// Appends a `u64` in big-endian byte order.
     fn write_u64(&mut self, v: u64) {
         self.buf.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// # Returns
-    ///
-    /// * `Vec<u8>` - The evaluated outcome or operation handle.
+    /// Consumes the writer and returns the assembled byte buffer.
     fn finish(self) -> Vec<u8> {
         self.buf
     }
 }
 
-/// Defines the various states or variants of entry type.
+/// Discriminator byte for WAL entry kinds.
 ///
-/// Defines details for entry type inside the broker ecosystem.
+/// Each variant maps to a single `u8` tag stored in the segment file,
+/// allowing the replay logic to dispatch entries by type.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryType {
@@ -160,13 +134,6 @@ pub enum EntryType {
 
 impl TryFrom<u8> for EntryType {
     type Error = ();
-    /// # Arguments
-    ///
-    /// * `value` - `u8`: The `value` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ()>` - A standard rust Result wrapping the status payloads or server failure codes.
     fn try_from(value: u8) -> Result<Self, ()> {
         match value {
             0x01 => Ok(Self::DeclareQueue),
@@ -179,18 +146,18 @@ impl TryFrom<u8> for EntryType {
     }
 }
 
-/// Represents the schema or state for wal entry.
-///
-/// Defines details for wal entry inside the broker ecosystem.
+/// A single deserialized WAL entry consisting of its type tag and raw
+/// data payload (everything after the CRC-validated header).
 #[derive(Debug)]
 pub struct WalEntry {
     pub entry_type: EntryType,
     pub data: Vec<u8>,
 }
 
-/// Represents the schema or state for segment.
+/// A single on-disk segment file backing the WAL.
 ///
-/// Defines details for segment inside the broker ecosystem.
+/// Entries are appended sequentially. When `size` exceeds `max_size`,
+/// the [`SegmentManager`] rotates to a new segment.
 pub struct Segment {
     pub id: u64,
     pub path: PathBuf,
@@ -200,14 +167,7 @@ pub struct Segment {
 }
 
 impl Segment {
-    /// # Arguments
-    ///
-    /// * `entry_type` - `EntryType`: The `entry_type` argument.
-    /// * `data` - `&[u8]`: The `data` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `io::Result<(u64, u32)>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Appends a raw entry to the WAL and returns its monotonic sequence number.
     pub fn append(&mut self, entry_type: EntryType, data: &[u8]) -> io::Result<(u64, u32)> {
         let total_len = (1 + data.len()) as u32; // entry_type + data
         let mut entry_buf = Vec::with_capacity(WAL_HEADER_SIZE + data.len());
@@ -238,9 +198,11 @@ impl Segment {
     }
 }
 
-/// Represents the schema or state for segment manager.
+/// Manages the set of WAL segment files under a directory.
 ///
-/// Defines details for segment manager inside the broker ecosystem.
+/// Handles segment rotation when the active segment exceeds its size
+/// limit, and provides methods to append entries and read them back
+/// across all segments.
 pub struct SegmentManager {
     pub dir: PathBuf,
     pub active: Mutex<Segment>,
@@ -248,14 +210,7 @@ pub struct SegmentManager {
 }
 
 impl SegmentManager {
-    /// # Arguments
-    ///
-    /// * `dir` - `PathBuf`: The `dir` argument.
-    /// * `max_segment_size` - `u64`: The `max_segment_size` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `io::Result<Self>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Creates a new instance with the given dir, max_segment_size.
     pub fn new(dir: PathBuf, max_segment_size: u64) -> io::Result<Self> {
         std::fs::create_dir_all(&dir)?;
 
@@ -284,14 +239,7 @@ impl SegmentManager {
         })
     }
 
-    /// # Arguments
-    ///
-    /// * `entry_type` - `EntryType`: The `entry_type` argument.
-    /// * `data` - `&[u8]`: The `data` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `io::Result<(u64, u64, u32)>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Appends a raw entry to the WAL and returns its monotonic sequence number.
     pub fn append(&self, entry_type: EntryType, data: &[u8]) -> io::Result<(u64, u64, u32)> {
         let mut active = self.active.lock().unwrap();
         let entry_size = (WAL_HEADER_SIZE + data.len()) as u64;
@@ -423,9 +371,6 @@ impl SegmentManager {
         Ok((headers, body))
     }
 
-    /// # Returns
-    ///
-    /// * `io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn read_all_entries(&self) -> io::Result<Vec<WalEntry>> {
         let segment_ids = discover_segment_ids(&self.dir)?;
         let mut all_entries = Vec::new();
@@ -437,9 +382,8 @@ impl SegmentManager {
         Ok(all_entries)
     }
 
-    /// # Returns
-    ///
-    /// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Truncates the WAL by removing all segment files and resetting
+    /// the entry counter to zero.
     pub fn truncate(&self) -> io::Result<()> {
         let mut active = self.active.lock().unwrap();
         active.writer.flush()?;
@@ -473,9 +417,11 @@ impl SegmentManager {
     }
 }
 
-/// Represents the schema or state for wal.
+/// Write-ahead log providing crash-safe persistence for the broker.
 ///
-/// Defines details for wal inside the broker ecosystem.
+/// Wraps a [`SegmentManager`] and exposes high-level helpers for
+/// logging queue declarations, message enqueues, acknowledgements,
+/// exchange declarations, and bindings.
 pub struct Wal {
     pub segment_manager: Arc<SegmentManager>,
     path: PathBuf,
@@ -483,13 +429,8 @@ pub struct Wal {
 }
 
 impl Wal {
-    /// # Arguments
-    ///
-    /// * `path` - `impl AsRef<Path>`: The `path` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `std::io::Result<Self>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Opens (or creates) the WAL at the given path, initializing the
+    /// segment manager and replaying existing entries for recovery.
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let segments_dir = path
@@ -517,37 +458,25 @@ impl Wal {
         })
     }
 
-    /// # Arguments
-    ///
-    /// * `entry_type` - `EntryType`: The `entry_type` argument.
-    /// * `data` - `&[u8]`: The `data` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Appends a raw entry to the WAL and returns its monotonic sequence number.
     pub fn append(&self, entry_type: EntryType, data: &[u8]) -> std::io::Result<u64> {
         let _ = self.segment_manager.append(entry_type, data)?;
         let seq = self.entry_count.fetch_add(1, Ordering::SeqCst) + 1;
         Ok(seq)
     }
 
-    /// # Returns
-    ///
-    /// * `std::io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Reads all entries across every segment in the WAL directory.
     pub fn read_all(&self) -> std::io::Result<Vec<WalEntry>> {
         self.segment_manager.read_all_entries()
     }
 
-    /// # Returns
-    ///
-    /// * `&Path` - The evaluated outcome or operation handle.
+    /// Returns the filesystem path of this WAL instance.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// # Returns
-    ///
-    /// * `std::io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Truncates the WAL by removing all segment files and resetting
+    /// the entry counter to zero.
     pub fn truncate(&self) -> std::io::Result<()> {
         self.segment_manager.truncate()?;
         self.entry_count.store(0, Ordering::SeqCst);
@@ -566,14 +495,7 @@ impl Wal {
 
     // ── Convenience builders ────────────────────────────────────────────
 
-    /// # Arguments
-    ///
-    /// * `name` - `&str`: The unique identifier string of the resource.
-    /// * `durable` - `bool`: The `durable` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Logs a `DeclareQueue` entry to the WAL for crash recovery.
     pub fn log_declare_queue(&self, name: &str, durable: bool) -> std::io::Result<u64> {
         let mut w = WalWriter::with_capacity(2 + name.len() + 1);
         w.write_str_u16(name);
@@ -617,13 +539,7 @@ impl Wal {
         Ok((segment_id, offset, length))
     }
 
-    /// # Arguments
-    ///
-    /// * `msg_id` - `u64`: The `msg_id` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Logs an `Ack` entry for the given message ID.
     pub fn log_ack(&self, msg_id: u64) -> std::io::Result<u64> {
         self.append(EntryType::Ack, &msg_id.to_be_bytes())
     }
@@ -641,15 +557,7 @@ impl Wal {
         self.append(EntryType::DeclareExchange, &w.finish())
     }
 
-    /// # Arguments
-    ///
-    /// * `exchange` - `&str`: The exchange instance reference.
-    /// * `queue` - `&str`: The queue instance reference.
-    /// * `routing_key` - `&str`: The `routing_key` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `std::io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Logs a `Bind` entry recording an exchange-to-queue binding.
     pub fn log_bind(&self, exchange: &str, queue: &str, routing_key: &str) -> std::io::Result<u64> {
         let cap = 2 + exchange.len() + 2 + queue.len() + 2 + routing_key.len();
         let mut w = WalWriter::with_capacity(cap);
@@ -660,13 +568,10 @@ impl Wal {
     }
 }
 
-/// # Arguments
+/// Reads and validates all WAL entries from a single segment file.
 ///
-/// * `path` - `&Path`: The `path` argument.
-///
-/// # Returns
-///
-/// * `std::io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Each entry's CRC32 checksum is verified; replay stops at the first
+/// corrupt or truncated entry.
 pub fn read_entries(path: &Path) -> std::io::Result<Vec<WalEntry>> {
     let mut file = match File::open(path) {
         Ok(f) => f,
@@ -737,13 +642,8 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// # Arguments
-    ///
-    /// * `name` - `&str`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `PathBuf` - The evaluated outcome or operation handle.
+    /// Creates a temporary WAL directory for testing and returns the
+    /// path to the WAL file inside it.
     fn tmp_wal(name: &str) -> PathBuf {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")

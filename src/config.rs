@@ -39,7 +39,6 @@ use std::time::Duration;
 static CONFIG: OnceLock<BrokerConfig> = OnceLock::new();
 
 /// Returns a reference to the global broker configuration.
-///
 /// On first call, loads the config file (if present) and applies
 /// environment variable overrides. Subsequent calls return the
 /// cached result.
@@ -253,7 +252,6 @@ impl BrokerConfig {
 // ─── Conf file parser ─────────────────────────────────────────
 
 /// Locates and parses the config file into a key-value map.
-///
 /// Lookup order:
 ///   1. `ROCKETMQ_CONF` env var
 ///   2. `./rocketmq.conf` in the current working directory

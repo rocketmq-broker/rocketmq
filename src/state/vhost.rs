@@ -30,7 +30,6 @@ use crate::queue::QueueState;
 use crate::routing::exchange::{Exchange, create_default_exchanges};
 
 /// Container for virtual host routing, isolated queues, and user permissions.
-///
 /// Container for virtual host routing, isolated queues, and user permissions.
 pub struct VHost {
     pub name: String,
@@ -39,13 +38,7 @@ pub struct VHost {
 }
 
 impl VHost {
-    /// # Arguments
-    ///
-    /// * `name` - `String`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given name.
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -54,13 +47,6 @@ impl VHost {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `name` - `String`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
     pub fn empty(name: String) -> Self {
         Self {
             name,

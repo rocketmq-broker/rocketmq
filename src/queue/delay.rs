@@ -28,9 +28,8 @@ use std::time::{Duration, Instant};
 
 use crate::queue::Message;
 
-/// Represents the schema or state for delayed message.
-///
-/// Defines details for delayed message inside the broker ecosystem.
+/// A single message deferred for future delivery, paired with
+/// its target queue name and scheduled delivery instant.
 pub struct DelayedMessage {
     pub deliver_at: Instant,
     pub queue_name: String,
@@ -38,7 +37,8 @@ pub struct DelayedMessage {
 }
 
 /// Tracks messages that have delayed delivery timelines.
-///
+/// Global delay queue that holds messages until their scheduled
+/// delivery time, then flushes them to target queues.
 /// Tracks messages that have delayed delivery timelines.
 pub struct DelayQueue {
     inner: Mutex<BTreeMap<(Instant, u64), DelayedMessage>>,
@@ -46,9 +46,7 @@ pub struct DelayQueue {
 }
 
 impl DelayQueue {
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with default values.
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(BTreeMap::new()),
@@ -56,11 +54,6 @@ impl DelayQueue {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `queue_name` - `String`: The unique identifier string of the resource.
-    /// * `message` - `Message`: The `message` argument.
-    /// * `delay` - `Duration`: The `delay` argument.
     pub fn schedule(&self, queue_name: String, message: Message, delay: Duration) {
         let deliver_at = Instant::now() + delay;
         let id = self
@@ -74,9 +67,6 @@ impl DelayQueue {
         self.inner.lock().unwrap().insert((deliver_at, id), delayed);
     }
 
-    /// # Returns
-    ///
-    /// * `Vec<DelayedMessage>` - The evaluated outcome or operation handle.
     pub fn drain_ready(&self) -> Vec<DelayedMessage> {
         let now = Instant::now();
         let mut inner = self.inner.lock().unwrap();
@@ -92,9 +82,6 @@ impl DelayQueue {
         ready
     }
 
-    /// # Returns
-    ///
-    /// * `usize` - The evaluated outcome or operation handle.
     pub fn len(&self) -> usize {
         self.inner.lock().unwrap().len()
     }

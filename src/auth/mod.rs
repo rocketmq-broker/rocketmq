@@ -34,9 +34,10 @@ use tracing::info;
 pub use credentials::{UserEntry, UserTag};
 pub use permissions::Permission;
 
-/// Represents the schema or state for auth backend.
+/// Persistent authentication and authorization backend.
 ///
-/// Defines details for auth backend inside the broker ecosystem.
+/// Stores bcrypt-hashed credentials on disk and enforces per-user
+/// configure/write/read permission patterns via regex matching.
 pub struct AuthBackend {
     /// username → UserEntry
     users: DashMap<String, UserEntry>,
@@ -45,9 +46,7 @@ pub struct AuthBackend {
 }
 
 impl AuthBackend {
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with default values.
     pub fn new() -> Self {
         let backend = Self {
             users: DashMap::new(),
@@ -123,14 +122,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn check_vhost_access(&self, username: &str, vhost: &str) -> bool {
         self.permissions
             .contains_key(&(username.to_string(), vhost.to_string()))
@@ -138,41 +129,14 @@ impl AuthBackend {
 
     // ── Authorization ─────────────────────────────────────
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    /// * `resource` - `&str`: The `resource` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn check_configure(&self, username: &str, vhost: &str, resource: &str) -> bool {
         self.check_permission(username, vhost, resource, |p| &p.configure)
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    /// * `resource` - `&str`: The `resource` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn check_write(&self, username: &str, vhost: &str, resource: &str) -> bool {
         self.check_permission(username, vhost, resource, |p| &p.write)
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    /// * `resource` - `&str`: The `resource` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn check_read(&self, username: &str, vhost: &str, resource: &str) -> bool {
         self.check_permission(username, vhost, resource, |p| &p.read)
     }
@@ -213,13 +177,7 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), String>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Removes a user from the backend and persists the change to disk.
     pub fn delete_user(&self, username: &str) -> Result<(), String> {
         if username == crate::config::default_guest_user() {
             return Err("cannot delete the default guest user".to_string());
@@ -235,14 +193,7 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `new_password` - `&str`: The `new_password` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), String>` - A standard rust Result wrapping the status payloads or server failure codes.
+    /// Updates a user's password hash and persists the change.
     pub fn change_password(&self, username: &str, new_password: &str) -> Result<(), String> {
         let mut entry = self
             .users
@@ -253,14 +204,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `tags` - `Vec<UserTag>`: The `tags` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), String>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn set_user_tags(&self, username: &str, tags: Vec<UserTag>) -> Result<(), String> {
         let mut entry = self
             .users
@@ -289,9 +232,7 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// # Returns
-    ///
-    /// * `Vec<(String, Vec<UserTag>)>` - The evaluated outcome or operation handle.
+    /// Returns a list of all registered usernames.
     pub fn list_users(&self) -> Vec<(String, Vec<UserTag>)> {
         self.users
             .iter()
@@ -299,13 +240,6 @@ impl AuthBackend {
             .collect()
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<Permission>` - The evaluated outcome or operation handle.
     pub fn list_user_permissions(&self, username: &str) -> Vec<Permission> {
         self.permissions
             .iter()
@@ -316,13 +250,6 @@ impl AuthBackend {
 
     // ── Persistence ───────────────────────────────────────
 
-    /// # Arguments
-    ///
-    /// * `path` - `&Path`: The `path` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), String>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
         let data = credentials::UserStore {
             users: self
@@ -345,13 +272,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// # Arguments
-    ///
-    /// * `path` - `&Path`: The `path` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), String>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn load_from_file(&self, path: &Path) -> Result<(), String> {
         if !path.exists() {
             info!(path = %path.display(), "no user database found, using defaults");
@@ -387,13 +307,6 @@ impl AuthBackend {
     }
 }
 
-/// # Arguments
-///
-/// * `addr` - `&SocketAddr`: The `addr` argument.
-///
-/// # Returns
-///
-/// * `bool` - The evaluated outcome or operation handle.
 fn is_loopback(addr: &SocketAddr) -> bool {
     addr.ip().is_loopback()
 }
@@ -404,16 +317,10 @@ mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
 
-    /// # Returns
-    ///
-    /// * `SocketAddr` - The evaluated outcome or operation handle.
     fn localhost() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)
     }
 
-    /// # Returns
-    ///
-    /// * `SocketAddr` - The evaluated outcome or operation handle.
     fn remote() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 12345)
     }

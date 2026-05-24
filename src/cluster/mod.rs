@@ -39,9 +39,6 @@ pub mod raft;
 
 // ─── Cluster Protocol Definitions ────────────────────
 
-/// Represents the schema or state for member info.
-///
-/// Defines details for member info inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MemberInfo {
     pub node_id: u64,
@@ -50,9 +47,6 @@ pub struct MemberInfo {
     pub is_active: bool,
 }
 
-/// Defines the various states or variants of cluster frame.
-///
-/// Defines details for cluster frame inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClusterFrame {
     // Discovery & Membership
@@ -130,9 +124,6 @@ pub enum ClusterFrame {
 
 // ─── Peer Connection Handle ──────────────────────────
 
-/// Represents the schema or state for peer connection.
-///
-/// Defines details for peer connection inside the broker ecosystem.
 pub struct PeerConnection {
     pub node_id: u64,
     pub addr: String,
@@ -141,9 +132,9 @@ pub struct PeerConnection {
 
 // ─── Cluster Manager ─────────────────────────────────
 
-/// Represents the schema or state for cluster manager.
-///
-/// Defines details for cluster manager inside the broker ecosystem.
+/// Coordinates multi-node cluster membership, gossip-based peer
+/// discovery, and leader election via the embedded Raft consensus
+/// implementation.
 pub struct ClusterManager {
     pub node_id: u64,
     pub listen_addr: String,
@@ -159,14 +150,7 @@ pub struct ClusterManager {
 }
 
 impl ClusterManager {
-    /// # Arguments
-    ///
-    /// * `node_id` - `u64`: The `node_id` argument.
-    /// * `listen_addr` - `String`: The `listen_addr` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given node_id, listen_addr.
     pub fn new(node_id: u64, listen_addr: String) -> Self {
         let mut members = HashMap::new();
         // Add self to membership list
@@ -194,9 +178,6 @@ impl ClusterManager {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_leader(&self) -> bool {
         self.leader_id.load(Ordering::SeqCst) == self.node_id
     }
@@ -259,9 +240,6 @@ impl ClusterManager {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `frame` - `ClusterFrame`: The `frame` argument.
     pub async fn broadcast(&self, frame: ClusterFrame) {
         for entry in self.peers.iter() {
             let tx = &entry.value().tx;
@@ -271,9 +249,6 @@ impl ClusterManager {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `msg_id` - `u64`: The `msg_id` argument.
     pub fn vote_replication(&self, msg_id: u64) {
         if let Some(entry) = self.replication_votes.get(&msg_id) {
             let count = entry.value().fetch_add(1, Ordering::SeqCst) + 1;
@@ -287,15 +262,6 @@ impl ClusterManager {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `queue_name` - `&str`: The unique identifier string of the resource.
-    /// * `msg_id` - `u64`: The `msg_id` argument.
-    /// * `body` - `&[u8]`: Deserialized JSON payload representation containing request parameters.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub async fn replicate_publish(&self, queue_name: &str, msg_id: u64, body: &[u8]) -> bool {
         // If we have no peers, we are single-node, commit immediately.
         if self.peers.is_empty() {
@@ -337,14 +303,6 @@ impl ClusterManager {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `queue_name` - `&str`: The unique identifier string of the resource.
-    /// * `msg_id` - `u64`: The `msg_id` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub async fn replicate_ack(&self, queue_name: &str, msg_id: u64) -> bool {
         if self.peers.is_empty() {
             return true;
@@ -384,9 +342,6 @@ impl ClusterManager {
 
 // ─── Utility Helper ──────────────────────────────────
 
-/// # Returns
-///
-/// * `u64` - The evaluated outcome or operation handle.
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

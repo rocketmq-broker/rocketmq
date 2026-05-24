@@ -35,13 +35,8 @@ pub mod types;
 
 use handlers::*;
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
-///
-/// # Returns
-///
-/// * `Result<(), Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Starts the management HTTP server on the configured port, serving
+/// the RabbitMQ Management UI and REST API endpoints.
 pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
     let www_dir = crate::config::get_www_dir();
 

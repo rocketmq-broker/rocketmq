@@ -28,14 +28,6 @@
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `class_id` - `u16`: The `class_id` argument.
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - The evaluated outcome or operation handle.
 pub fn validate_channel(channel: u16, class_id: u16) -> Option<&'static str> {
     // Connection class MUST be on channel 0
     if class_id == CLASS_CONNECTION && channel != 0 {
@@ -48,13 +40,6 @@ pub fn validate_channel(channel: u16, class_id: u16) -> Option<&'static str> {
     None
 }
 
-/// # Arguments
-///
-/// * `frame_type` - `u8`: The `frame_type` argument.
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - The evaluated outcome or operation handle.
 pub fn validate_frame_type(frame_type: u8) -> Option<&'static str> {
     match frame_type {
         FRAME_METHOD | FRAME_HEADER | FRAME_BODY | FRAME_HEARTBEAT => None,
@@ -62,14 +47,6 @@ pub fn validate_frame_type(frame_type: u8) -> Option<&'static str> {
     }
 }
 
-/// # Arguments
-///
-/// * `payload_len` - `usize`: The `payload_len` argument.
-/// * `frame_max` - `u32`: The `frame_max` argument.
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - The evaluated outcome or operation handle.
 pub fn validate_frame_size(payload_len: usize, frame_max: u32) -> Option<&'static str> {
     if frame_max == 0 {
         return None; // 0 means unlimited
@@ -81,14 +58,6 @@ pub fn validate_frame_size(payload_len: usize, frame_max: u32) -> Option<&'stati
     None
 }
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `channel_max` - `u16`: The `channel_max` argument.
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - The evaluated outcome or operation handle.
 pub fn validate_channel_number(channel: u16, channel_max: u16) -> Option<&'static str> {
     if channel_max == 0 {
         return None; // 0 means unlimited
@@ -99,14 +68,6 @@ pub fn validate_channel_number(channel: u16, channel_max: u16) -> Option<&'stati
     None
 }
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `payload_len` - `usize`: The `payload_len` argument.
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - The evaluated outcome or operation handle.
 pub fn validate_heartbeat(channel: u16, payload_len: usize) -> Option<&'static str> {
     if channel != 0 {
         return Some("heartbeat on non-zero channel");
@@ -117,13 +78,6 @@ pub fn validate_heartbeat(channel: u16, payload_len: usize) -> Option<&'static s
     None
 }
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - The evaluated outcome or operation handle.
 pub fn validate_content_channel(channel: u16) -> Option<&'static str> {
     if channel == 0 {
         return Some("content frame on channel 0");

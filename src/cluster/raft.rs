@@ -21,18 +21,14 @@ use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::HashMap;
 
-/// Defines the various states or variants of raft command.
-///
-/// Defines details for raft command inside the broker ecosystem.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum RaftCommand {
     Enqueue { msg_id: u64, body: Vec<u8> },
     Ack { msg_id: u64 },
 }
 
-/// Represents the schema or state for log entry.
-///
-/// Defines details for log entry inside the broker ecosystem.
+/// A single entry in the replicated Raft log, carrying a term number
+/// and an opaque command payload.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogEntry {
     pub index: u64,
@@ -40,9 +36,10 @@ pub struct LogEntry {
     pub command: RaftCommand,
 }
 
-/// Defines the various states or variants of raft role.
+/// The current role of this node in the Raft cluster.
 ///
-/// Defines details for raft role inside the broker ecosystem.
+/// Transitions: `Follower` → `Candidate` (on election timeout) →
+/// `Leader` (on majority vote).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum RaftRole {
     Follower,
@@ -50,9 +47,6 @@ pub enum RaftRole {
     Leader,
 }
 
-/// Represents the schema or state for raft queue state.
-///
-/// Defines details for raft queue state inside the broker ecosystem.
 pub struct RaftQueueState {
     pub queue_name: String,
 
@@ -75,13 +69,7 @@ pub struct RaftQueueState {
 }
 
 impl RaftQueueState {
-    /// # Arguments
-    ///
-    /// * `queue_name` - `String`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given queue_name.
     pub fn new(queue_name: String) -> Self {
         // Initialize log with a dummy entry at index 0 to simplify logic
         let initial_log = vec![LogEntry {
@@ -104,27 +92,14 @@ impl RaftQueueState {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
     pub fn last_log_index(&self) -> u64 {
         self.log.last().map(|e| e.index).unwrap_or(0)
     }
 
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
     pub fn last_log_term(&self) -> u64 {
         self.log.last().map(|e| e.term).unwrap_or(0)
     }
 
-    /// # Arguments
-    ///
-    /// * `command` - `RaftCommand`: The `command` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Option<(u64, u64)>` - The evaluated outcome or operation handle.
     pub fn append_local_command(&mut self, command: RaftCommand) -> Option<(u64, u64)> {
         if !matches!(self.role, RaftRole::Leader) {
             return None; // Only leader can accept writes

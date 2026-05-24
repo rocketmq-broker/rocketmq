@@ -31,9 +31,11 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 pub type FieldTable = BTreeMap<String, FieldValue>;
 
-/// Defines the various states or variants of field value.
+/// A typed value inside an AMQP field table.
 ///
-/// Defines details for field value inside the broker ecosystem.
+/// Covers every type tag defined by the AMQP 0-9-1 specification,
+/// including booleans, integers of various widths, strings, timestamps,
+/// nested field tables, and void.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldValue {
     Boolean(bool),          // 't'
@@ -56,57 +58,29 @@ pub enum FieldValue {
 
 // ─── Reading ───────────────────────────────────────────
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<u8>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Reads a single unsigned byte (`AMQP octet`) from the stream.
 pub fn read_octet(r: &mut impl Read) -> io::Result<u8> {
     r.read_u8()
 }
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<u16>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Reads a big-endian `u16` (`AMQP short`) from the stream.
 pub fn read_short(r: &mut impl Read) -> io::Result<u16> {
     r.read_u16::<BigEndian>()
 }
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<u32>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Reads a big-endian `u32` (`AMQP long`) from the stream.
 pub fn read_long(r: &mut impl Read) -> io::Result<u32> {
     r.read_u32::<BigEndian>()
 }
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Reads a big-endian `u64` (`AMQP long-long`) from the stream.
 pub fn read_longlong(r: &mut impl Read) -> io::Result<u64> {
     r.read_u64::<BigEndian>()
 }
 
-/// # Arguments
+/// Reads a length-prefixed short string (max 255 bytes) from the stream.
 ///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<String>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// The first byte is the length, followed by exactly that many UTF-8 bytes.
 pub fn read_shortstr(r: &mut impl Read) -> io::Result<String> {
     let len = r.read_u8()? as usize;
     let mut buf = vec![0u8; len];
@@ -114,13 +88,9 @@ pub fn read_shortstr(r: &mut impl Read) -> io::Result<String> {
     String::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// # Arguments
+/// Reads a length-prefixed long string from the stream.
 ///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<Vec<u8>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// The first four bytes (big-endian `u32`) encode the length.
 pub fn read_longstr(r: &mut impl Read) -> io::Result<Vec<u8>> {
     let len = r.read_u32::<BigEndian>()? as usize;
     let mut buf = vec![0u8; len];
@@ -128,24 +98,10 @@ pub fn read_longstr(r: &mut impl Read) -> io::Result<Vec<u8>> {
     Ok(buf)
 }
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn read_timestamp(r: &mut impl Read) -> io::Result<u64> {
     r.read_u64::<BigEndian>()
 }
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<FieldTable>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn read_field_table(r: &mut impl Read) -> io::Result<FieldTable> {
     let data = read_longstr(r)?;
     let mut cursor = io::Cursor::new(data);
@@ -158,13 +114,8 @@ pub fn read_field_table(r: &mut impl Read) -> io::Result<FieldTable> {
     Ok(table)
 }
 
-/// # Arguments
-///
-/// * `r` - `&mut impl Read`: The `r` argument.
-///
-/// # Returns
-///
-/// * `io::Result<FieldValue>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Reads a single typed field value from the stream, dispatching on
+/// the one-byte type tag (`t`, `b`, `I`, `S`, `F`, etc.).
 pub fn read_field_value(r: &mut impl Read) -> io::Result<FieldValue> {
     let tag = r.read_u8()?;
     match tag {
@@ -193,62 +144,27 @@ pub fn read_field_value(r: &mut impl Read) -> io::Result<FieldValue> {
 
 // ─── Writing ───────────────────────────────────────────
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `v` - `u8`: The `v` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Writes a single unsigned byte (`AMQP octet`) to the stream.
 pub fn write_octet(w: &mut impl Write, v: u8) -> io::Result<()> {
     w.write_u8(v)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `v` - `u16`: The `v` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Writes a big-endian `u16` (`AMQP short`) to the stream.
 pub fn write_short(w: &mut impl Write, v: u16) -> io::Result<()> {
     w.write_u16::<BigEndian>(v)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `v` - `u32`: The `v` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Writes a big-endian `u32` (`AMQP long`) to the stream.
 pub fn write_long(w: &mut impl Write, v: u32) -> io::Result<()> {
     w.write_u32::<BigEndian>(v)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `v` - `u64`: The `v` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Writes a big-endian `u64` (`AMQP long-long`) to the stream.
 pub fn write_longlong(w: &mut impl Write, v: u64) -> io::Result<()> {
     w.write_u64::<BigEndian>(v)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `s` - `&str`: The `s` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Writes a length-prefixed short string (max 255 bytes) to the stream.
 pub fn write_shortstr(w: &mut impl Write, s: &str) -> io::Result<()> {
     let bytes = s.as_bytes();
     if bytes.len() > 255 {
@@ -261,39 +177,16 @@ pub fn write_shortstr(w: &mut impl Write, s: &str) -> io::Result<()> {
     w.write_all(bytes)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `data` - `&[u8]`: The `data` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Writes a length-prefixed long string to the stream.
 pub fn write_longstr(w: &mut impl Write, data: &[u8]) -> io::Result<()> {
     w.write_u32::<BigEndian>(data.len() as u32)?;
     w.write_all(data)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `v` - `u64`: The `v` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn write_timestamp(w: &mut impl Write, v: u64) -> io::Result<()> {
     w.write_u64::<BigEndian>(v)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `table` - `&FieldTable`: The `table` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn write_field_table(w: &mut impl Write, table: &FieldTable) -> io::Result<()> {
     let mut buf = Vec::new();
     for (name, value) in table {
@@ -303,14 +196,8 @@ pub fn write_field_table(w: &mut impl Write, table: &FieldTable) -> io::Result<(
     write_longstr(w, &buf)
 }
 
-/// # Arguments
-///
-/// * `w` - `&mut impl Write`: The `w` argument.
-/// * `v` - `&FieldValue`: The `v` argument.
-///
-/// # Returns
-///
-/// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Serializes a single typed field value to the stream, emitting the
+/// one-byte type tag followed by the encoded value.
 pub fn write_field_value(w: &mut impl Write, v: &FieldValue) -> io::Result<()> {
     match v {
         FieldValue::Boolean(b) => {

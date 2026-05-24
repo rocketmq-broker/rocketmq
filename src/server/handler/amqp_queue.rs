@@ -496,14 +496,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// # Arguments
-    ///
-    /// * `name` - `&str`: The unique identifier string of the resource.
-    /// * `flags` - `u8`: The `flags` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<u8>` - The evaluated outcome or operation handle.
     fn make_declare_args(name: &str, flags: u8) -> Vec<u8> {
         let mut args = Vec::new();
         write_short(&mut args, 0).unwrap();

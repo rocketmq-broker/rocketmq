@@ -20,7 +20,10 @@
 use std::time::Duration;
 
 /// Configurable parameters for queue creation (durable, exclusive, TTL, DLX, etc.).
+/// Parsed queue configuration derived from AMQP `x-*` headers.
 ///
+/// Includes message TTL, queue expiry, max length, dead-letter
+/// exchange/routing-key, and priority level settings.
 /// Configurable parameters for queue creation (durable, exclusive, TTL, DLX, etc.).
 #[derive(Clone, Debug, Default)]
 pub struct QueueOptions {
@@ -41,13 +44,6 @@ pub struct QueueOptions {
 }
 
 impl QueueOptions {
-    /// # Arguments
-    ///
-    /// * `headers` - `&str`: The `headers` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `(String, Self)` - The evaluated outcome or operation handle.
     pub fn from_headers(headers: &str) -> (String, Self) {
         let mut name = String::new();
         let mut opts = Self::default();

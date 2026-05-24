@@ -54,16 +54,6 @@ pub async fn deny_access(
     true
 }
 
-/// # Arguments
-///
-/// * `code` - `u16`: The `code` argument.
-/// * `text` - `&str`: The `text` argument.
-/// * `class_id` - `u16`: The `class_id` argument.
-/// * `method_id` - `u16`: The `method_id` argument.
-///
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn build_channel_close(code: u16, text: &str, class_id: u16, method_id: u16) -> Vec<u8> {
     use crate::core::types::{write_short, write_shortstr};
     let mut buf = Vec::with_capacity(4 + 1 + text.len() + 4);
@@ -88,14 +78,6 @@ pub async fn send_channel_error(
     let _ = writer.flush().await;
 }
 
-/// # Arguments
-///
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
-/// * `conn_id` - `u64`: The `conn_id` argument.
-///
-/// # Returns
-///
-/// * `(String, String)` - The evaluated outcome or operation handle.
 pub fn get_conn_auth(broker: &Broker, conn_id: u64) -> (String, String) {
     broker
         .conn_state

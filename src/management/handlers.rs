@@ -26,13 +26,6 @@ use tracing::info;
 use crate::management::types::*;
 use crate::state::{Broker, BrokerState};
 
-/// # Arguments
-///
-/// * `name` - `&str`: The unique identifier string of the resource.
-///
-/// # Returns
-///
-/// * `&str` - The evaluated outcome or operation handle.
 fn resolve_exchange_name(name: &str) -> &str {
     if name.is_empty() || name == "amq.default" {
         ""
@@ -44,23 +37,13 @@ fn resolve_exchange_name(name: &str) -> &str {
 // ─── Health Checks ─────────────────────────────────────
 
 /// Verifies that the broker HTTP server is responsive.
-///
 /// Verifies that the broker HTTP server is responsive.
-///
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn healthcheck() -> StatusCode {
     StatusCode::OK
 }
 
 /// Checks if there are any active resource alarms (e.g., memory or disk pressure).
-///
 /// Checks if there are any active resource alarms (e.g., memory or disk pressure).
-///
-/// # Returns
-///
-/// * `Json<HealthResponse>` - JSON formatted data encapsulation mirroring standard API schemas.
 pub async fn health_alarms() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".into(),
@@ -68,12 +51,7 @@ pub async fn health_alarms() -> Json<HealthResponse> {
 }
 
 /// Verifies if the specified network port listener is active.
-///
 /// Verifies if the specified network port listener is active.
-///
-/// # Arguments
-///
-/// * `Path(port`: The `Path(port` argument.
 pub async fn health_port_listener(Path(port): Path<u16>) -> Json<HealthResponse> {
     let ok = matches!(port, 5672 | 5671 | 15672);
     Json(HealthResponse {
@@ -84,12 +62,7 @@ pub async fn health_port_listener(Path(port): Path<u16>) -> Json<HealthResponse>
 // ─── Overview & Nodes ──────────────────────────────────
 
 /// Provides an overview of the broker status, object counts, and message rates.
-///
 /// Provides an overview of the broker status, object counts, and message rates.
-///
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
     let queue_count = broker.queues.len();
     let connection_count = broker.connections.len();
@@ -268,12 +241,7 @@ pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
 }
 
 /// Lists all nodes in the cluster with memory, disk, and socket statistics.
-///
 /// Lists all nodes in the cluster with memory, disk, and socket statistics.
-///
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
     let connection_count = broker.connections.len();
     let start_time = std::time::SystemTime::now()
@@ -426,17 +394,11 @@ pub async fn get_node(
     }
 }
 
-/// # Returns
-///
-/// * `Json<serde_json::Value>` - JSON formatted data encapsulation mirroring standard API schemas.
 pub async fn get_cluster_name() -> Json<serde_json::Value> {
     let node_name = format!("rocketmq-node-{}@localhost", crate::config::get_node_id());
     Json(serde_json::json!({ "name": node_name }))
 }
 
-/// # Arguments
-///
-/// * `Json(_req`: Deserialized JSON payload representation containing request parameters.
 pub async fn set_cluster_name(Json(_req): Json<ClusterNameRequest>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
@@ -444,12 +406,9 @@ pub async fn set_cluster_name(Json(_req): Json<ClusterNameRequest>) -> StatusCod
 // ─── Virtual Hosts ─────────────────────────────────────
 
 /// Lists all configured virtual hosts in the broker.
-///
+/// Returns the list of all configured virtual host names.
 /// Lists all configured virtual hosts in the broker.
-///
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Returns the list of all configured virtual host names.
 pub async fn list_vhosts(State(broker): State<Broker>) -> Json<Vec<VHostInfo>> {
     let mut total_messages = 0usize;
     let mut total_inflight = 0usize;
@@ -502,12 +461,7 @@ pub async fn get_vhost(
 }
 
 /// Creates a new virtual host with the specified name.
-///
 /// Creates a new virtual host with the specified name.
-///
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn create_vhost(State(broker): State<Broker>, Path(name): Path<String>) -> StatusCode {
     broker
         .vhosts
@@ -517,12 +471,7 @@ pub async fn create_vhost(State(broker): State<Broker>, Path(name): Path<String>
 }
 
 /// Removes a virtual host and all of its associated queues and exchanges.
-///
 /// Removes a virtual host and all of its associated queues and exchanges.
-///
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn delete_vhost(State(broker): State<Broker>, Path(name): Path<String>) -> StatusCode {
     if name == "/" {
         return StatusCode::FORBIDDEN;
@@ -561,9 +510,6 @@ pub async fn vhost_permissions(
     Json(perms)
 }
 
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn start_vhost() -> StatusCode {
     StatusCode::NO_CONTENT
 }
@@ -596,18 +542,7 @@ pub async fn get_queue(
 }
 
 /// Builds the queue info payload for management API responses.
-///
 /// Builds the queue info payload for management API responses.
-///
-/// # Arguments
-///
-/// * `name` - `&str`: The unique identifier string of the resource.
-/// * `q` - `&crate::queue::QueueState`: The `q` argument.
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
-///
-/// # Returns
-///
-/// * `QueueInfo` - The evaluated outcome or operation handle.
 pub fn build_queue_info(name: &str, q: &crate::queue::QueueState, broker: &Broker) -> QueueInfo {
     let node_name = format!("rocketmq-node-{}@localhost", crate::config::get_node_id());
 
@@ -751,12 +686,7 @@ pub fn build_queue_info(name: &str, q: &crate::queue::QueueState, broker: &Broke
 }
 
 /// Deletes a queue from the broker.
-///
 /// Deletes a queue from the broker.
-///
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn delete_queue(State(broker): State<Broker>, Path(name): Path<String>) -> StatusCode {
     if broker.queues.remove(&name).is_some() {
         crate::metrics::record_queue_deleted();
@@ -852,9 +782,6 @@ pub async fn create_queue_vhost(
     StatusCode::NO_CONTENT
 }
 
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn queue_actions_vhost() -> StatusCode {
     StatusCode::NO_CONTENT
 }
@@ -1081,9 +1008,6 @@ pub async fn publish_message_vhost(
 
 // ─── Bindings ──────────────────────────────────────────
 
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn list_bindings(State(broker): State<Broker>) -> Json<Vec<BindingInfo>> {
     let exchanges = broker.exchanges.read().await;
     let mut bindings = Vec::new();
@@ -1210,15 +1134,9 @@ pub async fn delete_binding_eq(
     }
 }
 
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn create_binding_ee() -> StatusCode {
     StatusCode::NO_CONTENT
 }
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn delete_binding_ee() -> StatusCode {
     StatusCode::NO_CONTENT
 }
@@ -1514,9 +1432,6 @@ pub fn build_channel_info(
 
 // ─── Consumers ─────────────────────────────────────────
 
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn list_consumers(State(broker): State<Broker>) -> Json<Vec<ConsumerInfo>> {
     Json(build_consumers(&broker))
 }
@@ -1528,13 +1443,6 @@ pub async fn list_consumers_vhost(
     Json(build_consumers(&broker))
 }
 
-/// # Arguments
-///
-/// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
-///
-/// # Returns
-///
-/// * `Vec<ConsumerInfo>` - The evaluated outcome or operation handle.
 pub fn build_consumers(broker: &Arc<BrokerState>) -> Vec<ConsumerInfo> {
     let mut consumers = Vec::new();
     for entry in broker.queues.iter() {
@@ -1691,9 +1599,6 @@ pub async fn bulk_delete_users(
     StatusCode::NO_CONTENT
 }
 
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn list_permissions(State(broker): State<Broker>) -> Json<Vec<PermissionInfo>> {
     let users = broker.auth.list_users();
     let mut perms = Vec::new();
@@ -1814,28 +1719,16 @@ pub async fn whoami(
 
 // ─── Stubs & Feature Flags ──────────────────────────────
 
-/// # Returns
-///
-/// * `Json<Vec<serde_json::Value>>` - JSON formatted data encapsulation mirroring standard API schemas.
 pub async fn stub_empty_array() -> Json<Vec<serde_json::Value>> {
     Json(vec![])
 }
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn stub_not_found() -> StatusCode {
     StatusCode::NOT_FOUND
 }
-/// # Returns
-///
-/// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn stub_no_content() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-/// # Returns
-///
-/// * `Json<Vec<FeatureFlagInfo>>` - JSON formatted data encapsulation mirroring standard API schemas.
 pub async fn list_feature_flags() -> Json<Vec<FeatureFlagInfo>> {
     Json(vec![
         FeatureFlagInfo {
@@ -1861,9 +1754,6 @@ pub async fn list_feature_flags() -> Json<Vec<FeatureFlagInfo>> {
 
 // ─── Definitions (Export) ───────────────────────────────
 
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn get_definitions(State(broker): State<Broker>) -> Json<serde_json::Value> {
     let users: Vec<serde_json::Value> = broker.auth.list_users().into_iter()
         .map(|(name, tags)| serde_json::json!({ "name": name, "tags": tags.iter().map(|t| format!("{:?}", t).to_lowercase()).collect::<Vec<_>>().join(",") }))
@@ -1904,9 +1794,6 @@ pub async fn get_definitions(State(broker): State<Broker>) -> Json<serde_json::V
 
 // ─── Prometheus Metricsexposition ───────────────────────
 
-/// # Arguments
-///
-/// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn prometheus_metrics(State(broker): State<Broker>) -> String {
     let s = crate::metrics::get_snapshot();
     let mut out = String::with_capacity(4096);
@@ -2032,13 +1919,6 @@ pub async fn prometheus_metrics(State(broker): State<Broker>) -> String {
 
 // ─── Helpers ───────────────────────────────────────────
 
-/// # Arguments
-///
-/// * `s` - `&str`: The `s` argument.
-///
-/// # Returns
-///
-/// * `Option<Vec<u8>>` - The evaluated outcome or operation handle.
 pub fn decode_base64(s: &str) -> Option<Vec<u8>> {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut map = [0u8; 256];
@@ -2072,12 +1952,6 @@ pub fn decode_base64(s: &str) -> Option<Vec<u8>> {
     Some(result)
 }
 
-/// # Arguments
-///
-/// * `out` - `&mut String`: The `out` argument.
-/// * `name` - `&str`: The unique identifier string of the resource.
-/// * `help` - `&str`: The `help` argument.
-/// * `value` - `u64`: The `value` argument.
 fn write_counter(out: &mut String, name: &str, help: &str, value: u64) {
     out.push_str(&format!(
         "# HELP {} {}\n# TYPE {} counter\n{} {}\n\n",
@@ -2085,12 +1959,6 @@ fn write_counter(out: &mut String, name: &str, help: &str, value: u64) {
     ));
 }
 
-/// # Arguments
-///
-/// * `out` - `&mut String`: The `out` argument.
-/// * `name` - `&str`: The unique identifier string of the resource.
-/// * `help` - `&str`: The `help` argument.
-/// * `value` - `u64`: The `value` argument.
 fn write_gauge(out: &mut String, name: &str, help: &str, value: u64) {
     out.push_str(&format!(
         "# HELP {} {}\n# TYPE {} gauge\n{} {}\n\n",
@@ -2098,9 +1966,6 @@ fn write_gauge(out: &mut String, name: &str, help: &str, value: u64) {
     ));
 }
 
-/// # Arguments
-///
-/// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
 pub fn save_users(broker: &Arc<BrokerState>) {
     let db_path = crate::config::get_user_db_path();
     let path = std::path::Path::new(&db_path);
@@ -2109,13 +1974,6 @@ pub fn save_users(broker: &Arc<BrokerState>) {
     }
 }
 
-/// # Arguments
-///
-/// * `tags` - `&[String]`: The `tags` argument.
-///
-/// # Returns
-///
-/// * `Vec<crate::auth::credentials::UserTag>` - The evaluated outcome or operation handle.
 pub fn parse_user_tags(tags: &[String]) -> Vec<crate::auth::credentials::UserTag> {
     tags.iter()
         .filter_map(|t| match t.as_str() {
@@ -2127,13 +1985,6 @@ pub fn parse_user_tags(tags: &[String]) -> Vec<crate::auth::credentials::UserTag
         .collect()
 }
 
-/// # Arguments
-///
-/// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
-///
-/// # Returns
-///
-/// * `(usize, usize)` - The evaluated outcome or operation handle.
 pub fn queue_totals_for_vhost(broker: &Arc<BrokerState>) -> (usize, usize) {
     let (mut msgs, mut inflight) = (0, 0);
     for entry in broker.queues.iter() {
@@ -2144,9 +1995,6 @@ pub fn queue_totals_for_vhost(broker: &Arc<BrokerState>) -> (usize, usize) {
     (msgs, inflight)
 }
 
-/// # Returns
-///
-/// * `u64` - The evaluated outcome or operation handle.
 pub fn get_process_memory() -> u64 {
     std::fs::read_to_string("/proc/self/statm")
         .ok()
@@ -2157,9 +2005,6 @@ pub fn get_process_memory() -> u64 {
         .unwrap_or(0)
 }
 
-/// # Returns
-///
-/// * `u64` - The evaluated outcome or operation handle.
 pub fn get_disk_free() -> u64 {
     #[cfg(target_os = "linux")]
     {
@@ -2176,25 +2021,16 @@ pub fn get_disk_free() -> u64 {
     10 * 1024 * 1024 * 1024
 }
 
-/// # Returns
-///
-/// * `usize` - The evaluated outcome or operation handle.
 pub fn num_cpus() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
 }
 
-/// # Returns
-///
-/// * `String` - The evaluated outcome or operation handle.
 pub async fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// # Returns
-///
-/// * `Json<serde_json::Value>` - JSON formatted data encapsulation mirroring standard API schemas.
 pub async fn get_node_memory() -> Json<serde_json::Value> {
     let mem = get_process_memory();
     Json(serde_json::json!({

@@ -26,7 +26,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 /// Defines access rules (configure, write, read) for a user on a virtual host.
-///
+/// A per-vhost permission entry specifying regex patterns for
+/// configure, write, and read access on resource names.
 /// Defines access rules (configure, write, read) for a user on a virtual host.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Permission {
@@ -38,17 +39,7 @@ pub struct Permission {
 }
 
 impl Permission {
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    /// * `configure` - `&str`: The `configure` argument.
-    /// * `write` - `&str`: The `write` argument.
-    /// * `read` - `&str`: The `read` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new permission entry for the given user and virtual host.
     pub fn new(username: &str, vhost: &str, configure: &str, write: &str, read: &str) -> Self {
         Self {
             username: username.to_string(),
@@ -59,39 +50,18 @@ impl Permission {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
     pub fn full_access(username: &str, vhost: &str) -> Self {
         Self::new(username, vhost, ".*", ".*", ".*")
     }
 
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `vhost` - `&str`: Target virtual host namespace string.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
     pub fn no_access(username: &str, vhost: &str) -> Self {
         Self::new(username, vhost, "", "", "")
     }
 }
 
-/// # Arguments
+/// Tests whether a resource name matches a permission regex pattern.
 ///
-/// * `pattern` - `&str`: The `pattern` argument.
-/// * `resource` - `&str`: The `resource` argument.
-///
-/// # Returns
-///
-/// * `bool` - The evaluated outcome or operation handle.
+/// An empty pattern matches nothing; `".*"` matches everything.
 pub fn matches_resource(pattern: &str, resource: &str) -> bool {
     if pattern.is_empty() {
         return false;

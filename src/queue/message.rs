@@ -19,9 +19,6 @@
 
 use std::time::Instant;
 
-/// Represents the schema or state for message.
-///
-/// Defines details for message inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct Message {
     pub id: u64,
@@ -36,15 +33,7 @@ pub struct Message {
 }
 
 impl Message {
-    /// # Arguments
-    ///
-    /// * `id` - `u64`: The `id` argument.
-    /// * `headers` - `Vec<u8>`: The `headers` argument.
-    /// * `body` - `Vec<u8>`: Deserialized JSON payload representation containing request parameters.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new message with the given ID, serialized headers, and body payload.
     pub fn new(id: u64, headers: Vec<u8>, body: Vec<u8>) -> Self {
         Self {
             id,
@@ -79,17 +68,11 @@ impl Message {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_expired(&self) -> bool {
         self.expiration.is_some_and(|exp| Instant::now() >= exp)
     }
 }
 
-/// Represents the schema or state for message ref.
-///
-/// Defines details for message ref inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct MessageRef {
     pub id: u64,
@@ -104,9 +87,8 @@ pub struct MessageRef {
     pub routing_key: String,
 }
 
-/// Defines the various states or variants of queue message.
-///
-/// Defines details for queue message inside the broker ecosystem.
+/// A message stored in a queue, either as a fully materialized payload
+/// or as a reference into a WAL segment for lazy loading.
 #[derive(Clone, Debug)]
 pub enum QueueMessage {
     Ref(MessageRef),
@@ -114,9 +96,6 @@ pub enum QueueMessage {
 }
 
 impl QueueMessage {
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
     pub fn id(&self) -> u64 {
         match self {
             QueueMessage::Ref(r) => r.id,
@@ -124,9 +103,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `u8` - The evaluated outcome or operation handle.
     pub fn priority(&self) -> u8 {
         match self {
             QueueMessage::Ref(r) => r.priority,
@@ -134,9 +110,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `Option<Instant>` - The evaluated outcome or operation handle.
     pub fn expiration(&self) -> Option<Instant> {
         match self {
             QueueMessage::Ref(r) => r.expiration,
@@ -144,16 +117,10 @@ impl QueueMessage {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_expired(&self) -> bool {
         self.expiration().is_some_and(|exp| Instant::now() >= exp)
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn redelivered(&self) -> bool {
         match self {
             QueueMessage::Ref(r) => r.redelivered,
@@ -161,9 +128,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `val` - `bool`: The `val` argument.
     pub fn set_redelivered(&mut self, val: bool) {
         match self {
             QueueMessage::Ref(r) => r.redelivered = val,
@@ -171,9 +135,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `u32` - The evaluated outcome or operation handle.
     pub fn delivery_count(&self) -> u32 {
         match self {
             QueueMessage::Ref(r) => r.delivery_count,
@@ -181,9 +142,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `val` - `u32`: The `val` argument.
     pub fn set_delivery_count(&mut self, val: u32) {
         match self {
             QueueMessage::Ref(r) => r.delivery_count = val,
@@ -191,13 +149,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `wal` - `&crate::storage::wal::Wal`: The `wal` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `std::io::Result<Message>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn resolve(self, wal: &crate::storage::wal::Wal) -> std::io::Result<Message> {
         match self {
             QueueMessage::Full(m) => Ok(m),
@@ -220,9 +171,6 @@ impl QueueMessage {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `Message` - The evaluated outcome or operation handle.
     pub fn unwrap_full(self) -> Message {
         match self {
             QueueMessage::Full(m) => m,

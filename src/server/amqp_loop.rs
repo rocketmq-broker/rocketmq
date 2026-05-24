@@ -43,9 +43,6 @@ use crate::server::handler::amqp_basic;
 use crate::server::handler::amqp_dispatch;
 use crate::state::{Broker, ConnectionState};
 
-/// Represents the schema or state for content state.
-///
-/// Defines details for content state inside the broker ecosystem.
 struct ContentState {
     exchange: String,
     routing_key: String,
@@ -57,12 +54,8 @@ struct ContentState {
 }
 
 /// Spawns a green thread / tokio task to handle a plain AMQP connection.
-///
-/// # Arguments
-///
-/// * `stream` - `TcpStream`: The `stream` argument.
-/// * `addr` - `SocketAddr`: The `addr` argument.
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Spawns a new async task to handle an incoming plain-TCP AMQP
+/// connection from the given stream and address.
 pub fn spawn_amqp(stream: TcpStream, addr: SocketAddr, broker: Broker) {
     let boxed: Box<dyn crate::server::AsyncStream> = Box::new(stream);
     spawn_amqp_on_stream(boxed, addr, broker);
@@ -298,11 +291,6 @@ pub fn spawn_amqp_on_stream(
     });
 }
 
-/// # Arguments
-///
-/// * `writer` - `&mut crate::server::AmqpWriter`: The `writer` argument.
-/// * `code` - `u16`: The `code` argument.
-/// * `text` - `&str`: The `text` argument.
 async fn send_connection_close(writer: &mut crate::server::AmqpWriter, code: u16, text: &str) {
     let close = amqp_connection::build_connection_close(code, text, 0, 0);
     let frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE, &close);

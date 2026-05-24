@@ -19,9 +19,11 @@
 
 use std::collections::HashMap;
 
-/// Defines the various states or variants of exchange type.
+/// AMQP exchange type discriminator.
 ///
-/// Defines details for exchange type inside the broker ecosystem.
+/// Determines the routing algorithm applied when a message is published
+/// to an exchange: exact key match, broadcast, wildcard patterns, or
+/// header-based filtering.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExchangeType {
     Direct,
@@ -31,13 +33,8 @@ pub enum ExchangeType {
 }
 
 impl ExchangeType {
-    /// # Arguments
-    ///
-    /// * `s` - `&str`: The `s` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Option<Self>` - The evaluated outcome or operation handle.
+    /// Parses an exchange type string (`"direct"`, `"fanout"`, `"topic"`,
+    /// `"headers"`) into the corresponding variant, or `None` if unknown.
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "direct" => Some(Self::Direct),
@@ -48,9 +45,7 @@ impl ExchangeType {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `&'static str` - The evaluated outcome or operation handle.
+    /// Returns the canonical AMQP string representation of this exchange type.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Direct => "direct",
@@ -60,9 +55,7 @@ impl ExchangeType {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `u8` - The evaluated outcome or operation handle.
+    /// Returns the single-byte wire encoding of this exchange type.
     pub fn to_byte(&self) -> u8 {
         match self {
             Self::Direct => 0x00,
@@ -73,18 +66,17 @@ impl ExchangeType {
     }
 }
 
-/// Defines the various states or variants of headers match.
+/// Match mode for headers-type exchanges.
 ///
-/// Defines details for headers match inside the broker ecosystem.
+/// `All` requires every binding argument to match; `Any` requires at least one.
 #[derive(Clone, Debug)]
 pub enum HeadersMatch {
     All(HashMap<String, String>),
     Any(HashMap<String, String>),
 }
 
-/// Represents the schema or state for binding.
-///
-/// Defines details for binding inside the broker ecosystem.
+/// A binding between an exchange and a queue with an optional routing key
+/// and headers-match arguments.
 #[derive(Clone, Debug)]
 pub struct Binding {
     pub queue_name: String,
@@ -92,9 +84,10 @@ pub struct Binding {
     pub headers_match: Option<HeadersMatch>,
 }
 
-/// Represents the schema or state for exchange.
+/// An AMQP exchange that routes published messages to zero or more bound queues.
 ///
-/// Defines details for exchange inside the broker ecosystem.
+/// Exchanges are identified by name, typed by [`ExchangeType`], and hold
+/// a set of [`Binding`] entries used during message routing.
 pub struct Exchange {
     pub name: String,
     pub kind: ExchangeType,
@@ -104,15 +97,7 @@ pub struct Exchange {
 }
 
 impl Exchange {
-    /// # Arguments
-    ///
-    /// * `name` - `String`: The unique identifier string of the resource.
-    /// * `kind` - `ExchangeType`: The `kind` argument.
-    /// * `durable` - `bool`: The `durable` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given name, kind, durable.
     pub fn new(name: String, kind: ExchangeType, durable: bool) -> Self {
         Self {
             name,
@@ -123,9 +108,6 @@ impl Exchange {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `binding` - `Binding`: The `binding` argument.
     pub fn add_binding(&mut self, binding: Binding) {
         // Avoid duplicate bindings (same queue + routing key)
         let exists = self
@@ -137,23 +119,13 @@ impl Exchange {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `queue_name` - `&str`: The unique identifier string of the resource.
-    /// * `routing_key` - `&str`: The `routing_key` argument.
     pub fn remove_binding(&mut self, queue_name: &str, routing_key: &str) {
         self.bindings
             .retain(|b| !(b.queue_name == queue_name && b.routing_key == routing_key));
     }
 
-    /// # Arguments
-    ///
-    /// * `routing_key` - `&str`: The `routing_key` argument.
-    /// * `headers` - `&HashMap<String, String>`: The `headers` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<String>` - The evaluated outcome or operation handle.
+    /// Routes a message through this exchange, returning the names of all
+    /// queues whose bindings match the given routing key and headers.
     pub fn route(&self, routing_key: &str, headers: &HashMap<String, String>) -> Vec<String> {
         match self.kind {
             ExchangeType::Direct => self.route_direct(routing_key),
@@ -163,13 +135,6 @@ impl Exchange {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `routing_key` - `&str`: The `routing_key` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_direct(&self, routing_key: &str) -> Vec<String> {
         self.bindings
             .iter()
@@ -178,20 +143,10 @@ impl Exchange {
             .collect()
     }
 
-    /// # Returns
-    ///
-    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_fanout(&self) -> Vec<String> {
         self.bindings.iter().map(|b| b.queue_name.clone()).collect()
     }
 
-    /// # Arguments
-    ///
-    /// * `routing_key` - `&str`: The `routing_key` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_topic(&self, routing_key: &str) -> Vec<String> {
         self.bindings
             .iter()
@@ -200,13 +155,6 @@ impl Exchange {
             .collect()
     }
 
-    /// # Arguments
-    ///
-    /// * `msg_headers` - `&HashMap<String, String>`: The `msg_headers` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<String>` - The evaluated outcome or operation handle.
     fn route_headers(&self, msg_headers: &HashMap<String, String>) -> Vec<String> {
         self.bindings
             .iter()
@@ -224,28 +172,16 @@ impl Exchange {
     }
 }
 
-/// # Arguments
+/// Evaluates whether a routing key matches a topic binding pattern.
 ///
-/// * `pattern` - `&str`: The `pattern` argument.
-/// * `routing_key` - `&str`: The `routing_key` argument.
-///
-/// # Returns
-///
-/// * `bool` - The evaluated outcome or operation handle.
+/// Supports `*` (exactly one dot-delimited word) and `#` (zero or
+/// more words) wildcards per the AMQP topic exchange specification.
 fn topic_matches(pattern: &str, routing_key: &str) -> bool {
     let pattern_parts: Vec<&str> = pattern.split('.').collect();
     let key_parts: Vec<&str> = routing_key.split('.').collect();
     topic_match_recursive(&pattern_parts, &key_parts)
 }
 
-/// # Arguments
-///
-/// * `pattern` - `&[&str]`: The `pattern` argument.
-/// * `key` - `&[&str]`: The `key` argument.
-///
-/// # Returns
-///
-/// * `bool` - The evaluated outcome or operation handle.
 fn topic_match_recursive(pattern: &[&str], key: &[&str]) -> bool {
     match (pattern.first(), key.first()) {
         (None, None) => true,
@@ -271,9 +207,9 @@ fn topic_match_recursive(pattern: &[&str], key: &[&str]) -> bool {
     }
 }
 
-/// # Returns
-///
-/// * `HashMap<String, Exchange>` - The evaluated outcome or operation handle.
+/// Creates the set of pre-declared AMQP default exchanges:
+/// `""` (direct), `amq.direct`, `amq.fanout`, `amq.topic`, and
+/// `amq.headers`.
 pub fn create_default_exchanges() -> HashMap<String, Exchange> {
     let mut exchanges = HashMap::new();
 

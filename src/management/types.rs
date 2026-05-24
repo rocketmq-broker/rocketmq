@@ -25,9 +25,6 @@ use std::time::Instant;
 
 // ─── Telemetry Rates State ─────────────────────────────
 
-/// Represents the schema or state for rate state.
-///
-/// Defines details for rate state inside the broker ecosystem.
 pub struct RateState {
     pub last_time: Instant,
     pub last_publish: u64,
@@ -142,9 +139,6 @@ pub fn get_history_samples(metric: &str) -> Vec<SamplePoint> {
         .collect()
 }
 
-/// # Returns
-///
-/// * `&'static Mutex<RateState>` - The evaluated outcome or operation handle.
 fn rate_state() -> &'static Mutex<RateState> {
     RATE_STATE.get_or_init(|| {
         Mutex::new(RateState {
@@ -173,9 +167,6 @@ fn rate_state() -> &'static Mutex<RateState> {
     })
 }
 
-/// # Arguments
-///
-/// * `state` - `&mut RateState`: The `state` argument.
 fn refresh_rates(state: &mut RateState) {
     let now = Instant::now();
     let elapsed = now.duration_since(state.last_time).as_secs_f64();
@@ -221,9 +212,6 @@ fn refresh_rates(state: &mut RateState) {
     state.last_queue_deleted = qdel;
 }
 
-/// # Returns
-///
-/// * `(u64, f64, u64, f64, u64, f64)` - The evaluated outcome or operation handle.
 pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
     let mut state = rate_state().lock().unwrap();
     refresh_rates(&mut state);
@@ -240,9 +228,6 @@ pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
     )
 }
 
-/// # Returns
-///
-/// * `serde_json::Value` - The evaluated outcome or operation handle.
 pub fn get_churn_rates() -> serde_json::Value {
     let mut state = rate_state().lock().unwrap();
     refresh_rates(&mut state);
@@ -270,9 +255,6 @@ pub fn get_churn_rates() -> serde_json::Value {
 
 // ─── Pagination ────────────────────────────────────────
 
-/// Represents the schema or state for pagination params.
-///
-/// Defines details for pagination params inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct PaginationParams {
     pub page: Option<usize>,
@@ -281,9 +263,6 @@ pub struct PaginationParams {
     pub use_regex: Option<String>,
 }
 
-/// Represents the schema or state for paginated response.
-///
-/// Defines details for paginated response inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct PaginatedResponse<T: Serialize> {
     pub items: Vec<T>,
@@ -296,14 +275,6 @@ pub struct PaginatedResponse<T: Serialize> {
 }
 
 impl<T: Serialize> PaginatedResponse<T> {
-    /// # Arguments
-    ///
-    /// * `items` - `Vec<T>`: The `items` argument.
-    /// * `params` - `&PaginationParams`: The `params` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
     pub fn from_vec(items: Vec<T>, params: &PaginationParams) -> Self {
         let total_count = items.len();
         let page = params.page.unwrap_or(1).max(1);
@@ -328,8 +299,6 @@ impl<T: Serialize> PaginatedResponse<T> {
     }
 }
 
-/// Represents the schema or state for rate details.
-///
 /// A single time-series data point for chart rendering.
 #[derive(Serialize, Clone)]
 pub struct SamplePoint {
@@ -337,7 +306,6 @@ pub struct SamplePoint {
     pub timestamp: u64,
 }
 
-/// Defines details for rate details inside the broker ecosystem.
 #[derive(Serialize, Clone)]
 pub struct RateDetails {
     pub rate: f64,
@@ -392,9 +360,6 @@ impl RateDetails {
     }
 }
 
-/// Represents the schema or state for message stats.
-///
-/// Defines details for message stats inside the broker ecosystem.
 #[derive(Serialize, Clone)]
 pub struct MessageStats {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -421,9 +386,6 @@ pub struct MessageStats {
     pub confirm_details: Option<RateDetails>,
 }
 
-/// Represents the schema or state for overview response.
-///
-/// Defines details for overview response inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct OverviewResponse {
     pub cluster_name: String,
@@ -449,9 +411,6 @@ pub struct OverviewResponse {
     pub statistics_db_event_queue: u64,
 }
 
-/// Represents the schema or state for object totals.
-///
-/// Defines details for object totals inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ObjectTotals {
     pub queues: usize,
@@ -461,9 +420,6 @@ pub struct ObjectTotals {
     pub consumers: usize,
 }
 
-/// Represents the schema or state for queue totals.
-///
-/// Defines details for queue totals inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct QueueTotals {
     pub messages: usize,
@@ -477,9 +433,6 @@ pub struct QueueTotals {
     pub messages_unacknowledged_details: Option<RateDetails>,
 }
 
-/// Represents the schema or state for listener info.
-///
-/// Defines details for listener info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ListenerInfo {
     pub node: String,
@@ -489,9 +442,6 @@ pub struct ListenerInfo {
     pub tls: bool,
 }
 
-/// Represents the schema or state for exchange type info.
-///
-/// Defines details for exchange type info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ExchangeTypeInfo {
     pub name: String,
@@ -499,9 +449,6 @@ pub struct ExchangeTypeInfo {
     pub enabled: bool,
 }
 
-/// Represents the schema or state for node info.
-///
-/// Defines details for node info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct NodeInfo {
     pub name: String,
@@ -543,7 +490,6 @@ pub struct NodeInfo {
 }
 
 /// Detailed virtual host telemetry and status payload.
-///
 /// Detailed virtual host telemetry and status payload.
 #[derive(Serialize)]
 pub struct VHostInfo {
@@ -557,17 +503,11 @@ pub struct VHostInfo {
     pub tracing: bool,
 }
 
-/// Represents the schema or state for health response.
-///
-/// Defines details for health response inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct HealthResponse {
     pub status: String,
 }
 
-/// Represents the schema or state for queue info.
-///
-/// Defines details for queue info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct QueueInfo {
     pub name: String,
@@ -607,9 +547,6 @@ pub struct QueueInfo {
     pub operator_policy: Option<String>,
 }
 
-/// Represents the schema or state for exchange info.
-///
-/// Defines details for exchange info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ExchangeInfo {
     pub name: String,
@@ -623,9 +560,6 @@ pub struct ExchangeInfo {
     pub message_stats: MessageStats,
 }
 
-/// Represents the schema or state for connection info.
-///
-/// Defines details for connection info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ConnectionInfo {
     pub name: String,
@@ -648,9 +582,6 @@ pub struct ConnectionInfo {
     pub auth_mechanism: String,
 }
 
-/// Represents the schema or state for user info.
-///
-/// Defines details for user info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub name: String,
@@ -659,9 +590,6 @@ pub struct UserInfo {
     pub hashing_algorithm: String,
 }
 
-/// Represents the schema or state for create user request.
-///
-/// Defines details for create user request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -670,17 +598,11 @@ pub struct CreateUserRequest {
     pub tags: Vec<String>,
 }
 
-/// Represents the schema or state for change password request.
-///
-/// Defines details for change password request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct ChangePasswordRequest {
     pub password: String,
 }
 
-/// Represents the schema or state for permission info.
-///
-/// Defines details for permission info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct PermissionInfo {
     pub user: String,
@@ -690,9 +612,6 @@ pub struct PermissionInfo {
     pub read: String,
 }
 
-/// Represents the schema or state for set permission request.
-///
-/// Defines details for set permission request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct SetPermissionRequest {
     pub configure: String,
@@ -700,9 +619,6 @@ pub struct SetPermissionRequest {
     pub read: String,
 }
 
-/// Represents the schema or state for publish request.
-///
-/// Defines details for publish request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct PublishRequest {
     pub routing_key: String,
@@ -711,9 +627,6 @@ pub struct PublishRequest {
     pub properties: PublishProperties,
 }
 
-/// Represents the schema or state for publish properties.
-///
-/// Defines details for publish properties inside the broker ecosystem.
 #[derive(Deserialize, Default)]
 pub struct PublishProperties {
     #[serde(default)]
@@ -722,9 +635,6 @@ pub struct PublishProperties {
     pub content_type: Option<String>,
 }
 
-/// Represents the schema or state for get messages request.
-///
-/// Defines details for get messages request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct GetMessagesRequest {
     #[serde(
@@ -742,21 +652,11 @@ where
 {
     use serde::de;
 
-    /// Represents the schema or state for usize or string.
-    ///
-    /// Defines details for usize or string inside the broker ecosystem.
     struct UsizeOrString;
 
     impl<'de> de::Visitor<'de> for UsizeOrString {
         type Value = usize;
 
-        /// # Arguments
-        ///
-        /// * `f` - `&mut std::fmt::Formatter`: The `f` argument.
-        ///
-        /// # Returns
-        ///
-        /// * `std::fmt::Result` - A standard rust Result wrapping the status payloads or server failure codes.
         fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             f.write_str("a usize or a stringified usize")
         }
@@ -781,22 +681,13 @@ where
     deserializer.deserialize_any(UsizeOrString)
 }
 
-/// # Returns
-///
-/// * `usize` - The evaluated outcome or operation handle.
 pub fn default_count() -> usize {
     1
 }
-/// # Returns
-///
-/// * `String` - The evaluated outcome or operation handle.
 pub fn default_ack_mode() -> String {
     "ack_requeue_false".into()
 }
 
-/// Represents the schema or state for message payload.
-///
-/// Defines details for message payload inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct MessagePayload {
     pub payload: String,
@@ -806,9 +697,6 @@ pub struct MessagePayload {
     pub message_count: usize,
 }
 
-/// Represents the schema or state for binding info.
-///
-/// Defines details for binding info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct BindingInfo {
     pub source: String,
@@ -820,9 +708,6 @@ pub struct BindingInfo {
     pub properties_key: String,
 }
 
-/// Represents the schema or state for channel info.
-///
-/// Defines details for channel info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ChannelInfo {
     pub name: String,
@@ -851,9 +736,6 @@ pub struct ChannelInfo {
     pub garbage_collection: Option<serde_json::Value>,
 }
 
-/// Represents the schema or state for consumer info.
-///
-/// Defines details for consumer info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct ConsumerInfo {
     pub consumer_tag: String,
@@ -864,9 +746,6 @@ pub struct ConsumerInfo {
     pub active: bool,
 }
 
-/// Represents the schema or state for feature flag info.
-///
-/// Defines details for feature flag info inside the broker ecosystem.
 #[derive(Serialize)]
 pub struct FeatureFlagInfo {
     pub name: String,
@@ -875,17 +754,11 @@ pub struct FeatureFlagInfo {
     pub desc: String,
 }
 
-/// Represents the schema or state for cluster name request.
-///
-/// Defines details for cluster name request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct ClusterNameRequest {
     pub name: String,
 }
 
-/// Represents the schema or state for create queue request.
-///
-/// Defines details for create queue request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateQueueRequest {
     #[serde(default)]
@@ -898,9 +771,6 @@ pub struct CreateQueueRequest {
     pub arguments: serde_json::Value,
 }
 
-/// Represents the schema or state for create exchange request.
-///
-/// Defines details for create exchange request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateExchangeRequest {
     #[serde(rename = "type", default = "default_exchange_type")]
@@ -915,16 +785,10 @@ pub struct CreateExchangeRequest {
     pub arguments: serde_json::Value,
 }
 
-/// # Returns
-///
-/// * `String` - The evaluated outcome or operation handle.
 pub fn default_exchange_type() -> String {
     "direct".into()
 }
 
-/// Represents the schema or state for create binding request.
-///
-/// Defines details for create binding request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct CreateBindingRequest {
     #[serde(default)]
@@ -933,9 +797,6 @@ pub struct CreateBindingRequest {
     pub arguments: serde_json::Value,
 }
 
-/// Represents the schema or state for bulk delete request.
-///
-/// Defines details for bulk delete request inside the broker ecosystem.
 #[derive(Deserialize)]
 pub struct BulkDeleteRequest {
     pub users: Vec<String>,

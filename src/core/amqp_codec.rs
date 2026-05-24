@@ -50,9 +50,6 @@ pub const DEFAULT_HEARTBEAT: u16 = 60;
 
 // ─── Frame Structures ─────────────────────────────────
 
-/// Represents the schema or state for amqp frame.
-///
-/// Defines details for amqp frame inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct AmqpFrame {
     pub frame_type: u8,
@@ -60,9 +57,6 @@ pub struct AmqpFrame {
     pub payload: Vec<u8>,
 }
 
-/// Represents the schema or state for method frame.
-///
-/// Defines details for method frame inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct MethodFrame {
     pub class_id: u16,
@@ -70,9 +64,6 @@ pub struct MethodFrame {
     pub arguments: Vec<u8>,
 }
 
-/// Represents the schema or state for content header.
-///
-/// Defines details for content header inside the broker ecosystem.
 #[derive(Clone, Debug)]
 pub struct ContentHeader {
     pub class_id: u16,
@@ -82,16 +73,6 @@ pub struct ContentHeader {
 
 // ─── Frame Encoding ───────────────────────────────────
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `class_id` - `u16`: The `class_id` argument.
-/// * `method_id` - `u16`: The `method_id` argument.
-/// * `args` - `&[u8]`: The `args` argument.
-///
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn encode_method_frame(channel: u16, class_id: u16, method_id: u16, args: &[u8]) -> Vec<u8> {
     let payload_size = 4 + args.len(); // class_id(2) + method_id(2) + args
     let mut buf = Vec::with_capacity(8 + payload_size);
@@ -128,14 +109,6 @@ pub fn encode_content_header(
     buf
 }
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `body` - `&[u8]`: Deserialized JSON payload representation containing request parameters.
-///
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn encode_body_frame(channel: u16, body: &[u8]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(8 + body.len());
     buf.push(FRAME_BODY);
@@ -146,22 +119,12 @@ pub fn encode_body_frame(channel: u16, body: &[u8]) -> Vec<u8> {
     buf
 }
 
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn encode_heartbeat() -> Vec<u8> {
     vec![FRAME_HEARTBEAT, 0, 0, 0, 0, 0, 0, FRAME_END]
 }
 
 // ─── Frame Decoding ───────────────────────────────────
 
-/// # Arguments
-///
-/// * `data` - `&[u8]`: The `data` argument.
-///
-/// # Returns
-///
-/// * `io::Result<(AmqpFrame, usize)>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
     if data.len() < 8 {
         return Err(io::Error::new(
@@ -200,13 +163,6 @@ pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
     ))
 }
 
-/// # Arguments
-///
-/// * `payload` - `&[u8]`: The `payload` argument.
-///
-/// # Returns
-///
-/// * `io::Result<MethodFrame>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn decode_method(payload: &[u8]) -> io::Result<MethodFrame> {
     if payload.len() < 4 {
         return Err(io::Error::new(
@@ -224,13 +180,6 @@ pub fn decode_method(payload: &[u8]) -> io::Result<MethodFrame> {
     })
 }
 
-/// # Arguments
-///
-/// * `payload` - `&[u8]`: The `payload` argument.
-///
-/// # Returns
-///
-/// * `io::Result<ContentHeader>` - A standard rust Result wrapping the status payloads or server failure codes.
 pub fn decode_content_header(payload: &[u8]) -> io::Result<ContentHeader> {
     if payload.len() < 14 {
         return Err(io::Error::new(
@@ -260,15 +209,6 @@ pub fn decode_content_header(payload: &[u8]) -> io::Result<ContentHeader> {
     })
 }
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `body` - `&[u8]`: Deserialized JSON payload representation containing request parameters.
-/// * `frame_max` - `u32`: The `frame_max` argument.
-///
-/// # Returns
-///
-/// * `Vec<Vec<u8>>` - The evaluated outcome or operation handle.
 pub fn split_body_frames(channel: u16, body: &[u8], frame_max: u32) -> Vec<Vec<u8>> {
     let max_body_per_frame = if frame_max > 8 {
         (frame_max - 8) as usize

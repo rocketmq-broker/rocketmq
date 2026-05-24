@@ -27,9 +27,6 @@ use std::time::Instant;
 /// Global atomic counter for unique consumer tag generation.
 static CONSUMER_TAG_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-/// Represents the schema or state for token bucket.
-///
-/// Defines details for token bucket inside the broker ecosystem.
 pub struct TokenBucket {
     pub rate: u32, // tokens per second
     pub tokens: f64,
@@ -37,13 +34,7 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    /// # Arguments
-    ///
-    /// * `rate` - `u32`: The `rate` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given rate.
     pub fn new(rate: u32) -> Self {
         Self {
             rate,
@@ -59,9 +50,6 @@ impl TokenBucket {
         self.last_refill = now;
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn try_consume(&mut self) -> bool {
         self.refill();
         if self.tokens >= 1.0 {
@@ -73,9 +61,6 @@ impl TokenBucket {
     }
 }
 
-/// Represents the schema or state for consumer group.
-///
-/// Defines details for consumer group inside the broker ecosystem.
 pub struct ConsumerGroup {
     pub name: String,
     pub members: Vec<(u64, u16)>, // (conn_id, channel_id)
@@ -83,13 +68,7 @@ pub struct ConsumerGroup {
 }
 
 impl ConsumerGroup {
-    /// # Arguments
-    ///
-    /// * `name` - `String`: The unique identifier string of the resource.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given name.
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -98,14 +77,6 @@ impl ConsumerGroup {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `conn_id` - `u64`: The `conn_id` argument.
-    /// * `channel_id` - `u16`: The `channel_id` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn add_member(&mut self, conn_id: u64, channel_id: u16) -> bool {
         if self.members.contains(&(conn_id, channel_id)) {
             return false;
@@ -114,14 +85,6 @@ impl ConsumerGroup {
         true
     }
 
-    /// # Arguments
-    ///
-    /// * `conn_id` - `u64`: The `conn_id` argument.
-    /// * `channel_id` - `u16`: The `channel_id` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn remove_member(&mut self, conn_id: u64, channel_id: u16) -> bool {
         let before = self.members.len();
         self.members
@@ -129,13 +92,6 @@ impl ConsumerGroup {
         self.members.len() != before
     }
 
-    /// # Arguments
-    ///
-    /// * `broker` - `&crate::state::Broker`: Thread-safe pointer to the global shared broker storage & state.
-    ///
-    /// # Returns
-    ///
-    /// * `Option<(u64, u16)>` - The evaluated outcome or operation handle.
     pub fn next_target(&mut self, broker: &crate::state::Broker) -> Option<(u64, u16)> {
         if self.members.is_empty() {
             return None;
@@ -158,7 +114,10 @@ impl ConsumerGroup {
 }
 
 /// Manages message queues, tracking unacknowledged and ready messages, and active consumers.
+/// Runtime state for a single AMQP queue.
 ///
+/// Tracks messages, consumer subscriptions, delivery tags, queue
+/// options (TTL, durability, auto-delete), and last-activity timestamps.
 /// Manages message queues, tracking unacknowledged and ready messages, and active consumers.
 pub struct QueueState {
     pub options: QueueOptions,
@@ -180,20 +139,11 @@ pub struct QueueState {
 }
 
 impl QueueState {
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with default values.
     pub fn new() -> Self {
         Self::with_options(QueueOptions::default())
     }
 
-    /// # Arguments
-    ///
-    /// * `options` - `QueueOptions`: The `options` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
     pub fn with_options(options: QueueOptions) -> Self {
         let rate_limiter = options.rate_limit.map(TokenBucket::new);
         let stream_mode = options.stream_mode;
@@ -217,9 +167,6 @@ impl QueueState {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn check_rate_limit(&mut self) -> bool {
         match &mut self.rate_limiter {
             Some(bucket) => bucket.try_consume(),
@@ -256,13 +203,6 @@ impl QueueState {
         tag
     }
 
-    /// # Arguments
-    ///
-    /// * `tag` - `&str`: The `tag` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn cancel_consumer(&mut self, tag: &str) -> bool {
         if let Some((conn_id, channel_id)) = self.consumer_tags.remove(tag) {
             self.listeners
@@ -280,13 +220,6 @@ impl QueueState {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `broker` - `&crate::state::Broker`: Thread-safe pointer to the global shared broker storage & state.
-    ///
-    /// # Returns
-    ///
-    /// * `Option<(u64, u16)>` - The evaluated outcome or operation handle.
     pub fn next_target(&mut self, broker: &crate::state::Broker) -> Option<(u64, u16)> {
         // If there are groups, use group-based delivery (return first available)
         if !self.groups.is_empty() {

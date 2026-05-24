@@ -30,9 +30,8 @@ use crate::core::properties::BasicProperties;
 use crate::core::types::*;
 use crate::state::Broker;
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Spawns the background delivery loop that polls queues and pushes
+/// ready messages to consumers as `Basic.Deliver` frames.
 pub fn spawn_delivery_task(broker: Broker) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(crate::config::delivery_poll_interval());
@@ -45,9 +44,8 @@ pub fn spawn_delivery_task(broker: Broker) {
     });
 }
 
-/// # Arguments
-///
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Executes a single delivery pass across all queues, matching
+/// pending messages to consumers with available prefetch capacity.
 async fn deliver_round(broker: &Broker) {
     for mut entry in broker.queues.iter_mut() {
         let (queue_name, queue) = entry.pair_mut();

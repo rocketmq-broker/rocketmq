@@ -30,9 +30,11 @@ use tracing::{debug, info};
 use crate::state::Broker;
 use crate::storage::wal::EntryType;
 
-/// # Arguments
+/// Launches all background maintenance tasks on the Tokio runtime.
 ///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Spawns independent tasks for queue TTL expiration, message TTL
+/// expiration, deduplication cache eviction, delayed message flushing,
+/// and WAL compaction.
 pub fn spawn_all(broker: Broker) {
     tokio::spawn(queue_ttl_task(broker.clone()));
     tokio::spawn(message_ttl_task(broker.clone()));
@@ -41,9 +43,8 @@ pub fn spawn_all(broker: Broker) {
     tokio::spawn(wal_compact_task(broker));
 }
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Periodically removes queues that have exceeded their `x-expires` TTL
+/// while idle (no consumers, no messages).
 async fn queue_ttl_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::queue_ttl_check_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -69,9 +70,8 @@ async fn queue_ttl_task(broker: Broker) {
     }
 }
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Periodically drains expired messages from the head of each queue,
+/// respecting both queue-level and per-message TTL settings.
 async fn message_ttl_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::message_ttl_check_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -101,9 +101,8 @@ async fn message_ttl_task(broker: Broker) {
     }
 }
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Periodically evicts stale entries from the broker-wide message
+/// deduplication cache based on the configured time window.
 async fn dedup_eviction_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::dedup_eviction_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -123,9 +122,8 @@ async fn dedup_eviction_task(broker: Broker) {
     }
 }
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Periodically moves messages whose delay has elapsed from the
+/// global delay queue into their target queues for delivery.
 async fn delay_flush_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::delay_flush_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -150,9 +148,8 @@ async fn delay_flush_task(broker: Broker) {
     }
 }
 
-/// # Arguments
-///
-/// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
+/// Periodically compacts the WAL by rebuilding it without entries
+/// for messages that have already been acknowledged.
 async fn wal_compact_task(broker: Broker) {
     let mut interval = tokio::time::interval(crate::config::wal_compact_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

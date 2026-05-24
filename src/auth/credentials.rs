@@ -21,9 +21,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Defines the various states or variants of user tag.
-///
-/// Defines details for user tag inside the broker ecosystem.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UserTag {
     Administrator,
@@ -32,9 +29,8 @@ pub enum UserTag {
     None,
 }
 
-/// Represents the schema or state for user entry.
-///
-/// Defines details for user entry inside the broker ecosystem.
+/// A single user record containing the username, bcrypt password hash,
+/// and the set of permission tags (e.g. `administrator`, `management`).
 pub struct UserEntry {
     pub username: String,
     /// bcrypt hash of the password.
@@ -43,15 +39,7 @@ pub struct UserEntry {
 }
 
 impl UserEntry {
-    /// # Arguments
-    ///
-    /// * `username` - `&str`: The unique identifier string of the resource.
-    /// * `password` - `&str`: The `password` argument.
-    /// * `tags` - `Vec<UserTag>`: The `tags` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given username, password, tags.
     pub fn new(username: &str, password: &str, tags: Vec<UserTag>) -> Self {
         Self {
             username: username.to_string(),
@@ -60,27 +48,15 @@ impl UserEntry {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `password` - `&str`: The `password` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
+    /// Verifies a plaintext password against a bcrypt hash.
     pub fn verify_password(&self, password: &str) -> bool {
         bcrypt::verify(password, &self.password_hash).unwrap_or(false)
     }
 
-    /// # Arguments
-    ///
-    /// * `password` - `&str`: The `password` argument.
     pub fn set_password(&mut self, password: &str) {
         self.password_hash = hash_password(password);
     }
 
-    /// # Returns
-    ///
-    /// * `SerializableUser` - The evaluated outcome or operation handle.
     pub fn to_serializable(&self) -> SerializableUser {
         SerializableUser {
             username: self.username.clone(),
@@ -89,13 +65,6 @@ impl UserEntry {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `su` - `SerializableUser`: The `su` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
     pub fn from_serializable(su: SerializableUser) -> Self {
         Self {
             username: su.username,
@@ -105,9 +74,6 @@ impl UserEntry {
     }
 }
 
-/// Represents the schema or state for serializable user.
-///
-/// Defines details for serializable user inside the broker ecosystem.
 #[derive(Serialize, Deserialize)]
 pub struct SerializableUser {
     pub username: String,
@@ -115,22 +81,13 @@ pub struct SerializableUser {
     pub tags: Vec<UserTag>,
 }
 
-/// Represents the schema or state for user store.
-///
-/// Defines details for user store inside the broker ecosystem.
 #[derive(Serialize, Deserialize)]
 pub struct UserStore {
     pub users: Vec<SerializableUser>,
     pub permissions: Vec<super::permissions::Permission>,
 }
 
-/// # Arguments
-///
-/// * `password` - `&str`: The `password` argument.
-///
-/// # Returns
-///
-/// * `String` - The evaluated outcome or operation handle.
+/// Hashes a plaintext password using bcrypt with the default cost factor.
 fn hash_password(password: &str) -> String {
     bcrypt::hash(password, crate::config::bcrypt_cost()).expect("bcrypt hash should not fail")
 }

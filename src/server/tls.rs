@@ -52,13 +52,7 @@ pub fn build_tls_acceptor(
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-/// # Arguments
-///
-/// * `path` - `&str`: The `path` argument.
-///
-/// # Returns
-///
-/// * `Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Loads PEM-encoded X.509 certificates from the given file path.
 fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -72,13 +66,7 @@ fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::e
     Ok(certs)
 }
 
-/// # Arguments
-///
-/// * `path` - `&str`: The `path` argument.
-///
-/// # Returns
-///
-/// * `Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Loads a PEM-encoded private key from the given file path.
 fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -101,14 +89,8 @@ fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::e
     Err(format!("no private key found in {}", path).into())
 }
 
-/// # Arguments
-///
-/// * `cert_path` - `&str`: The `cert_path` argument.
-/// * `key_path` - `&str`: The `key_path` argument.
-///
-/// # Returns
-///
-/// * `Result<(), Box<dyn std::error::Error>>` - A standard rust Result wrapping the status payloads or server failure codes.
+/// Generates a self-signed TLS certificate and private key for
+/// local development, writing them to the configured data directory.
 fn generate_self_signed(cert_path: &str, key_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     warn!("generating self-signed TLS certificate (for development only)");
 

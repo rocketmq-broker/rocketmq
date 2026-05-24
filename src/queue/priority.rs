@@ -21,25 +21,21 @@ use super::message::QueueMessage;
 use std::collections::{BTreeMap, VecDeque};
 
 /// A queue structure that prioritizes messages based on priority field values.
-///
+/// Multi-level priority message store backed by one `VecDeque` per
+/// priority level (0 through `max_priority`).
 /// A queue structure that prioritizes messages based on priority field values.
 pub struct PriorityQueue {
     buckets: BTreeMap<u8, VecDeque<QueueMessage>>,
 }
 
 impl PriorityQueue {
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with default values.
     pub fn new() -> Self {
         Self {
             buckets: BTreeMap::new(),
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `msg` - `QueueMessage`: The `msg` argument.
     pub fn push_back(&mut self, msg: QueueMessage) {
         self.buckets
             .entry(msg.priority())
@@ -47,9 +43,6 @@ impl PriorityQueue {
             .push_back(msg);
     }
 
-    /// # Arguments
-    ///
-    /// * `msg` - `QueueMessage`: The `msg` argument.
     pub fn push_front(&mut self, msg: QueueMessage) {
         self.buckets
             .entry(msg.priority())
@@ -57,9 +50,6 @@ impl PriorityQueue {
             .push_front(msg);
     }
 
-    /// # Returns
-    ///
-    /// * `Option<QueueMessage>` - The evaluated outcome or operation handle.
     pub fn pop_front(&mut self) -> Option<QueueMessage> {
         let key = *self.buckets.keys().next_back()?;
         let queue = self.buckets.get_mut(&key)?;
@@ -70,9 +60,6 @@ impl PriorityQueue {
         msg
     }
 
-    /// # Returns
-    ///
-    /// * `Option<QueueMessage>` - The evaluated outcome or operation handle.
     pub fn pop_oldest(&mut self) -> Option<QueueMessage> {
         let key = *self.buckets.keys().next()?;
         let queue = self.buckets.get_mut(&key)?;
@@ -83,24 +70,15 @@ impl PriorityQueue {
         msg
     }
 
-    /// # Returns
-    ///
-    /// * `usize` - The evaluated outcome or operation handle.
     pub fn len(&self) -> usize {
         self.buckets.values().map(|q| q.len()).sum()
     }
 
-    /// # Returns
-    ///
-    /// * `Option<&QueueMessage>` - The evaluated outcome or operation handle.
     pub fn peek_front(&self) -> Option<&QueueMessage> {
         let key = *self.buckets.keys().next_back()?;
         self.buckets.get(&key)?.front()
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
     pub fn is_empty(&self) -> bool {
         self.buckets.is_empty()
     }

@@ -38,9 +38,6 @@ const METER_NAME: &str = "rocketmq";
 
 // ─── Atomic Snapshot Counters (readable for HTTP) ────
 
-/// Represents the schema or state for snapshot.
-///
-/// Defines details for snapshot inside the broker ecosystem.
 pub struct Snapshot {
     pub messages_published: AtomicU64,
     pub messages_delivered: AtomicU64,
@@ -57,9 +54,6 @@ pub struct Snapshot {
 
 static SNAPSHOT: OnceLock<Snapshot> = OnceLock::new();
 
-/// # Returns
-///
-/// * `&'static Snapshot` - The evaluated outcome or operation handle.
 fn snapshot() -> &'static Snapshot {
     SNAPSHOT.get_or_init(|| Snapshot {
         messages_published: AtomicU64::new(0),
@@ -76,9 +70,6 @@ fn snapshot() -> &'static Snapshot {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Snapshot` - The evaluated outcome or operation handle.
 pub fn get_snapshot() -> &'static Snapshot {
     snapshot()
 }
@@ -100,12 +91,11 @@ static QUEUES_DELETED: OnceLock<Counter<u64>> = OnceLock::new();
 // ─── Provider Initialization ─────────────────────────
 
 /// Initializes the OpenTelemetry meter provider for collecting broker metrics.
-///
+/// Initializes the OpenTelemetry meter provider and returns a guard
+/// that shuts it down on drop.
 /// Initializes the OpenTelemetry meter provider for collecting broker metrics.
-///
-/// # Returns
-///
-/// * `SdkMeterProvider` - The evaluated outcome or operation handle.
+/// Initializes the OpenTelemetry meter provider and returns a guard
+/// that shuts it down on drop.
 pub fn init_meter_provider() -> SdkMeterProvider {
     let provider = SdkMeterProvider::builder().build();
     global::set_meter_provider(provider.clone());
@@ -114,9 +104,6 @@ pub fn init_meter_provider() -> SdkMeterProvider {
 
 // ─── Counter Accessors ───────────────────────────────
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_published() -> &'static Counter<u64> {
     MESSAGES_PUBLISHED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -126,9 +113,6 @@ fn otel_published() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_delivered() -> &'static Counter<u64> {
     MESSAGES_DELIVERED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -138,9 +122,6 @@ fn otel_delivered() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_acked() -> &'static Counter<u64> {
     MESSAGES_ACKED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -150,9 +131,6 @@ fn otel_acked() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_nacked() -> &'static Counter<u64> {
     MESSAGES_NACKED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -162,9 +140,6 @@ fn otel_nacked() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_conn_opened() -> &'static Counter<u64> {
     CONNECTIONS_OPENED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -174,9 +149,6 @@ fn otel_conn_opened() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_conn_closed() -> &'static Counter<u64> {
     CONNECTIONS_CLOSED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -186,9 +158,6 @@ fn otel_conn_closed() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_chan_opened() -> &'static Counter<u64> {
     CHANNELS_OPENED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -198,9 +167,6 @@ fn otel_chan_opened() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_chan_closed() -> &'static Counter<u64> {
     CHANNELS_CLOSED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -213,9 +179,6 @@ fn otel_chan_closed() -> &'static Counter<u64> {
 // ─── Public Recording API ────────────────────────────
 // Each function: (1) records to OTel counter, (2) increments atomic snapshot.
 
-/// # Arguments
-///
-/// * `queue` - `&str`: The queue instance reference.
 #[inline]
 pub fn record_published(queue: &str) {
     otel_published().add(1, &[KeyValue::new("queue", queue.to_string())]);
@@ -224,9 +187,6 @@ pub fn record_published(queue: &str) {
         .fetch_add(1, Ordering::Relaxed);
 }
 
-/// # Arguments
-///
-/// * `queue` - `&str`: The queue instance reference.
 #[inline]
 pub fn record_delivered(queue: &str) {
     otel_delivered().add(1, &[KeyValue::new("queue", queue.to_string())]);
@@ -275,9 +235,6 @@ pub fn record_chan_closed() {
     snapshot().channels_closed.fetch_add(1, Ordering::Relaxed);
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_queue_declared() -> &'static Counter<u64> {
     QUEUES_DECLARED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -287,9 +244,6 @@ fn otel_queue_declared() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_queue_created() -> &'static Counter<u64> {
     QUEUES_CREATED.get_or_init(|| {
         global::meter(METER_NAME)
@@ -299,9 +253,6 @@ fn otel_queue_created() -> &'static Counter<u64> {
     })
 }
 
-/// # Returns
-///
-/// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
 fn otel_queue_deleted() -> &'static Counter<u64> {
     QUEUES_DELETED.get_or_init(|| {
         global::meter(METER_NAME)

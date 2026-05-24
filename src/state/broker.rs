@@ -32,9 +32,8 @@ use crate::queue::{DelayQueue, QueueState};
 use crate::routing::exchange::{Binding, Exchange, create_default_exchanges};
 use crate::state::vhost::{DEFAULT_VHOST, VHost};
 
-/// Represents the schema or state for conn handle.
-///
-/// Defines details for conn handle inside the broker ecosystem.
+/// Handle to a live client connection, carrying its unique ID, remote address,
+/// and an MPSC sender for writing AMQP frames back to the socket.
 #[derive(Clone)]
 pub struct ConnHandle {
     pub id: u64,
@@ -42,9 +41,10 @@ pub struct ConnHandle {
     pub amqp_tx: mpsc::Sender<Vec<u8>>,
 }
 
-/// Manages the state, consumer tags, and frame flow inside an AMQP channel.
+/// Per-channel state tracking within an AMQP connection.
 ///
-/// Manages the state, consumer tags, and frame flow inside an AMQP channel.
+/// Tracks prefetch limits, unacknowledged message counts, publisher-confirm
+/// mode, and flow-control status. Delivery is gated by [`can_deliver`].
 pub struct ChannelState {
     pub id: u16,
     pub prefetch_count: u16,
@@ -55,13 +55,7 @@ pub struct ChannelState {
 }
 
 impl ChannelState {
-    /// # Arguments
-    ///
-    /// * `id` - `u16`: The `id` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with the given id.
     pub fn new(id: u16) -> Self {
         Self {
             id,
@@ -73,9 +67,8 @@ impl ChannelState {
         }
     }
 
-    /// # Returns
-    ///
-    /// * `bool` - The evaluated outcome or operation handle.
+    /// Returns `true` if this channel is allowed to receive another
+    /// delivery, considering both flow-control state and prefetch limits.
     pub fn can_deliver(&self) -> bool {
         if !self.flow_active {
             return false;
@@ -84,9 +77,10 @@ impl ChannelState {
     }
 }
 
-/// Defines the various states or variants of pending op.
+/// A single operation buffered inside a transaction (`Tx.Select`).
 ///
-/// Defines details for pending op inside the broker ecosystem.
+/// Operations are accumulated until the client issues `Tx.Commit` (applied
+/// atomically) or `Tx.Rollback` (discarded).
 #[derive(Clone, Debug)]
 pub enum PendingOp {
     Publish {
@@ -101,7 +95,10 @@ pub enum PendingOp {
 }
 
 /// Tracks active channels and metadata associated with a single client connection.
+/// Per-connection state shared across all channels on a single TCP link.
 ///
+/// Holds the virtual-host binding, channel map, transaction buffer, and
+/// exclusive queue ownership for cleanup on disconnect.
 /// Tracks active channels and metadata associated with a single client connection.
 pub struct ConnectionState {
     pub channels: HashMap<u16, ChannelState>,
@@ -118,9 +115,7 @@ pub struct ConnectionState {
 }
 
 impl ConnectionState {
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with default values.
     pub fn new() -> Self {
         Self {
             channels: HashMap::new(),
@@ -139,7 +134,11 @@ impl ConnectionState {
 }
 
 /// Tracks the active connections, channel registries, queues, exchanges, and clusters.
+/// Global shared broker state coordinating queues, exchanges, connections,
+/// and background subsystems.
 ///
+/// All fields are concurrent-safe (`DashMap`, `RwLock`, atomics) so that
+/// connection tasks can operate without holding a global lock.
 /// Tracks the active connections, channel registries, queues, exchanges, and clusters.
 pub struct BrokerState {
     next_conn_id: AtomicU64,
@@ -159,9 +158,7 @@ pub struct BrokerState {
 }
 
 impl BrokerState {
-    /// # Returns
-    ///
-    /// * `Self` - The evaluated outcome or operation handle.
+    /// Creates a new instance with default values.
     pub fn new() -> Self {
         let auth = AuthBackend::new();
         let db_path = crate::config::get_user_db_path();
@@ -201,69 +198,49 @@ impl BrokerState {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `cluster` - `Arc<crate::cluster::ClusterManager>`: The `cluster` argument.
+    /// Stores the cluster manager handle for cross-node coordination.
     pub fn set_cluster(&self, cluster: Arc<crate::cluster::ClusterManager>) {
         let _ = self.cluster.set(cluster);
     }
 
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
+    /// Returns the broker start time as a Unix timestamp in milliseconds.
     pub fn start_time_ms(&self) -> u64 {
         self.started_at_ms
     }
 
     /// Lists all configured virtual hosts in the broker.
-    ///
+    /// Returns the list of all configured virtual host names.
     /// Lists all configured virtual hosts in the broker.
-    ///
-    /// # Returns
-    ///
-    /// * `Vec<String>` - The evaluated outcome or operation handle.
+    /// Returns the list of all configured virtual host names.
     pub fn list_vhosts(&self) -> Vec<String> {
         self.vhosts.iter().map(|e| e.key().clone()).collect()
     }
 
-    /// # Returns
-    ///
-    /// * `Option<&Arc<crate::cluster::ClusterManager>>` - The evaluated outcome or operation handle.
+    /// Returns a reference to the cluster manager, if one has been set.
     pub fn cluster(&self) -> Option<&Arc<crate::cluster::ClusterManager>> {
         self.cluster.get()
     }
 
-    /// # Arguments
-    ///
-    /// * `wal` - `Arc<crate::storage::wal::Wal>`: The `wal` argument.
+    /// Stores the WAL handle for use by connection handlers.
     pub fn set_wal(&self, wal: Arc<crate::storage::wal::Wal>) {
         let _ = self.wal.set(wal);
     }
 
-    /// # Returns
-    ///
-    /// * `Option<&Arc<crate::storage::wal::Wal>>` - The evaluated outcome or operation handle.
+    /// Returns a reference to the WAL, if one has been initialized.
     pub fn wal(&self) -> Option<&Arc<crate::storage::wal::Wal>> {
         self.wal.get()
     }
 
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
+    /// Allocates a globally unique, monotonically increasing connection ID.
     pub fn alloc_conn_id(&self) -> u64 {
         self.next_conn_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
+    /// Allocates a globally unique, monotonically increasing message ID.
     pub fn alloc_msg_id(&self) -> u64 {
         self.next_msg_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// # Arguments
-    ///
-    /// * `conn_id` - `u64`: The `conn_id` argument.
     pub fn remove_connection(&self, conn_id: u64) {
         self.connections.remove(&conn_id);
         self.conn_state.remove(&conn_id);
@@ -299,9 +276,9 @@ impl BrokerState {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `queue_name` - `&str`: The unique identifier string of the resource.
+    /// Creates an implicit binding from the default exchange to the named
+    /// queue (AMQP requires every queue to be reachable via its own name
+    /// as the routing key on the default exchange).
     pub fn auto_bind_default_exchange(&self, queue_name: &str) {
         if let Ok(mut exchanges) = self.exchanges.try_write()
             && let Some(default_ex) = exchanges.get_mut("")
@@ -314,13 +291,7 @@ impl BrokerState {
         }
     }
 
-    /// # Arguments
-    ///
-    /// * `conn_id` - `u64`: The `conn_id` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `u64` - The evaluated outcome or operation handle.
+    /// Allocates a globally unique, monotonically increasing delivery tag.
     pub fn alloc_delivery_tag(&self, conn_id: u64) -> u64 {
         if let Some(mut cs) = self.conn_state.get_mut(&conn_id) {
             let tag = cs.next_delivery_tag;

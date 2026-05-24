@@ -40,13 +40,6 @@ use crate::state::Broker;
 
 // ─── Basic.Publish ────────────────────────────────────
 
-/// # Arguments
-///
-/// * `args` - `&[u8]`: The `args` argument.
-///
-/// # Returns
-///
-/// * `(String, String, bool, bool)` - The evaluated outcome or operation handle.
 pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -268,15 +261,6 @@ pub async fn handle_publish(
 
 // ─── Publisher Confirm Helpers ────────────────────────
 
-/// # Arguments
-///
-/// * `conn_id` - `u64`: The `conn_id` argument.
-/// * `channel` - `u16`: The `channel` argument.
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
-///
-/// # Returns
-///
-/// * `Option<u64>` - The evaluated outcome or operation handle.
 fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64> {
     let mut cs = broker.conn_state.get_mut(&conn_id)?;
     let ch = cs.channels.get_mut(&channel)?;
@@ -288,11 +272,6 @@ fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64>
     Some(tag)
 }
 
-/// # Arguments
-///
-/// * `channel` - `u16`: The `channel` argument.
-/// * `delivery_tag` - `u64`: The `delivery_tag` argument.
-/// * `writer` - `&mut crate::server::AmqpWriter`: The `writer` argument.
 async fn send_confirm_ack(channel: u16, delivery_tag: u64, writer: &mut crate::server::AmqpWriter) {
     let mut args = Vec::new();
     write_longlong(&mut args, delivery_tag).unwrap();
@@ -457,12 +436,6 @@ pub async fn handle_cancel(
 
 // ─── Basic.Ack ────────────────────────────────────────
 
-/// # Arguments
-///
-/// * `conn_id` - `u64`: The `conn_id` argument.
-/// * `channel` - `u16`: The `channel` argument.
-/// * `args` - `&[u8]`: The `args` argument.
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
@@ -502,12 +475,6 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
 
 // ─── Basic.Reject ─────────────────────────────────────
 
-/// # Arguments
-///
-/// * `conn_id` - `u64`: The `conn_id` argument.
-/// * `channel` - `u16`: The `channel` argument.
-/// * `args` - `&[u8]`: The `args` argument.
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);
@@ -542,12 +509,6 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
 
 // ─── Basic.Nack ───────────────────────────────────────
 
-/// # Arguments
-///
-/// * `conn_id` - `u64`: The `conn_id` argument.
-/// * `channel` - `u16`: The `channel` argument.
-/// * `args` - `&[u8]`: The `args` argument.
-/// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
 pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
     let delivery_tag = read_longlong(&mut r).unwrap_or(0);

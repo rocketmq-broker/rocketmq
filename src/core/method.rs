@@ -135,13 +135,6 @@ pub const NOT_ALLOWED: u16 = 530;
 pub const NOT_IMPLEMENTED: u16 = 540;
 pub const INTERNAL_ERROR: u16 = 541;
 
-/// # Arguments
-///
-/// * `code` - `u16`: The `code` argument.
-///
-/// # Returns
-///
-/// * `bool` - The evaluated outcome or operation handle.
 pub fn is_connection_error(code: u16) -> bool {
     matches!(
         code,
@@ -159,13 +152,6 @@ pub fn is_connection_error(code: u16) -> bool {
     )
 }
 
-/// # Arguments
-///
-/// * `code` - `u16`: The `code` argument.
-///
-/// # Returns
-///
-/// * `&'static str` - The evaluated outcome or operation handle.
 pub fn reply_text(code: u16) -> &'static str {
     match code {
         REPLY_SUCCESS => "REPLY-SUCCESS",

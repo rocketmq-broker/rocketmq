@@ -26,9 +26,6 @@ use std::io::{self, Read, Write};
 
 use crate::core::types::*;
 
-/// Represents the schema or state for basic properties.
-///
-/// Defines details for basic properties inside the broker ecosystem.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BasicProperties {
     pub content_type: Option<String>,
@@ -48,9 +45,6 @@ pub struct BasicProperties {
 }
 
 impl BasicProperties {
-    /// # Returns
-    ///
-    /// * `u16` - The evaluated outcome or operation handle.
     pub fn flags(&self) -> u16 {
         let mut f: u16 = 0;
         if self.content_type.is_some() {
@@ -98,13 +92,6 @@ impl BasicProperties {
         f
     }
 
-    /// # Arguments
-    ///
-    /// * `w` - `&mut impl Write`: The `w` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn encode(&self, w: &mut impl Write) -> io::Result<()> {
         write_short(w, self.flags())?;
 
@@ -153,13 +140,6 @@ impl BasicProperties {
         Ok(())
     }
 
-    /// # Arguments
-    ///
-    /// * `r` - `&mut impl Read`: The `r` argument.
-    ///
-    /// # Returns
-    ///
-    /// * `io::Result<Self>` - A standard rust Result wrapping the status payloads or server failure codes.
     pub fn decode(r: &mut impl Read) -> io::Result<Self> {
         let flags = read_short(r)?;
         let mut p = Self::default();

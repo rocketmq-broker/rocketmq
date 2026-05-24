@@ -29,7 +29,5 @@ use tokio::io::{BufWriter, WriteHalf};
 pub type AmqpWriter = BufWriter<WriteHalf<Box<dyn crate::server::AsyncStream>>>;
 
 /// Defines behavioral capabilities for async stream.
-///
-/// Defines details for async stream inside the broker ecosystem.
 pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> AsyncStream for T {}

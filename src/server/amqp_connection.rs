@@ -222,18 +222,15 @@ pub fn build_connection_close(
     buf
 }
 
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 pub fn build_connection_close_ok() -> Vec<u8> {
     Vec::new()
 }
 
 // ─── Internal builders ────────────────────────────────
 
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
+/// Builds the `Connection.Start` frame sent to the client during
+/// the AMQP handshake, advertising server capabilities and
+/// supported authentication mechanisms.
 fn build_connection_start() -> Vec<u8> {
     let mut buf = Vec::new();
     // version-major, version-minor
@@ -273,15 +270,6 @@ fn build_connection_start() -> Vec<u8> {
     buf
 }
 
-/// # Arguments
-///
-/// * `channel_max` - `u16`: The `channel_max` argument.
-/// * `frame_max` - `u32`: The `frame_max` argument.
-/// * `heartbeat` - `u16`: The `heartbeat` argument.
-///
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 fn build_connection_tune(channel_max: u16, frame_max: u32, heartbeat: u16) -> Vec<u8> {
     let mut buf = Vec::new();
     write_short(&mut buf, channel_max).unwrap();
@@ -290,9 +278,6 @@ fn build_connection_tune(channel_max: u16, frame_max: u32, heartbeat: u16) -> Ve
     buf
 }
 
-/// # Returns
-///
-/// * `Vec<u8>` - The evaluated outcome or operation handle.
 fn build_connection_open_ok() -> Vec<u8> {
     let mut buf = Vec::new();
     // known-hosts (shortstr) — deprecated, send empty
@@ -300,13 +285,6 @@ fn build_connection_open_ok() -> Vec<u8> {
     buf
 }
 
-/// # Arguments
-///
-/// * `args` - `&[u8]`: The `args` argument.
-///
-/// # Returns
-///
-/// * `Result<(String, String), ()>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn parse_start_ok_credentials(args: &[u8]) -> Result<(String, String), ()> {
     let mut r = Cursor::new(args);
 
@@ -354,13 +332,6 @@ fn parse_start_ok_credentials(args: &[u8]) -> Result<(String, String), ()> {
     Err(())
 }
 
-/// # Arguments
-///
-/// * `args` - `&[u8]`: The `args` argument.
-///
-/// # Returns
-///
-/// * `Result<(u16, u32, u16), ()>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn parse_tune_ok(args: &[u8]) -> Result<(u16, u32, u16), ()> {
     let mut r = Cursor::new(args);
     let channel_max = read_short(&mut r).map_err(|_| ())?;
@@ -381,13 +352,6 @@ fn parse_tune_ok(args: &[u8]) -> Result<(u16, u32, u16), ()> {
     Ok((ch, fm, heartbeat))
 }
 
-/// # Arguments
-///
-/// * `args` - `&[u8]`: The `args` argument.
-///
-/// # Returns
-///
-/// * `Result<String, ()>` - A standard rust Result wrapping the status payloads or server failure codes.
 fn parse_connection_open(args: &[u8]) -> Result<String, ()> {
     let mut r = Cursor::new(args);
     let vhost = read_shortstr(&mut r).map_err(|_| ())?;
@@ -396,9 +360,6 @@ fn parse_connection_open(args: &[u8]) -> Result<String, ()> {
     Ok(vhost)
 }
 
-/// # Arguments
-///
-/// * `reader` - `&mut (impl AsyncReadExt + Unpin`: The `reader` argument.
 pub async fn read_amqp_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Result<AmqpFrame, ()> {
     // Read 7-byte header
     let mut header = [0u8; 7];
