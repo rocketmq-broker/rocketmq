@@ -35,10 +35,6 @@ pub mod types;
 
 use handlers::*;
 
-/// Executes the standard serve lifecycle step.
-///
-/// Executes the required business logic for serve.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.

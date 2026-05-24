@@ -275,9 +275,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard exchange declare args encode lifecycle step.
-    ///
-    /// Executes the required business logic for exchange declare args encode.
     #[test]
     fn exchange_declare_args_encode() {
         let mut args = Vec::new();
@@ -294,9 +291,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 0x02);
     }
 
-    /// Executes the standard exchange delete args encode lifecycle step.
-    ///
-    /// Executes the required business logic for exchange delete args encode.
     #[test]
     fn exchange_delete_args_encode() {
         let mut args = Vec::new();
@@ -309,9 +303,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "my.exchange");
     }
 
-    /// Executes the standard channel close error builds lifecycle step.
-    ///
-    /// Executes the required business logic for channel close error builds.
     #[test]
     fn channel_close_error_builds() {
         use super::super::auth_check::build_channel_close;

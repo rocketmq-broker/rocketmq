@@ -43,10 +43,6 @@ pub struct UserEntry {
 }
 
 impl UserEntry {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -64,10 +60,6 @@ impl UserEntry {
         }
     }
 
-    /// Executes the standard verify password lifecycle step.
-    ///
-    /// Executes the required business logic for verify password.
-    ///
     /// # Arguments
     ///
     /// * `password` - `&str`: The `password` argument.
@@ -79,10 +71,6 @@ impl UserEntry {
         bcrypt::verify(password, &self.password_hash).unwrap_or(false)
     }
 
-    /// Executes the standard set password lifecycle step.
-    ///
-    /// Executes the required business logic for set password.
-    ///
     /// # Arguments
     ///
     /// * `password` - `&str`: The `password` argument.
@@ -90,10 +78,6 @@ impl UserEntry {
         self.password_hash = hash_password(password);
     }
 
-    /// Executes the standard to serializable lifecycle step.
-    ///
-    /// Executes the required business logic for to serializable.
-    ///
     /// # Returns
     ///
     /// * `SerializableUser` - The evaluated outcome or operation handle.
@@ -105,10 +89,6 @@ impl UserEntry {
         }
     }
 
-    /// Executes the standard from serializable lifecycle step.
-    ///
-    /// Executes the required business logic for from serializable.
-    ///
     /// # Arguments
     ///
     /// * `su` - `SerializableUser`: The `su` argument.
@@ -144,10 +124,6 @@ pub struct UserStore {
     pub permissions: Vec<super::permissions::Permission>,
 }
 
-/// Executes the standard hash password lifecycle step.
-///
-/// Executes the required business logic for hash password.
-///
 /// # Arguments
 ///
 /// * `password` - `&str`: The `password` argument.
@@ -164,9 +140,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard password hash verify lifecycle step.
-    ///
-    /// Executes the required business logic for password hash verify.
     #[test]
     fn password_hash_verify() {
         let user = UserEntry::new("alice", "s3cret", vec![UserTag::Administrator]);
@@ -174,9 +147,6 @@ mod tests {
         assert!(!user.verify_password("wrong"));
     }
 
-    /// Executes the standard password change lifecycle step.
-    ///
-    /// Executes the required business logic for password change.
     #[test]
     fn password_change() {
         let mut user = UserEntry::new("bob", "old", vec![]);
@@ -186,9 +156,6 @@ mod tests {
         assert!(user.verify_password("new"));
     }
 
-    /// Executes the standard serialization roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for serialization roundtrip.
     #[test]
     fn serialization_roundtrip() {
         let user = UserEntry::new(
@@ -205,9 +172,6 @@ mod tests {
         assert_eq!(restored.tags.len(), 2);
     }
 
-    /// Executes the standard hash is unique lifecycle step.
-    ///
-    /// Executes the required business logic for hash is unique.
     #[test]
     fn hash_is_unique() {
         // Two hashes of the same password should differ (bcrypt uses random salt)

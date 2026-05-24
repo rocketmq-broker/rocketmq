@@ -56,10 +56,6 @@ pub enum FieldValue {
 
 // ─── Reading ───────────────────────────────────────────
 
-/// Executes the standard read octet lifecycle step.
-///
-/// Executes the required business logic for read octet.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -71,10 +67,6 @@ pub fn read_octet(r: &mut impl Read) -> io::Result<u8> {
     r.read_u8()
 }
 
-/// Executes the standard read short lifecycle step.
-///
-/// Executes the required business logic for read short.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -86,10 +78,6 @@ pub fn read_short(r: &mut impl Read) -> io::Result<u16> {
     r.read_u16::<BigEndian>()
 }
 
-/// Executes the standard read long lifecycle step.
-///
-/// Executes the required business logic for read long.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -101,10 +89,6 @@ pub fn read_long(r: &mut impl Read) -> io::Result<u32> {
     r.read_u32::<BigEndian>()
 }
 
-/// Executes the standard read longlong lifecycle step.
-///
-/// Executes the required business logic for read longlong.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -116,10 +100,6 @@ pub fn read_longlong(r: &mut impl Read) -> io::Result<u64> {
     r.read_u64::<BigEndian>()
 }
 
-/// Executes the standard read shortstr lifecycle step.
-///
-/// Executes the required business logic for read shortstr.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -134,10 +114,6 @@ pub fn read_shortstr(r: &mut impl Read) -> io::Result<String> {
     String::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// Executes the standard read longstr lifecycle step.
-///
-/// Executes the required business logic for read longstr.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -152,10 +128,6 @@ pub fn read_longstr(r: &mut impl Read) -> io::Result<Vec<u8>> {
     Ok(buf)
 }
 
-/// Executes the standard read timestamp lifecycle step.
-///
-/// Executes the required business logic for read timestamp.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -167,10 +139,6 @@ pub fn read_timestamp(r: &mut impl Read) -> io::Result<u64> {
     r.read_u64::<BigEndian>()
 }
 
-/// Executes the standard read field table lifecycle step.
-///
-/// Executes the required business logic for read field table.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -190,10 +158,6 @@ pub fn read_field_table(r: &mut impl Read) -> io::Result<FieldTable> {
     Ok(table)
 }
 
-/// Executes the standard read field value lifecycle step.
-///
-/// Executes the required business logic for read field value.
-///
 /// # Arguments
 ///
 /// * `r` - `&mut impl Read`: The `r` argument.
@@ -229,10 +193,6 @@ pub fn read_field_value(r: &mut impl Read) -> io::Result<FieldValue> {
 
 // ─── Writing ───────────────────────────────────────────
 
-/// Executes the standard write octet lifecycle step.
-///
-/// Executes the required business logic for write octet.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -245,10 +205,6 @@ pub fn write_octet(w: &mut impl Write, v: u8) -> io::Result<()> {
     w.write_u8(v)
 }
 
-/// Executes the standard write short lifecycle step.
-///
-/// Executes the required business logic for write short.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -261,10 +217,6 @@ pub fn write_short(w: &mut impl Write, v: u16) -> io::Result<()> {
     w.write_u16::<BigEndian>(v)
 }
 
-/// Executes the standard write long lifecycle step.
-///
-/// Executes the required business logic for write long.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -277,10 +229,6 @@ pub fn write_long(w: &mut impl Write, v: u32) -> io::Result<()> {
     w.write_u32::<BigEndian>(v)
 }
 
-/// Executes the standard write longlong lifecycle step.
-///
-/// Executes the required business logic for write longlong.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -293,10 +241,6 @@ pub fn write_longlong(w: &mut impl Write, v: u64) -> io::Result<()> {
     w.write_u64::<BigEndian>(v)
 }
 
-/// Executes the standard write shortstr lifecycle step.
-///
-/// Executes the required business logic for write shortstr.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -317,10 +261,6 @@ pub fn write_shortstr(w: &mut impl Write, s: &str) -> io::Result<()> {
     w.write_all(bytes)
 }
 
-/// Executes the standard write longstr lifecycle step.
-///
-/// Executes the required business logic for write longstr.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -334,10 +274,6 @@ pub fn write_longstr(w: &mut impl Write, data: &[u8]) -> io::Result<()> {
     w.write_all(data)
 }
 
-/// Executes the standard write timestamp lifecycle step.
-///
-/// Executes the required business logic for write timestamp.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -350,10 +286,6 @@ pub fn write_timestamp(w: &mut impl Write, v: u64) -> io::Result<()> {
     w.write_u64::<BigEndian>(v)
 }
 
-/// Executes the standard write field table lifecycle step.
-///
-/// Executes the required business logic for write field table.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -371,10 +303,6 @@ pub fn write_field_table(w: &mut impl Write, table: &FieldTable) -> io::Result<(
     write_longstr(w, &buf)
 }
 
-/// Executes the standard write field value lifecycle step.
-///
-/// Executes the required business logic for write field value.
-///
 /// # Arguments
 ///
 /// * `w` - `&mut impl Write`: The `w` argument.
@@ -457,9 +385,6 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    /// Executes the standard octet roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for octet roundtrip.
     #[test]
     fn octet_roundtrip() {
         let mut buf = Vec::new();
@@ -467,9 +392,6 @@ mod tests {
         assert_eq!(read_octet(&mut Cursor::new(&buf)).unwrap(), 42);
     }
 
-    /// Executes the standard short roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for short roundtrip.
     #[test]
     fn short_roundtrip() {
         let mut buf = Vec::new();
@@ -477,9 +399,6 @@ mod tests {
         assert_eq!(read_short(&mut Cursor::new(&buf)).unwrap(), 0xBEEF);
     }
 
-    /// Executes the standard long roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for long roundtrip.
     #[test]
     fn long_roundtrip() {
         let mut buf = Vec::new();
@@ -487,9 +406,6 @@ mod tests {
         assert_eq!(read_long(&mut Cursor::new(&buf)).unwrap(), 0xDEADBEEF);
     }
 
-    /// Executes the standard longlong roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for longlong roundtrip.
     #[test]
     fn longlong_roundtrip() {
         let mut buf = Vec::new();
@@ -497,9 +413,6 @@ mod tests {
         assert_eq!(read_longlong(&mut Cursor::new(&buf)).unwrap(), u64::MAX);
     }
 
-    /// Executes the standard shortstr roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for shortstr roundtrip.
     #[test]
     fn shortstr_roundtrip() {
         let mut buf = Vec::new();
@@ -507,9 +420,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut Cursor::new(&buf)).unwrap(), "hello");
     }
 
-    /// Executes the standard shortstr empty lifecycle step.
-    ///
-    /// Executes the required business logic for shortstr empty.
     #[test]
     fn shortstr_empty() {
         let mut buf = Vec::new();
@@ -517,9 +427,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut Cursor::new(&buf)).unwrap(), "");
     }
 
-    /// Executes the standard shortstr max length lifecycle step.
-    ///
-    /// Executes the required business logic for shortstr max length.
     #[test]
     fn shortstr_max_length() {
         let s = "a".repeat(255);
@@ -528,9 +435,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut Cursor::new(&buf)).unwrap(), s);
     }
 
-    /// Executes the standard shortstr too long lifecycle step.
-    ///
-    /// Executes the required business logic for shortstr too long.
     #[test]
     fn shortstr_too_long() {
         let s = "a".repeat(256);
@@ -538,9 +442,6 @@ mod tests {
         assert!(write_shortstr(&mut buf, &s).is_err());
     }
 
-    /// Executes the standard longstr roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for longstr roundtrip.
     #[test]
     fn longstr_roundtrip() {
         let data = b"binary\x00data\xFF";
@@ -549,9 +450,6 @@ mod tests {
         assert_eq!(read_longstr(&mut Cursor::new(&buf)).unwrap(), data);
     }
 
-    /// Executes the standard timestamp roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for timestamp roundtrip.
     #[test]
     fn timestamp_roundtrip() {
         let mut buf = Vec::new();
@@ -559,9 +457,6 @@ mod tests {
         assert_eq!(read_timestamp(&mut Cursor::new(&buf)).unwrap(), 1700000000);
     }
 
-    /// Executes the standard field table roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for field table roundtrip.
     #[test]
     fn field_table_roundtrip() {
         let mut table = FieldTable::new();
@@ -575,9 +470,6 @@ mod tests {
         assert_eq!(decoded, table);
     }
 
-    /// Executes the standard field table empty lifecycle step.
-    ///
-    /// Executes the required business logic for field table empty.
     #[test]
     fn field_table_empty() {
         let table = FieldTable::new();
@@ -587,9 +479,6 @@ mod tests {
         assert!(decoded.is_empty());
     }
 
-    /// Executes the standard field table nested lifecycle step.
-    ///
-    /// Executes the required business logic for field table nested.
     #[test]
     fn field_table_nested() {
         let mut inner = FieldTable::new();
@@ -604,9 +493,6 @@ mod tests {
         assert_eq!(decoded, outer);
     }
 
-    /// Executes the standard field value all types lifecycle step.
-    ///
-    /// Executes the required business logic for field value all types.
     #[test]
     #[allow(clippy::approx_constant)]
     fn field_value_all_types() {
@@ -635,9 +521,6 @@ mod tests {
         }
     }
 
-    /// Executes the standard unknown field type errors lifecycle step.
-    ///
-    /// Executes the required business logic for unknown field type errors.
     #[test]
     fn unknown_field_type_errors() {
         let buf = vec![b'Z'];

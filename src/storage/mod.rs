@@ -27,10 +27,6 @@ use crate::routing::exchange::{Binding, Exchange, ExchangeType};
 use crate::state::BrokerState;
 use crate::storage::wal::{EntryType, Wal, WalEntry};
 
-/// Executes the standard init with recovery lifecycle step.
-///
-/// Executes the required business logic for init with recovery.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -51,10 +47,6 @@ pub fn init_with_recovery(broker: &Arc<BrokerState>) -> std::io::Result<Arc<Wal>
     Ok(wal)
 }
 
-/// Executes the standard replay lifecycle step.
-///
-/// Executes the required business logic for replay.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -109,10 +101,6 @@ enum ReplayError {
 }
 
 impl std::fmt::Display for ReplayError {
-    /// Executes the standard fmt lifecycle step.
-    ///
-    /// Executes the required business logic for fmt.
-    ///
     /// # Arguments
     ///
     /// * `f` - `&mut std::fmt::Formatter<'_>`: The `f` argument.
@@ -142,10 +130,6 @@ struct ReplayReader<'a> {
 }
 
 impl<'a> ReplayReader<'a> {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `data` - `&'a [u8]`: The `data` argument.
@@ -157,10 +141,6 @@ impl<'a> ReplayReader<'a> {
         Self { data, offset: 0 }
     }
 
-    /// Executes the standard read u8 lifecycle step.
-    ///
-    /// Executes the required business logic for read u8.
-    ///
     /// # Returns
     ///
     /// * `Result<u8>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -173,10 +153,6 @@ impl<'a> ReplayReader<'a> {
         Ok(val)
     }
 
-    /// Executes the standard read u16 lifecycle step.
-    ///
-    /// Executes the required business logic for read u16.
-    ///
     /// # Returns
     ///
     /// * `Result<u16>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -189,10 +165,6 @@ impl<'a> ReplayReader<'a> {
         Ok(val)
     }
 
-    /// Executes the standard read u32 lifecycle step.
-    ///
-    /// Executes the required business logic for read u32.
-    ///
     /// # Returns
     ///
     /// * `Result<u32>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -210,10 +182,6 @@ impl<'a> ReplayReader<'a> {
         Ok(val)
     }
 
-    /// Executes the standard read u64 lifecycle step.
-    ///
-    /// Executes the required business logic for read u64.
-    ///
     /// # Returns
     ///
     /// * `Result<u64>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -235,10 +203,6 @@ impl<'a> ReplayReader<'a> {
         Ok(val)
     }
 
-    /// Executes the standard read slice lifecycle step.
-    ///
-    /// Executes the required business logic for read slice.
-    ///
     /// # Arguments
     ///
     /// * `len` - `usize`: The `len` argument.
@@ -255,10 +219,6 @@ impl<'a> ReplayReader<'a> {
         Ok(slice)
     }
 
-    /// Executes the standard read string u16 lifecycle step.
-    ///
-    /// Executes the required business logic for read string u16.
-    ///
     /// # Returns
     ///
     /// * `Result<String>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -271,10 +231,6 @@ impl<'a> ReplayReader<'a> {
     }
 }
 
-/// Executes the standard replay declare queue lifecycle step.
-///
-/// Executes the required business logic for replay declare queue.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -338,10 +294,6 @@ fn replay_enqueue(
     Ok(())
 }
 
-/// Executes the standard replay declare exchange lifecycle step.
-///
-/// Executes the required business logic for replay declare exchange.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -377,10 +329,6 @@ fn replay_declare_exchange(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()>
     Ok(())
 }
 
-/// Executes the standard replay bind lifecycle step.
-///
-/// Executes the required business logic for replay bind.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -414,10 +362,6 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    /// Executes the standard tmp wal lifecycle step.
-    ///
-    /// Executes the required business logic for tmp wal.
-    ///
     /// # Arguments
     ///
     /// * `name` - `&str`: The unique identifier string of the resource.
@@ -435,9 +379,6 @@ mod tests {
         dir.join("broker.wal")
     }
 
-    /// Executes the standard recovery restores durable queues lifecycle step.
-    ///
-    /// Executes the required business logic for recovery restores durable queues.
     #[tokio::test]
     async fn recovery_restores_durable_queues() {
         let path = tmp_wal("recovery_queues.wal");
@@ -468,9 +409,6 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
-    /// Executes the standard recovery restores exchanges and bindings lifecycle step.
-    ///
-    /// Executes the required business logic for recovery restores exchanges and bindings.
     #[tokio::test]
     async fn recovery_restores_exchanges_and_bindings() {
         let path = tmp_wal("recovery_exchanges.wal");

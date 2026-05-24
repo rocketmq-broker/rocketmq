@@ -298,10 +298,6 @@ pub fn spawn_amqp_on_stream(
     });
 }
 
-/// Executes the standard send connection close lifecycle step.
-///
-/// Executes the required business logic for send connection close.
-///
 /// # Arguments
 ///
 /// * `writer` - `&mut crate::server::AmqpWriter`: The `writer` argument.
@@ -319,9 +315,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard content state accumulates body lifecycle step.
-    ///
-    /// Executes the required business logic for content state accumulates body.
     #[test]
     fn content_state_accumulates_body() {
         let mut cs = ContentState {
@@ -340,9 +333,6 @@ mod tests {
         assert!(cs.body_received.len() as u64 >= cs.body_size);
     }
 
-    /// Executes the standard zero body publish lifecycle step.
-    ///
-    /// Executes the required business logic for zero body publish.
     #[test]
     fn zero_body_publish() {
         let cs = ContentState {

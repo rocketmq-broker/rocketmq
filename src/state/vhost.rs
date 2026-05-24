@@ -39,10 +39,6 @@ pub struct VHost {
 }
 
 impl VHost {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `name` - `String`: The unique identifier string of the resource.
@@ -58,10 +54,6 @@ impl VHost {
         }
     }
 
-    /// Executes the standard empty lifecycle step.
-    ///
-    /// Executes the required business logic for empty.
-    ///
     /// # Arguments
     ///
     /// * `name` - `String`: The unique identifier string of the resource.
@@ -86,9 +78,6 @@ mod tests {
     use super::*;
     use crate::queue::QueueOptions;
 
-    /// Executes the standard vhost new has default exchanges lifecycle step.
-    ///
-    /// Executes the required business logic for vhost new has default exchanges.
     #[tokio::test]
     async fn vhost_new_has_default_exchanges() {
         let vh = VHost::new("/".to_string());
@@ -101,9 +90,6 @@ mod tests {
         assert!(ex.contains_key("amq.headers"));
     }
 
-    /// Executes the standard vhost empty has no exchanges lifecycle step.
-    ///
-    /// Executes the required business logic for vhost empty has no exchanges.
     #[test]
     fn vhost_empty_has_no_exchanges() {
         let vh = VHost::empty("test".to_string());
@@ -112,9 +98,6 @@ mod tests {
         assert_eq!(ex.len(), 0);
     }
 
-    /// Executes the standard vhost queues isolated lifecycle step.
-    ///
-    /// Executes the required business logic for vhost queues isolated.
     #[test]
     fn vhost_queues_isolated() {
         let vh1 = VHost::new("vh1".to_string());
@@ -126,9 +109,6 @@ mod tests {
         assert!(!vh2.queues.contains_key("shared-name"));
     }
 
-    /// Executes the standard vhost queue operations lifecycle step.
-    ///
-    /// Executes the required business logic for vhost queue operations.
     #[test]
     fn vhost_queue_operations() {
         let vh = VHost::new("/".to_string());
@@ -144,18 +124,12 @@ mod tests {
         assert!(!vh.queues.contains_key("q1"));
     }
 
-    /// Executes the standard vhost name stored lifecycle step.
-    ///
-    /// Executes the required business logic for vhost name stored.
     #[test]
     fn vhost_name_stored() {
         let vh = VHost::new("/production".to_string());
         assert_eq!(vh.name, "/production");
     }
 
-    /// Executes the standard vhost exchange declare lifecycle step.
-    ///
-    /// Executes the required business logic for vhost exchange declare.
     #[tokio::test]
     async fn vhost_exchange_declare() {
         use crate::routing::exchange::ExchangeType;
@@ -173,9 +147,6 @@ mod tests {
         assert!(ex.contains_key("custom.direct"));
     }
 
-    /// Executes the standard vhost exchange delete lifecycle step.
-    ///
-    /// Executes the required business logic for vhost exchange delete.
     #[tokio::test]
     async fn vhost_exchange_delete() {
         let vh = VHost::new("/".to_string());

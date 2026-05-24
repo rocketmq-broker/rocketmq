@@ -28,10 +28,6 @@ pub struct PriorityQueue {
 }
 
 impl PriorityQueue {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Returns
     ///
     /// * `Self` - The evaluated outcome or operation handle.
@@ -41,10 +37,6 @@ impl PriorityQueue {
         }
     }
 
-    /// Executes the standard push back lifecycle step.
-    ///
-    /// Executes the required business logic for push back.
-    ///
     /// # Arguments
     ///
     /// * `msg` - `QueueMessage`: The `msg` argument.
@@ -55,10 +47,6 @@ impl PriorityQueue {
             .push_back(msg);
     }
 
-    /// Executes the standard push front lifecycle step.
-    ///
-    /// Executes the required business logic for push front.
-    ///
     /// # Arguments
     ///
     /// * `msg` - `QueueMessage`: The `msg` argument.
@@ -69,10 +57,6 @@ impl PriorityQueue {
             .push_front(msg);
     }
 
-    /// Executes the standard pop front lifecycle step.
-    ///
-    /// Executes the required business logic for pop front.
-    ///
     /// # Returns
     ///
     /// * `Option<QueueMessage>` - The evaluated outcome or operation handle.
@@ -86,10 +70,6 @@ impl PriorityQueue {
         msg
     }
 
-    /// Executes the standard pop oldest lifecycle step.
-    ///
-    /// Executes the required business logic for pop oldest.
-    ///
     /// # Returns
     ///
     /// * `Option<QueueMessage>` - The evaluated outcome or operation handle.
@@ -103,10 +83,6 @@ impl PriorityQueue {
         msg
     }
 
-    /// Executes the standard len lifecycle step.
-    ///
-    /// Executes the required business logic for len.
-    ///
     /// # Returns
     ///
     /// * `usize` - The evaluated outcome or operation handle.
@@ -114,10 +90,6 @@ impl PriorityQueue {
         self.buckets.values().map(|q| q.len()).sum()
     }
 
-    /// Executes the standard peek front lifecycle step.
-    ///
-    /// Executes the required business logic for peek front.
-    ///
     /// # Returns
     ///
     /// * `Option<&QueueMessage>` - The evaluated outcome or operation handle.
@@ -126,10 +98,6 @@ impl PriorityQueue {
         self.buckets.get(&key)?.front()
     }
 
-    /// Executes the standard is empty lifecycle step.
-    ///
-    /// Executes the required business logic for is empty.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -137,9 +105,6 @@ impl PriorityQueue {
         self.buckets.is_empty()
     }
 
-    /// Executes the standard clear lifecycle step.
-    ///
-    /// Executes the required business logic for clear.
     pub fn clear(&mut self) {
         self.buckets.clear();
     }

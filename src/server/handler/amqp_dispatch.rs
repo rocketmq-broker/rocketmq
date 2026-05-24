@@ -299,9 +299,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard channel open ok frame valid lifecycle step.
-    ///
-    /// Executes the required business logic for channel open ok frame valid.
     #[test]
     fn channel_open_ok_frame_valid() {
         let mut args = Vec::new();
@@ -315,9 +312,6 @@ mod tests {
         assert_eq!(m.method_id, METHOD_CHANNEL_OPEN_OK);
     }
 
-    /// Executes the standard channel close ok frame valid lifecycle step.
-    ///
-    /// Executes the required business logic for channel close ok frame valid.
     #[test]
     fn channel_close_ok_frame_valid() {
         let frame = encode_method_frame(1, CLASS_CHANNEL, METHOD_CHANNEL_CLOSE_OK, &[]);
@@ -327,9 +321,6 @@ mod tests {
         assert_eq!(m.method_id, METHOD_CHANNEL_CLOSE_OK);
     }
 
-    /// Executes the standard channel flow ok active lifecycle step.
-    ///
-    /// Executes the required business logic for channel flow ok active.
     #[test]
     fn channel_flow_ok_active() {
         let mut args = Vec::new();
@@ -341,9 +332,6 @@ mod tests {
         assert_eq!(m.arguments, vec![1]);
     }
 
-    /// Executes the standard channel flow ok inactive lifecycle step.
-    ///
-    /// Executes the required business logic for channel flow ok inactive.
     #[test]
     fn channel_flow_ok_inactive() {
         let mut args = Vec::new();

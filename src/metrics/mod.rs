@@ -57,10 +57,6 @@ pub struct Snapshot {
 
 static SNAPSHOT: OnceLock<Snapshot> = OnceLock::new();
 
-/// Executes the standard snapshot lifecycle step.
-///
-/// Executes the required business logic for snapshot.
-///
 /// # Returns
 ///
 /// * `&'static Snapshot` - The evaluated outcome or operation handle.
@@ -80,10 +76,6 @@ fn snapshot() -> &'static Snapshot {
     })
 }
 
-/// Executes the standard get snapshot lifecycle step.
-///
-/// Executes the required business logic for get snapshot.
-///
 /// # Returns
 ///
 /// * `&'static Snapshot` - The evaluated outcome or operation handle.
@@ -122,10 +114,6 @@ pub fn init_meter_provider() -> SdkMeterProvider {
 
 // ─── Counter Accessors ───────────────────────────────
 
-/// Executes the standard otel published lifecycle step.
-///
-/// Executes the required business logic for otel published.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -138,10 +126,6 @@ fn otel_published() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel delivered lifecycle step.
-///
-/// Executes the required business logic for otel delivered.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -154,10 +138,6 @@ fn otel_delivered() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel acked lifecycle step.
-///
-/// Executes the required business logic for otel acked.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -170,10 +150,6 @@ fn otel_acked() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel nacked lifecycle step.
-///
-/// Executes the required business logic for otel nacked.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -186,10 +162,6 @@ fn otel_nacked() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel conn opened lifecycle step.
-///
-/// Executes the required business logic for otel conn opened.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -202,10 +174,6 @@ fn otel_conn_opened() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel conn closed lifecycle step.
-///
-/// Executes the required business logic for otel conn closed.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -218,10 +186,6 @@ fn otel_conn_closed() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel chan opened lifecycle step.
-///
-/// Executes the required business logic for otel chan opened.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -234,10 +198,6 @@ fn otel_chan_opened() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel chan closed lifecycle step.
-///
-/// Executes the required business logic for otel chan closed.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -253,10 +213,6 @@ fn otel_chan_closed() -> &'static Counter<u64> {
 // ─── Public Recording API ────────────────────────────
 // Each function: (1) records to OTel counter, (2) increments atomic snapshot.
 
-/// Executes the standard record published lifecycle step.
-///
-/// Executes the required business logic for record published.
-///
 /// # Arguments
 ///
 /// * `queue` - `&str`: The queue instance reference.
@@ -268,10 +224,6 @@ pub fn record_published(queue: &str) {
         .fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record delivered lifecycle step.
-///
-/// Executes the required business logic for record delivered.
-///
 /// # Arguments
 ///
 /// * `queue` - `&str`: The queue instance reference.
@@ -283,27 +235,18 @@ pub fn record_delivered(queue: &str) {
         .fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record acked lifecycle step.
-///
-/// Executes the required business logic for record acked.
 #[inline]
 pub fn record_acked() {
     otel_acked().add(1, &[]);
     snapshot().messages_acked.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record nacked lifecycle step.
-///
-/// Executes the required business logic for record nacked.
 #[inline]
 pub fn record_nacked() {
     otel_nacked().add(1, &[]);
     snapshot().messages_nacked.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record conn opened lifecycle step.
-///
-/// Executes the required business logic for record conn opened.
 #[inline]
 pub fn record_conn_opened() {
     otel_conn_opened().add(1, &[]);
@@ -312,9 +255,6 @@ pub fn record_conn_opened() {
         .fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record conn closed lifecycle step.
-///
-/// Executes the required business logic for record conn closed.
 #[inline]
 pub fn record_conn_closed() {
     otel_conn_closed().add(1, &[]);
@@ -323,28 +263,18 @@ pub fn record_conn_closed() {
         .fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record chan opened lifecycle step.
-///
-/// Executes the required business logic for record chan opened.
 #[inline]
 pub fn record_chan_opened() {
     otel_chan_opened().add(1, &[]);
     snapshot().channels_opened.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record chan closed lifecycle step.
-///
-/// Executes the required business logic for record chan closed.
 #[inline]
 pub fn record_chan_closed() {
     otel_chan_closed().add(1, &[]);
     snapshot().channels_closed.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard otel queue declared lifecycle step.
-///
-/// Executes the required business logic for otel queue declared.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -357,10 +287,6 @@ fn otel_queue_declared() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel queue created lifecycle step.
-///
-/// Executes the required business logic for otel queue created.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -373,10 +299,6 @@ fn otel_queue_created() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard otel queue deleted lifecycle step.
-///
-/// Executes the required business logic for otel queue deleted.
-///
 /// # Returns
 ///
 /// * `&'static Counter<u64>` - The evaluated outcome or operation handle.
@@ -389,27 +311,18 @@ fn otel_queue_deleted() -> &'static Counter<u64> {
     })
 }
 
-/// Executes the standard record queue declared lifecycle step.
-///
-/// Executes the required business logic for record queue declared.
 #[inline]
 pub fn record_queue_declared() {
     otel_queue_declared().add(1, &[]);
     snapshot().queues_declared.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record queue created lifecycle step.
-///
-/// Executes the required business logic for record queue created.
 #[inline]
 pub fn record_queue_created() {
     otel_queue_created().add(1, &[]);
     snapshot().queues_created.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Executes the standard record queue deleted lifecycle step.
-///
-/// Executes the required business logic for record queue deleted.
 #[inline]
 pub fn record_queue_deleted() {
     otel_queue_deleted().add(1, &[]);
@@ -421,9 +334,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard counter and snapshot sync lifecycle step.
-    ///
-    /// Executes the required business logic for counter and snapshot sync.
     #[test]
     fn counter_and_snapshot_sync() {
         let _provider = init_meter_provider();

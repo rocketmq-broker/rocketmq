@@ -496,10 +496,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard make declare args lifecycle step.
-    ///
-    /// Executes the required business logic for make declare args.
-    ///
     /// # Arguments
     ///
     /// * `name` - `&str`: The unique identifier string of the resource.
@@ -517,9 +513,6 @@ mod tests {
         args
     }
 
-    /// Executes the standard declare args parse lifecycle step.
-    ///
-    /// Executes the required business logic for declare args parse.
     #[test]
     fn declare_args_parse() {
         let args = make_declare_args("test.q", 0x06); // durable + exclusive
@@ -531,9 +524,6 @@ mod tests {
         assert_eq!(flags & 0x04, 0x04); // exclusive
     }
 
-    /// Executes the standard declare ok frame lifecycle step.
-    ///
-    /// Executes the required business logic for declare ok frame.
     #[test]
     fn declare_ok_frame() {
         let mut args = Vec::new();
@@ -551,9 +541,6 @@ mod tests {
         assert_eq!(read_long(&mut r).unwrap(), 2);
     }
 
-    /// Executes the standard delete ok frame lifecycle step.
-    ///
-    /// Executes the required business logic for delete ok frame.
     #[test]
     fn delete_ok_frame() {
         let mut args = Vec::new();
@@ -566,9 +553,6 @@ mod tests {
         assert_eq!(read_long(&mut r).unwrap(), 42);
     }
 
-    /// Executes the standard purge ok frame lifecycle step.
-    ///
-    /// Executes the required business logic for purge ok frame.
     #[test]
     fn purge_ok_frame() {
         let mut args = Vec::new();
@@ -580,9 +564,6 @@ mod tests {
         assert_eq!(m.method_id, METHOD_QUEUE_PURGE_OK);
     }
 
-    /// Executes the standard bind args parse lifecycle step.
-    ///
-    /// Executes the required business logic for bind args parse.
     #[test]
     fn bind_args_parse() {
         let mut args = Vec::new();
@@ -600,9 +581,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "rk1");
     }
 
-    /// Executes the standard unbind args parse lifecycle step.
-    ///
-    /// Executes the required business logic for unbind args parse.
     #[test]
     fn unbind_args_parse() {
         let mut args = Vec::new();

@@ -135,10 +135,6 @@ pub const NOT_ALLOWED: u16 = 530;
 pub const NOT_IMPLEMENTED: u16 = 540;
 pub const INTERNAL_ERROR: u16 = 541;
 
-/// Executes the standard is connection error lifecycle step.
-///
-/// Executes the required business logic for is connection error.
-///
 /// # Arguments
 ///
 /// * `code` - `u16`: The `code` argument.
@@ -163,10 +159,6 @@ pub fn is_connection_error(code: u16) -> bool {
     )
 }
 
-/// Executes the standard reply text lifecycle step.
-///
-/// Executes the required business logic for reply text.
-///
 /// # Arguments
 ///
 /// * `code` - `u16`: The `code` argument.
@@ -204,9 +196,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard connection errors classified lifecycle step.
-    ///
-    /// Executes the required business logic for connection errors classified.
     #[test]
     fn connection_errors_classified() {
         assert!(is_connection_error(FRAME_ERROR));
@@ -217,9 +206,6 @@ mod tests {
         assert!(!is_connection_error(REPLY_SUCCESS));
     }
 
-    /// Executes the standard reply text known lifecycle step.
-    ///
-    /// Executes the required business logic for reply text known.
     #[test]
     fn reply_text_known() {
         assert_eq!(reply_text(NOT_FOUND), "NOT-FOUND");
@@ -227,17 +213,11 @@ mod tests {
         assert_eq!(reply_text(REPLY_SUCCESS), "REPLY-SUCCESS");
     }
 
-    /// Executes the standard reply text unknown lifecycle step.
-    ///
-    /// Executes the required business logic for reply text unknown.
     #[test]
     fn reply_text_unknown() {
         assert_eq!(reply_text(999), "UNKNOWN");
     }
 
-    /// Executes the standard class ids correct lifecycle step.
-    ///
-    /// Executes the required business logic for class ids correct.
     #[test]
     fn class_ids_correct() {
         assert_eq!(CLASS_CONNECTION, 10);
@@ -248,9 +228,6 @@ mod tests {
         assert_eq!(CLASS_TX, 90);
     }
 
-    /// Executes the standard method ids connection lifecycle step.
-    ///
-    /// Executes the required business logic for method ids connection.
     #[test]
     fn method_ids_connection() {
         assert_eq!(METHOD_CONNECTION_START, 10);
@@ -259,9 +236,6 @@ mod tests {
         assert_eq!(METHOD_CONNECTION_CLOSE, 50);
     }
 
-    /// Executes the standard method ids basic lifecycle step.
-    ///
-    /// Executes the required business logic for method ids basic.
     #[test]
     fn method_ids_basic() {
         assert_eq!(METHOD_BASIC_PUBLISH, 40);

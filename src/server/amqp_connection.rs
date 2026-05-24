@@ -222,10 +222,6 @@ pub fn build_connection_close(
     buf
 }
 
-/// Executes the standard build connection close ok lifecycle step.
-///
-/// Executes the required business logic for build connection close ok.
-///
 /// # Returns
 ///
 /// * `Vec<u8>` - The evaluated outcome or operation handle.
@@ -235,10 +231,6 @@ pub fn build_connection_close_ok() -> Vec<u8> {
 
 // ─── Internal builders ────────────────────────────────
 
-/// Executes the standard build connection start lifecycle step.
-///
-/// Executes the required business logic for build connection start.
-///
 /// # Returns
 ///
 /// * `Vec<u8>` - The evaluated outcome or operation handle.
@@ -281,10 +273,6 @@ fn build_connection_start() -> Vec<u8> {
     buf
 }
 
-/// Executes the standard build connection tune lifecycle step.
-///
-/// Executes the required business logic for build connection tune.
-///
 /// # Arguments
 ///
 /// * `channel_max` - `u16`: The `channel_max` argument.
@@ -302,10 +290,6 @@ fn build_connection_tune(channel_max: u16, frame_max: u32, heartbeat: u16) -> Ve
     buf
 }
 
-/// Executes the standard build connection open ok lifecycle step.
-///
-/// Executes the required business logic for build connection open ok.
-///
 /// # Returns
 ///
 /// * `Vec<u8>` - The evaluated outcome or operation handle.
@@ -316,10 +300,6 @@ fn build_connection_open_ok() -> Vec<u8> {
     buf
 }
 
-/// Executes the standard parse start ok credentials lifecycle step.
-///
-/// Executes the required business logic for parse start ok credentials.
-///
 /// # Arguments
 ///
 /// * `args` - `&[u8]`: The `args` argument.
@@ -374,10 +354,6 @@ fn parse_start_ok_credentials(args: &[u8]) -> Result<(String, String), ()> {
     Err(())
 }
 
-/// Executes the standard parse tune ok lifecycle step.
-///
-/// Executes the required business logic for parse tune ok.
-///
 /// # Arguments
 ///
 /// * `args` - `&[u8]`: The `args` argument.
@@ -405,10 +381,6 @@ fn parse_tune_ok(args: &[u8]) -> Result<(u16, u32, u16), ()> {
     Ok((ch, fm, heartbeat))
 }
 
-/// Executes the standard parse connection open lifecycle step.
-///
-/// Executes the required business logic for parse connection open.
-///
 /// # Arguments
 ///
 /// * `args` - `&[u8]`: The `args` argument.
@@ -424,10 +396,6 @@ fn parse_connection_open(args: &[u8]) -> Result<String, ()> {
     Ok(vhost)
 }
 
-/// Executes the standard read amqp frame lifecycle step.
-///
-/// Executes the required business logic for read amqp frame.
-///
 /// # Arguments
 ///
 /// * `reader` - `&mut (impl AsyncReadExt + Unpin`: The `reader` argument.
@@ -462,9 +430,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard connection start builds lifecycle step.
-    ///
-    /// Executes the required business logic for connection start builds.
     #[test]
     fn connection_start_builds() {
         let args = build_connection_start();
@@ -480,9 +445,6 @@ mod tests {
         assert_eq!(std::str::from_utf8(&locales).unwrap(), "en_US");
     }
 
-    /// Executes the standard connection tune roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for connection tune roundtrip.
     #[test]
     fn connection_tune_roundtrip() {
         let args = build_connection_tune(2047, 131072, 60);
@@ -492,9 +454,6 @@ mod tests {
         assert_eq!(hb, 60);
     }
 
-    /// Executes the standard tune ok client lowers lifecycle step.
-    ///
-    /// Executes the required business logic for tune ok client lowers.
     #[test]
     fn tune_ok_client_lowers() {
         let mut buf = Vec::new();
@@ -507,9 +466,6 @@ mod tests {
         assert_eq!(hb, 30);
     }
 
-    /// Executes the standard tune ok zero means server default lifecycle step.
-    ///
-    /// Executes the required business logic for tune ok zero means server default.
     #[test]
     fn tune_ok_zero_means_server_default() {
         let mut buf = Vec::new();
@@ -522,9 +478,6 @@ mod tests {
         assert_eq!(hb, 0);
     }
 
-    /// Executes the standard connection open parse lifecycle step.
-    ///
-    /// Executes the required business logic for connection open parse.
     #[test]
     fn connection_open_parse() {
         let mut buf = Vec::new();
@@ -535,9 +488,6 @@ mod tests {
         assert_eq!(vhost, "/staging");
     }
 
-    /// Executes the standard connection close builds lifecycle step.
-    ///
-    /// Executes the required business logic for connection close builds.
     #[test]
     fn connection_close_builds() {
         let args =
@@ -550,9 +500,6 @@ mod tests {
         assert_eq!(read_short(&mut r).unwrap(), METHOD_QUEUE_DECLARE);
     }
 
-    /// Executes the standard plain auth parse lifecycle step.
-    ///
-    /// Executes the required business logic for plain auth parse.
     #[test]
     fn plain_auth_parse() {
         let mut buf = Vec::new();
@@ -570,9 +517,6 @@ mod tests {
         assert_eq!(pass, "guest");
     }
 
-    /// Executes the standard plain auth extracts any credentials lifecycle step.
-    ///
-    /// Executes the required business logic for plain auth extracts any credentials.
     #[test]
     fn plain_auth_extracts_any_credentials() {
         // parse_start_ok_credentials no longer validates — it just extracts
@@ -586,9 +530,6 @@ mod tests {
         assert_eq!(pass, "s3cret");
     }
 
-    /// Executes the standard unsupported mechanism lifecycle step.
-    ///
-    /// Executes the required business logic for unsupported mechanism.
     #[test]
     fn unsupported_mechanism() {
         let mut buf = Vec::new();
@@ -599,9 +540,6 @@ mod tests {
         assert!(parse_start_ok_credentials(&buf).is_err());
     }
 
-    /// Executes the standard connection open ok builds lifecycle step.
-    ///
-    /// Executes the required business logic for connection open ok builds.
     #[test]
     fn connection_open_ok_builds() {
         let args = build_connection_open_ok();

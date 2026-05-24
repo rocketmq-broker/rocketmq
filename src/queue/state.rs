@@ -37,10 +37,6 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `rate` - `u32`: The `rate` argument.
@@ -56,9 +52,6 @@ impl TokenBucket {
         }
     }
 
-    /// Executes the standard refill lifecycle step.
-    ///
-    /// Executes the required business logic for refill.
     pub fn refill(&mut self) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
@@ -66,10 +59,6 @@ impl TokenBucket {
         self.last_refill = now;
     }
 
-    /// Executes the standard try consume lifecycle step.
-    ///
-    /// Executes the required business logic for try consume.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -94,10 +83,6 @@ pub struct ConsumerGroup {
 }
 
 impl ConsumerGroup {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `name` - `String`: The unique identifier string of the resource.
@@ -113,10 +98,6 @@ impl ConsumerGroup {
         }
     }
 
-    /// Executes the standard add member lifecycle step.
-    ///
-    /// Executes the required business logic for add member.
-    ///
     /// # Arguments
     ///
     /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -133,10 +114,6 @@ impl ConsumerGroup {
         true
     }
 
-    /// Executes the standard remove member lifecycle step.
-    ///
-    /// Executes the required business logic for remove member.
-    ///
     /// # Arguments
     ///
     /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -152,10 +129,6 @@ impl ConsumerGroup {
         self.members.len() != before
     }
 
-    /// Executes the standard next target lifecycle step.
-    ///
-    /// Executes the required business logic for next target.
-    ///
     /// # Arguments
     ///
     /// * `broker` - `&crate::state::Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -207,10 +180,6 @@ pub struct QueueState {
 }
 
 impl QueueState {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Returns
     ///
     /// * `Self` - The evaluated outcome or operation handle.
@@ -218,10 +187,6 @@ impl QueueState {
         Self::with_options(QueueOptions::default())
     }
 
-    /// Executes the standard with options lifecycle step.
-    ///
-    /// Executes the required business logic for with options.
-    ///
     /// # Arguments
     ///
     /// * `options` - `QueueOptions`: The `options` argument.
@@ -252,10 +217,6 @@ impl QueueState {
         }
     }
 
-    /// Executes the standard check rate limit lifecycle step.
-    ///
-    /// Executes the required business logic for check rate limit.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -295,10 +256,6 @@ impl QueueState {
         tag
     }
 
-    /// Executes the standard cancel consumer lifecycle step.
-    ///
-    /// Executes the required business logic for cancel consumer.
-    ///
     /// # Arguments
     ///
     /// * `tag` - `&str`: The `tag` argument.
@@ -323,10 +280,6 @@ impl QueueState {
         }
     }
 
-    /// Executes the standard next target lifecycle step.
-    ///
-    /// Executes the required business logic for next target.
-    ///
     /// # Arguments
     ///
     /// * `broker` - `&crate::state::Broker`: Thread-safe pointer to the global shared broker storage & state.

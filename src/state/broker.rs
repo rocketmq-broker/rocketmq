@@ -55,10 +55,6 @@ pub struct ChannelState {
 }
 
 impl ChannelState {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `id` - `u16`: The `id` argument.
@@ -77,10 +73,6 @@ impl ChannelState {
         }
     }
 
-    /// Executes the standard can deliver lifecycle step.
-    ///
-    /// Executes the required business logic for can deliver.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -126,10 +118,6 @@ pub struct ConnectionState {
 }
 
 impl ConnectionState {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Returns
     ///
     /// * `Self` - The evaluated outcome or operation handle.
@@ -171,10 +159,6 @@ pub struct BrokerState {
 }
 
 impl BrokerState {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Returns
     ///
     /// * `Self` - The evaluated outcome or operation handle.
@@ -217,10 +201,6 @@ impl BrokerState {
         }
     }
 
-    /// Executes the standard set cluster lifecycle step.
-    ///
-    /// Executes the required business logic for set cluster.
-    ///
     /// # Arguments
     ///
     /// * `cluster` - `Arc<crate::cluster::ClusterManager>`: The `cluster` argument.
@@ -228,10 +208,6 @@ impl BrokerState {
         let _ = self.cluster.set(cluster);
     }
 
-    /// Executes the standard start time ms lifecycle step.
-    ///
-    /// Executes the required business logic for start time ms.
-    ///
     /// # Returns
     ///
     /// * `u64` - The evaluated outcome or operation handle.
@@ -250,10 +226,6 @@ impl BrokerState {
         self.vhosts.iter().map(|e| e.key().clone()).collect()
     }
 
-    /// Executes the standard cluster lifecycle step.
-    ///
-    /// Executes the required business logic for cluster.
-    ///
     /// # Returns
     ///
     /// * `Option<&Arc<crate::cluster::ClusterManager>>` - The evaluated outcome or operation handle.
@@ -261,10 +233,6 @@ impl BrokerState {
         self.cluster.get()
     }
 
-    /// Executes the standard set wal lifecycle step.
-    ///
-    /// Executes the required business logic for set wal.
-    ///
     /// # Arguments
     ///
     /// * `wal` - `Arc<crate::storage::wal::Wal>`: The `wal` argument.
@@ -272,10 +240,6 @@ impl BrokerState {
         let _ = self.wal.set(wal);
     }
 
-    /// Executes the standard wal lifecycle step.
-    ///
-    /// Executes the required business logic for wal.
-    ///
     /// # Returns
     ///
     /// * `Option<&Arc<crate::storage::wal::Wal>>` - The evaluated outcome or operation handle.
@@ -283,10 +247,6 @@ impl BrokerState {
         self.wal.get()
     }
 
-    /// Executes the standard alloc conn id lifecycle step.
-    ///
-    /// Executes the required business logic for alloc conn id.
-    ///
     /// # Returns
     ///
     /// * `u64` - The evaluated outcome or operation handle.
@@ -294,10 +254,6 @@ impl BrokerState {
         self.next_conn_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Executes the standard alloc msg id lifecycle step.
-    ///
-    /// Executes the required business logic for alloc msg id.
-    ///
     /// # Returns
     ///
     /// * `u64` - The evaluated outcome or operation handle.
@@ -305,10 +261,6 @@ impl BrokerState {
         self.next_msg_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Executes the standard remove connection lifecycle step.
-    ///
-    /// Executes the required business logic for remove connection.
-    ///
     /// # Arguments
     ///
     /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -347,10 +299,6 @@ impl BrokerState {
         }
     }
 
-    /// Executes the standard auto bind default exchange lifecycle step.
-    ///
-    /// Executes the required business logic for auto bind default exchange.
-    ///
     /// # Arguments
     ///
     /// * `queue_name` - `&str`: The unique identifier string of the resource.
@@ -366,10 +314,6 @@ impl BrokerState {
         }
     }
 
-    /// Executes the standard alloc delivery tag lifecycle step.
-    ///
-    /// Executes the required business logic for alloc delivery tag.
-    ///
     /// # Arguments
     ///
     /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -396,9 +340,6 @@ mod tests {
     use super::*;
     use crate::queue::QueueOptions;
 
-    /// Executes the standard channel state prefetch gating lifecycle step.
-    ///
-    /// Executes the required business logic for channel state prefetch gating.
     #[test]
     fn channel_state_prefetch_gating() {
         let mut ch = ChannelState::new(1);
@@ -408,9 +349,6 @@ mod tests {
         assert!(!ch.can_deliver());
     }
 
-    /// Executes the standard channel state flow control lifecycle step.
-    ///
-    /// Executes the required business logic for channel state flow control.
     #[test]
     fn channel_state_flow_control() {
         let mut ch = ChannelState::new(1);
@@ -423,9 +361,6 @@ mod tests {
         assert!(ch.can_deliver()); // resumed
     }
 
-    /// Executes the standard channel state flow overrides prefetch lifecycle step.
-    ///
-    /// Executes the required business logic for channel state flow overrides prefetch.
     #[test]
     fn channel_state_flow_overrides_prefetch() {
         let mut ch = ChannelState::new(1);
@@ -435,9 +370,6 @@ mod tests {
         assert!(!ch.can_deliver()); // flow takes precedence
     }
 
-    /// Executes the standard broker state alloc ids monotonic lifecycle step.
-    ///
-    /// Executes the required business logic for broker state alloc ids monotonic.
     #[test]
     fn broker_state_alloc_ids_monotonic() {
         let bs = BrokerState::new();
@@ -447,9 +379,6 @@ mod tests {
         assert_eq!(bs.alloc_msg_id(), 2);
     }
 
-    /// Executes the standard broker state default exchanges lifecycle step.
-    ///
-    /// Executes the required business logic for broker state default exchanges.
     #[tokio::test]
     async fn broker_state_default_exchanges() {
         let bs = BrokerState::new();
@@ -462,9 +391,6 @@ mod tests {
         assert!(ex.contains_key("amq.headers"));
     }
 
-    /// Executes the standard broker state remove connection lifecycle step.
-    ///
-    /// Executes the required business logic for broker state remove connection.
     #[test]
     fn broker_state_remove_connection() {
         let bs = BrokerState::new();
@@ -486,9 +412,6 @@ mod tests {
         assert!(bs.queues.get("q1").unwrap().listeners.is_empty());
     }
 
-    /// Executes the standard broker state exclusive queue removed lifecycle step.
-    ///
-    /// Executes the required business logic for broker state exclusive queue removed.
     #[test]
     fn broker_state_exclusive_queue_removed() {
         let bs = BrokerState::new();
@@ -516,9 +439,6 @@ mod tests {
     // Virtual Host tests
     // ──────────────────────────────────────────────
 
-    /// Executes the standard broker has default vhost lifecycle step.
-    ///
-    /// Executes the required business logic for broker has default vhost.
     #[test]
     fn broker_has_default_vhost() {
         let bs = BrokerState::new();
@@ -526,9 +446,6 @@ mod tests {
         assert_eq!(bs.vhosts.len(), 1);
     }
 
-    /// Executes the standard broker create vhost lifecycle step.
-    ///
-    /// Executes the required business logic for broker create vhost.
     #[test]
     fn broker_create_vhost() {
         let bs = BrokerState::new();
@@ -538,9 +455,6 @@ mod tests {
         assert_eq!(bs.vhosts.len(), 2);
     }
 
-    /// Executes the standard broker delete vhost lifecycle step.
-    ///
-    /// Executes the required business logic for broker delete vhost.
     #[test]
     fn broker_delete_vhost() {
         let bs = BrokerState::new();
@@ -552,9 +466,6 @@ mod tests {
         assert!(!bs.vhosts.contains_key("/temp"));
     }
 
-    /// Executes the standard broker cannot delete nonexistent vhost lifecycle step.
-    ///
-    /// Executes the required business logic for broker cannot delete nonexistent vhost.
     #[test]
     fn broker_cannot_delete_nonexistent_vhost() {
         let bs = BrokerState::new();
@@ -562,9 +473,6 @@ mod tests {
         assert!(removed.is_none());
     }
 
-    /// Executes the standard vhost has own exchanges lifecycle step.
-    ///
-    /// Executes the required business logic for vhost has own exchanges.
     #[tokio::test]
     async fn vhost_has_own_exchanges() {
         let bs = BrokerState::new();
@@ -577,9 +485,6 @@ mod tests {
         assert_eq!(ex.len(), 5);
     }
 
-    /// Executes the standard vhost queues are isolated lifecycle step.
-    ///
-    /// Executes the required business logic for vhost queues are isolated.
     #[test]
     fn vhost_queues_are_isolated() {
         let bs = BrokerState::new();
@@ -600,18 +505,12 @@ mod tests {
         assert!(!bs.vhosts.get("/b").unwrap().queues.contains_key("q1"));
     }
 
-    /// Executes the standard connection state defaults to root vhost lifecycle step.
-    ///
-    /// Executes the required business logic for connection state defaults to root vhost.
     #[test]
     fn connection_state_defaults_to_root_vhost() {
         let cs = ConnectionState::new();
         assert_eq!(cs.vhost, "/");
     }
 
-    /// Executes the standard connection state vhost can be changed lifecycle step.
-    ///
-    /// Executes the required business logic for connection state vhost can be changed.
     #[test]
     fn connection_state_vhost_can_be_changed() {
         let mut cs = ConnectionState::new();
@@ -619,9 +518,6 @@ mod tests {
         assert_eq!(cs.vhost, "/production");
     }
 
-    /// Executes the standard connection vhost tracks per connection lifecycle step.
-    ///
-    /// Executes the required business logic for connection vhost tracks per connection.
     #[test]
     fn connection_vhost_tracks_per_connection() {
         let bs = BrokerState::new();
@@ -642,9 +538,6 @@ mod tests {
     // Transaction tests
     // ──────────────────────────────────────────────
 
-    /// Executes the standard connection state defaults no tx lifecycle step.
-    ///
-    /// Executes the required business logic for connection state defaults no tx.
     #[test]
     fn connection_state_defaults_no_tx() {
         let cs = ConnectionState::new();
@@ -652,9 +545,6 @@ mod tests {
         assert!(cs.tx_buffer.is_empty());
     }
 
-    /// Executes the standard tx mode enable lifecycle step.
-    ///
-    /// Executes the required business logic for tx mode enable.
     #[test]
     fn tx_mode_enable() {
         let mut cs = ConnectionState::new();
@@ -662,9 +552,6 @@ mod tests {
         assert!(cs.tx_mode);
     }
 
-    /// Executes the standard tx buffer publish op lifecycle step.
-    ///
-    /// Executes the required business logic for tx buffer publish op.
     #[test]
     fn tx_buffer_publish_op() {
         let mut cs = ConnectionState::new();
@@ -687,9 +574,6 @@ mod tests {
         }
     }
 
-    /// Executes the standard tx buffer ack op lifecycle step.
-    ///
-    /// Executes the required business logic for tx buffer ack op.
     #[test]
     fn tx_buffer_ack_op() {
         let mut cs = ConnectionState::new();
@@ -702,9 +586,6 @@ mod tests {
         }
     }
 
-    /// Executes the standard tx buffer mixed ops lifecycle step.
-    ///
-    /// Executes the required business logic for tx buffer mixed ops.
     #[test]
     fn tx_buffer_mixed_ops() {
         let mut cs = ConnectionState::new();
@@ -725,9 +606,6 @@ mod tests {
         assert_eq!(cs.tx_buffer.len(), 3);
     }
 
-    /// Executes the standard tx rollback clears buffer lifecycle step.
-    ///
-    /// Executes the required business logic for tx rollback clears buffer.
     #[test]
     fn tx_rollback_clears_buffer() {
         let mut cs = ConnectionState::new();
@@ -747,9 +625,6 @@ mod tests {
         assert!(cs.tx_mode);
     }
 
-    /// Executes the standard tx commit drains buffer lifecycle step.
-    ///
-    /// Executes the required business logic for tx commit drains buffer.
     #[test]
     fn tx_commit_drains_buffer() {
         let mut cs = ConnectionState::new();
@@ -767,9 +642,6 @@ mod tests {
         assert!(cs.tx_buffer.is_empty());
     }
 
-    /// Executes the standard tx commit applies publish to queue lifecycle step.
-    ///
-    /// Executes the required business logic for tx commit applies publish to queue.
     #[test]
     fn tx_commit_applies_publish_to_queue() {
         let bs = BrokerState::new();
@@ -810,9 +682,6 @@ mod tests {
         assert_eq!(q.messages.len(), 1);
     }
 
-    /// Executes the standard tx commit applies ack removes inflight lifecycle step.
-    ///
-    /// Executes the required business logic for tx commit applies ack removes inflight.
     #[test]
     fn tx_commit_applies_ack_removes_inflight() {
         let bs = BrokerState::new();
@@ -836,9 +705,6 @@ mod tests {
         assert!(q.inflight.is_empty());
     }
 
-    /// Executes the standard tx multiple commits independent lifecycle step.
-    ///
-    /// Executes the required business logic for tx multiple commits independent.
     #[test]
     fn tx_multiple_commits_independent() {
         let mut cs = ConnectionState::new();
@@ -862,9 +728,6 @@ mod tests {
         assert!(cs.tx_buffer.is_empty());
     }
 
-    /// Executes the standard pending op clone lifecycle step.
-    ///
-    /// Executes the required business logic for pending op clone.
     #[test]
     fn pending_op_clone() {
         let op = PendingOp::Publish {
@@ -890,9 +753,6 @@ mod tests {
         }
     }
 
-    /// Executes the standard pending op debug lifecycle step.
-    ///
-    /// Executes the required business logic for pending op debug.
     #[test]
     fn pending_op_debug() {
         let op = PendingOp::Ack { msg_id: 99 };

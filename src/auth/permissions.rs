@@ -38,10 +38,6 @@ pub struct Permission {
 }
 
 impl Permission {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -63,10 +59,6 @@ impl Permission {
         }
     }
 
-    /// Executes the standard full access lifecycle step.
-    ///
-    /// Executes the required business logic for full access.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -79,10 +71,6 @@ impl Permission {
         Self::new(username, vhost, ".*", ".*", ".*")
     }
 
-    /// Executes the standard no access lifecycle step.
-    ///
-    /// Executes the required business logic for no access.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -96,10 +84,6 @@ impl Permission {
     }
 }
 
-/// Executes the standard matches resource lifecycle step.
-///
-/// Executes the required business logic for matches resource.
-///
 /// # Arguments
 ///
 /// * `pattern` - `&str`: The `pattern` argument.
@@ -143,9 +127,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard full access matches everything lifecycle step.
-    ///
-    /// Executes the required business logic for full access matches everything.
     #[test]
     fn full_access_matches_everything() {
         assert!(matches_resource(".*", "anything"));
@@ -153,18 +134,12 @@ mod tests {
         assert!(matches_resource(".*", "amq.gen-abc123"));
     }
 
-    /// Executes the standard empty pattern denies all lifecycle step.
-    ///
-    /// Executes the required business logic for empty pattern denies all.
     #[test]
     fn empty_pattern_denies_all() {
         assert!(!matches_resource("", "anything"));
         assert!(!matches_resource("", ""));
     }
 
-    /// Executes the standard prefix pattern lifecycle step.
-    ///
-    /// Executes the required business logic for prefix pattern.
     #[test]
     fn prefix_pattern() {
         assert!(matches_resource("^app\\..*", "app.orders"));
@@ -173,9 +148,6 @@ mod tests {
         assert!(!matches_resource("^app\\..*", "xapp.fake"));
     }
 
-    /// Executes the standard exact match lifecycle step.
-    ///
-    /// Executes the required business logic for exact match.
     #[test]
     fn exact_match() {
         assert!(matches_resource("^my-queue$", "my-queue"));
@@ -183,9 +155,6 @@ mod tests {
         assert!(!matches_resource("^my-queue$", "not-my-queue"));
     }
 
-    /// Executes the standard auto anchoring lifecycle step.
-    ///
-    /// Executes the required business logic for auto anchoring.
     #[test]
     fn auto_anchoring() {
         // Pattern without anchors is auto-anchored
@@ -194,9 +163,6 @@ mod tests {
         assert!(!matches_resource("orders", "my-orders"));
     }
 
-    /// Executes the standard amq gen pattern lifecycle step.
-    ///
-    /// Executes the required business logic for amq gen pattern.
     #[test]
     fn amq_gen_pattern() {
         // RabbitMQ default: guest can use auto-generated queues
@@ -204,9 +170,6 @@ mod tests {
         assert!(!matches_resource("^amq\\.gen.*", "my-queue"));
     }
 
-    /// Executes the standard alternation lifecycle step.
-    ///
-    /// Executes the required business logic for alternation.
     #[test]
     fn alternation() {
         assert!(matches_resource("^(app|service)\\..*", "app.orders"));
@@ -214,18 +177,12 @@ mod tests {
         assert!(!matches_resource("^(app|service)\\..*", "admin.logs"));
     }
 
-    /// Executes the standard invalid regex denies lifecycle step.
-    ///
-    /// Executes the required business logic for invalid regex denies.
     #[test]
     fn invalid_regex_denies() {
         // Invalid regex should not panic, just deny
         assert!(!matches_resource("[invalid", "anything"));
     }
 
-    /// Executes the standard permission constructors lifecycle step.
-    ///
-    /// Executes the required business logic for permission constructors.
     #[test]
     fn permission_constructors() {
         let full = Permission::full_access("admin", "/");

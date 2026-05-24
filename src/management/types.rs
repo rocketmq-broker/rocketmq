@@ -142,10 +142,6 @@ pub fn get_history_samples(metric: &str) -> Vec<SamplePoint> {
         .collect()
 }
 
-/// Executes the standard rate state lifecycle step.
-///
-/// Executes the required business logic for rate state.
-///
 /// # Returns
 ///
 /// * `&'static Mutex<RateState>` - The evaluated outcome or operation handle.
@@ -177,10 +173,6 @@ fn rate_state() -> &'static Mutex<RateState> {
     })
 }
 
-/// Executes the standard refresh rates lifecycle step.
-///
-/// Executes the required business logic for refresh rates.
-///
 /// # Arguments
 ///
 /// * `state` - `&mut RateState`: The `state` argument.
@@ -229,10 +221,6 @@ fn refresh_rates(state: &mut RateState) {
     state.last_queue_deleted = qdel;
 }
 
-/// Executes the standard get rates lifecycle step.
-///
-/// Executes the required business logic for get rates.
-///
 /// # Returns
 ///
 /// * `(u64, f64, u64, f64, u64, f64)` - The evaluated outcome or operation handle.
@@ -252,10 +240,6 @@ pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
     )
 }
 
-/// Executes the standard get churn rates lifecycle step.
-///
-/// Executes the required business logic for get churn rates.
-///
 /// # Returns
 ///
 /// * `serde_json::Value` - The evaluated outcome or operation handle.
@@ -312,10 +296,6 @@ pub struct PaginatedResponse<T: Serialize> {
 }
 
 impl<T: Serialize> PaginatedResponse<T> {
-    /// Executes the standard from vec lifecycle step.
-    ///
-    /// Executes the required business logic for from vec.
-    ///
     /// # Arguments
     ///
     /// * `items` - `Vec<T>`: The `items` argument.
@@ -770,10 +750,6 @@ where
     impl<'de> de::Visitor<'de> for UsizeOrString {
         type Value = usize;
 
-        /// Executes the standard expecting lifecycle step.
-        ///
-        /// Executes the required business logic for expecting.
-        ///
         /// # Arguments
         ///
         /// * `f` - `&mut std::fmt::Formatter`: The `f` argument.
@@ -805,20 +781,12 @@ where
     deserializer.deserialize_any(UsizeOrString)
 }
 
-/// Executes the standard default count lifecycle step.
-///
-/// Executes the required business logic for default count.
-///
 /// # Returns
 ///
 /// * `usize` - The evaluated outcome or operation handle.
 pub fn default_count() -> usize {
     1
 }
-/// Executes the standard default ack mode lifecycle step.
-///
-/// Executes the required business logic for default ack mode.
-///
 /// # Returns
 ///
 /// * `String` - The evaluated outcome or operation handle.
@@ -947,10 +915,6 @@ pub struct CreateExchangeRequest {
     pub arguments: serde_json::Value,
 }
 
-/// Executes the standard default exchange type lifecycle step.
-///
-/// Executes the required business logic for default exchange type.
-///
 /// # Returns
 ///
 /// * `String` - The evaluated outcome or operation handle.

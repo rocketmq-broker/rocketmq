@@ -40,10 +40,6 @@ const WAL_HEADER_SIZE: usize = 9; // total_len(4) + crc32(4) + entry_type(1)
 const SEGMENT_EXT: &str = "seg";
 const SEGMENT_ID_WIDTH: usize = 16;
 
-/// Executes the standard segment path lifecycle step.
-///
-/// Executes the required business logic for segment path.
-///
 /// # Arguments
 ///
 /// * `dir` - `&Path`: The `dir` argument.
@@ -61,10 +57,6 @@ fn segment_path(dir: &Path, id: u64) -> PathBuf {
     ))
 }
 
-/// Executes the standard discover segment ids lifecycle step.
-///
-/// Executes the required business logic for discover segment ids.
-///
 /// # Arguments
 ///
 /// * `dir` - `&Path`: The `dir` argument.
@@ -99,10 +91,6 @@ struct WalWriter {
 }
 
 impl WalWriter {
-    /// Executes the standard with capacity lifecycle step.
-    ///
-    /// Executes the required business logic for with capacity.
-    ///
     /// # Arguments
     ///
     /// * `cap` - `usize`: The `cap` argument.
@@ -116,10 +104,6 @@ impl WalWriter {
         }
     }
 
-    /// Executes the standard write str u16 lifecycle step.
-    ///
-    /// Executes the required business logic for write str u16.
-    ///
     /// # Arguments
     ///
     /// * `s` - `&str`: The `s` argument.
@@ -130,10 +114,6 @@ impl WalWriter {
         self.buf.extend_from_slice(bytes);
     }
 
-    /// Executes the standard write bytes u32 lifecycle step.
-    ///
-    /// Executes the required business logic for write bytes u32.
-    ///
     /// # Arguments
     ///
     /// * `data` - `&[u8]`: The `data` argument.
@@ -143,10 +123,6 @@ impl WalWriter {
         self.buf.extend_from_slice(data);
     }
 
-    /// Executes the standard write u8 lifecycle step.
-    ///
-    /// Executes the required business logic for write u8.
-    ///
     /// # Arguments
     ///
     /// * `v` - `u8`: The `v` argument.
@@ -154,10 +130,6 @@ impl WalWriter {
         self.buf.push(v);
     }
 
-    /// Executes the standard write u64 lifecycle step.
-    ///
-    /// Executes the required business logic for write u64.
-    ///
     /// # Arguments
     ///
     /// * `v` - `u64`: The `v` argument.
@@ -165,10 +137,6 @@ impl WalWriter {
         self.buf.extend_from_slice(&v.to_be_bytes());
     }
 
-    /// Executes the standard finish lifecycle step.
-    ///
-    /// Executes the required business logic for finish.
-    ///
     /// # Returns
     ///
     /// * `Vec<u8>` - The evaluated outcome or operation handle.
@@ -192,10 +160,6 @@ pub enum EntryType {
 
 impl TryFrom<u8> for EntryType {
     type Error = ();
-    /// Executes the standard try from lifecycle step.
-    ///
-    /// Executes the required business logic for try from.
-    ///
     /// # Arguments
     ///
     /// * `value` - `u8`: The `value` argument.
@@ -236,10 +200,6 @@ pub struct Segment {
 }
 
 impl Segment {
-    /// Executes the standard append lifecycle step.
-    ///
-    /// Executes the required business logic for append.
-    ///
     /// # Arguments
     ///
     /// * `entry_type` - `EntryType`: The `entry_type` argument.
@@ -288,10 +248,6 @@ pub struct SegmentManager {
 }
 
 impl SegmentManager {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `dir` - `PathBuf`: The `dir` argument.
@@ -328,10 +284,6 @@ impl SegmentManager {
         })
     }
 
-    /// Executes the standard append lifecycle step.
-    ///
-    /// Executes the required business logic for append.
-    ///
     /// # Arguments
     ///
     /// * `entry_type` - `EntryType`: The `entry_type` argument.
@@ -471,10 +423,6 @@ impl SegmentManager {
         Ok((headers, body))
     }
 
-    /// Executes the standard read all entries lifecycle step.
-    ///
-    /// Executes the required business logic for read all entries.
-    ///
     /// # Returns
     ///
     /// * `io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -489,10 +437,6 @@ impl SegmentManager {
         Ok(all_entries)
     }
 
-    /// Executes the standard truncate lifecycle step.
-    ///
-    /// Executes the required business logic for truncate.
-    ///
     /// # Returns
     ///
     /// * `io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -539,10 +483,6 @@ pub struct Wal {
 }
 
 impl Wal {
-    /// Executes the standard open lifecycle step.
-    ///
-    /// Executes the required business logic for open.
-    ///
     /// # Arguments
     ///
     /// * `path` - `impl AsRef<Path>`: The `path` argument.
@@ -577,10 +517,6 @@ impl Wal {
         })
     }
 
-    /// Executes the standard append lifecycle step.
-    ///
-    /// Executes the required business logic for append.
-    ///
     /// # Arguments
     ///
     /// * `entry_type` - `EntryType`: The `entry_type` argument.
@@ -595,10 +531,6 @@ impl Wal {
         Ok(seq)
     }
 
-    /// Executes the standard read all lifecycle step.
-    ///
-    /// Executes the required business logic for read all.
-    ///
     /// # Returns
     ///
     /// * `std::io::Result<Vec<WalEntry>>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -606,10 +538,6 @@ impl Wal {
         self.segment_manager.read_all_entries()
     }
 
-    /// Executes the standard path lifecycle step.
-    ///
-    /// Executes the required business logic for path.
-    ///
     /// # Returns
     ///
     /// * `&Path` - The evaluated outcome or operation handle.
@@ -617,10 +545,6 @@ impl Wal {
         &self.path
     }
 
-    /// Executes the standard truncate lifecycle step.
-    ///
-    /// Executes the required business logic for truncate.
-    ///
     /// # Returns
     ///
     /// * `std::io::Result<()>` - A standard rust Result wrapping the status payloads or server failure codes.
@@ -642,10 +566,6 @@ impl Wal {
 
     // ── Convenience builders ────────────────────────────────────────────
 
-    /// Executes the standard log declare queue lifecycle step.
-    ///
-    /// Executes the required business logic for log declare queue.
-    ///
     /// # Arguments
     ///
     /// * `name` - `&str`: The unique identifier string of the resource.
@@ -697,10 +617,6 @@ impl Wal {
         Ok((segment_id, offset, length))
     }
 
-    /// Executes the standard log ack lifecycle step.
-    ///
-    /// Executes the required business logic for log ack.
-    ///
     /// # Arguments
     ///
     /// * `msg_id` - `u64`: The `msg_id` argument.
@@ -725,10 +641,6 @@ impl Wal {
         self.append(EntryType::DeclareExchange, &w.finish())
     }
 
-    /// Executes the standard log bind lifecycle step.
-    ///
-    /// Executes the required business logic for log bind.
-    ///
     /// # Arguments
     ///
     /// * `exchange` - `&str`: The exchange instance reference.
@@ -748,10 +660,6 @@ impl Wal {
     }
 }
 
-/// Executes the standard read entries lifecycle step.
-///
-/// Executes the required business logic for read entries.
-///
 /// # Arguments
 ///
 /// * `path` - `&Path`: The `path` argument.
@@ -829,10 +737,6 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// Executes the standard tmp wal lifecycle step.
-    ///
-    /// Executes the required business logic for tmp wal.
-    ///
     /// # Arguments
     ///
     /// * `name` - `&str`: The unique identifier string of the resource.
@@ -850,9 +754,6 @@ mod tests {
         dir.join("broker.wal")
     }
 
-    /// Executes the standard wal roundtrip declare queue lifecycle step.
-    ///
-    /// Executes the required business logic for wal roundtrip declare queue.
     #[test]
     fn wal_roundtrip_declare_queue() {
         let path = tmp_wal("test_declare.wal");
@@ -875,9 +776,6 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
-    /// Executes the standard wal roundtrip enqueue ack lifecycle step.
-    ///
-    /// Executes the required business logic for wal roundtrip enqueue ack.
     #[test]
     fn wal_roundtrip_enqueue_ack() {
         let path = tmp_wal("test_enqueue.wal");
@@ -907,9 +805,6 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
-    /// Executes the standard wal truncate lifecycle step.
-    ///
-    /// Executes the required business logic for wal truncate.
     #[test]
     fn wal_truncate() {
         let path = tmp_wal("test_truncate.wal");

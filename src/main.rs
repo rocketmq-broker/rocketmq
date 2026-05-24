@@ -74,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ?seed_nodes,
         "initializing cluster management"
     );
+
     let cluster_manager = Arc::new(cluster::ClusterManager::new(node_id, cluster_addr.clone()));
     broker.set_cluster(cluster_manager.clone());
 

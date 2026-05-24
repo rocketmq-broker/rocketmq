@@ -26,10 +26,6 @@ use tracing::info;
 use crate::management::types::*;
 use crate::state::{Broker, BrokerState};
 
-/// Executes the standard resolve exchange name lifecycle step.
-///
-/// Executes the required business logic for resolve exchange name.
-///
 /// # Arguments
 ///
 /// * `name` - `&str`: The unique identifier string of the resource.
@@ -430,10 +426,6 @@ pub async fn get_node(
     }
 }
 
-/// Executes the standard get cluster name lifecycle step.
-///
-/// Executes the required business logic for get cluster name.
-///
 /// # Returns
 ///
 /// * `Json<serde_json::Value>` - JSON formatted data encapsulation mirroring standard API schemas.
@@ -442,10 +434,6 @@ pub async fn get_cluster_name() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "name": node_name }))
 }
 
-/// Executes the standard set cluster name lifecycle step.
-///
-/// Executes the required business logic for set cluster name.
-///
 /// # Arguments
 ///
 /// * `Json(_req`: Deserialized JSON payload representation containing request parameters.
@@ -573,10 +561,6 @@ pub async fn vhost_permissions(
     Json(perms)
 }
 
-/// Executes the standard start vhost lifecycle step.
-///
-/// Executes the required business logic for start vhost.
-///
 /// # Returns
 ///
 /// * `StatusCode` - HTTP status code indicating successful processing or route errors.
@@ -868,10 +852,6 @@ pub async fn create_queue_vhost(
     StatusCode::NO_CONTENT
 }
 
-/// Executes the standard queue actions vhost lifecycle step.
-///
-/// Executes the required business logic for queue actions vhost.
-///
 /// # Returns
 ///
 /// * `StatusCode` - HTTP status code indicating successful processing or route errors.
@@ -1101,10 +1081,6 @@ pub async fn publish_message_vhost(
 
 // ─── Bindings ──────────────────────────────────────────
 
-/// Executes the standard list bindings lifecycle step.
-///
-/// Executes the required business logic for list bindings.
-///
 /// # Arguments
 ///
 /// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -1234,20 +1210,12 @@ pub async fn delete_binding_eq(
     }
 }
 
-/// Executes the standard create binding ee lifecycle step.
-///
-/// Executes the required business logic for create binding ee.
-///
 /// # Returns
 ///
 /// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn create_binding_ee() -> StatusCode {
     StatusCode::NO_CONTENT
 }
-/// Executes the standard delete binding ee lifecycle step.
-///
-/// Executes the required business logic for delete binding ee.
-///
 /// # Returns
 ///
 /// * `StatusCode` - HTTP status code indicating successful processing or route errors.
@@ -1546,10 +1514,6 @@ pub fn build_channel_info(
 
 // ─── Consumers ─────────────────────────────────────────
 
-/// Executes the standard list consumers lifecycle step.
-///
-/// Executes the required business logic for list consumers.
-///
 /// # Arguments
 ///
 /// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -1564,10 +1528,6 @@ pub async fn list_consumers_vhost(
     Json(build_consumers(&broker))
 }
 
-/// Executes the standard build consumers lifecycle step.
-///
-/// Executes the required business logic for build consumers.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -1731,10 +1691,6 @@ pub async fn bulk_delete_users(
     StatusCode::NO_CONTENT
 }
 
-/// Executes the standard list permissions lifecycle step.
-///
-/// Executes the required business logic for list permissions.
-///
 /// # Arguments
 ///
 /// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -1858,30 +1814,18 @@ pub async fn whoami(
 
 // ─── Stubs & Feature Flags ──────────────────────────────
 
-/// Executes the standard stub empty array lifecycle step.
-///
-/// Executes the required business logic for stub empty array.
-///
 /// # Returns
 ///
 /// * `Json<Vec<serde_json::Value>>` - JSON formatted data encapsulation mirroring standard API schemas.
 pub async fn stub_empty_array() -> Json<Vec<serde_json::Value>> {
     Json(vec![])
 }
-/// Executes the standard stub not found lifecycle step.
-///
-/// Executes the required business logic for stub not found.
-///
 /// # Returns
 ///
 /// * `StatusCode` - HTTP status code indicating successful processing or route errors.
 pub async fn stub_not_found() -> StatusCode {
     StatusCode::NOT_FOUND
 }
-/// Executes the standard stub no content lifecycle step.
-///
-/// Executes the required business logic for stub no content.
-///
 /// # Returns
 ///
 /// * `StatusCode` - HTTP status code indicating successful processing or route errors.
@@ -1889,10 +1833,6 @@ pub async fn stub_no_content() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-/// Executes the standard list feature flags lifecycle step.
-///
-/// Executes the required business logic for list feature flags.
-///
 /// # Returns
 ///
 /// * `Json<Vec<FeatureFlagInfo>>` - JSON formatted data encapsulation mirroring standard API schemas.
@@ -1921,10 +1861,6 @@ pub async fn list_feature_flags() -> Json<Vec<FeatureFlagInfo>> {
 
 // ─── Definitions (Export) ───────────────────────────────
 
-/// Executes the standard get definitions lifecycle step.
-///
-/// Executes the required business logic for get definitions.
-///
 /// # Arguments
 ///
 /// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -1968,10 +1904,6 @@ pub async fn get_definitions(State(broker): State<Broker>) -> Json<serde_json::V
 
 // ─── Prometheus Metricsexposition ───────────────────────
 
-/// Executes the standard prometheus metrics lifecycle step.
-///
-/// Executes the required business logic for prometheus metrics.
-///
 /// # Arguments
 ///
 /// * `State(broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -2100,10 +2032,6 @@ pub async fn prometheus_metrics(State(broker): State<Broker>) -> String {
 
 // ─── Helpers ───────────────────────────────────────────
 
-/// Executes the standard decode base64 lifecycle step.
-///
-/// Executes the required business logic for decode base64.
-///
 /// # Arguments
 ///
 /// * `s` - `&str`: The `s` argument.
@@ -2144,10 +2072,6 @@ pub fn decode_base64(s: &str) -> Option<Vec<u8>> {
     Some(result)
 }
 
-/// Executes the standard write counter lifecycle step.
-///
-/// Executes the required business logic for write counter.
-///
 /// # Arguments
 ///
 /// * `out` - `&mut String`: The `out` argument.
@@ -2161,10 +2085,6 @@ fn write_counter(out: &mut String, name: &str, help: &str, value: u64) {
     ));
 }
 
-/// Executes the standard write gauge lifecycle step.
-///
-/// Executes the required business logic for write gauge.
-///
 /// # Arguments
 ///
 /// * `out` - `&mut String`: The `out` argument.
@@ -2178,10 +2098,6 @@ fn write_gauge(out: &mut String, name: &str, help: &str, value: u64) {
     ));
 }
 
-/// Executes the standard save users lifecycle step.
-///
-/// Executes the required business logic for save users.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -2193,10 +2109,6 @@ pub fn save_users(broker: &Arc<BrokerState>) {
     }
 }
 
-/// Executes the standard parse user tags lifecycle step.
-///
-/// Executes the required business logic for parse user tags.
-///
 /// # Arguments
 ///
 /// * `tags` - `&[String]`: The `tags` argument.
@@ -2215,10 +2127,6 @@ pub fn parse_user_tags(tags: &[String]) -> Vec<crate::auth::credentials::UserTag
         .collect()
 }
 
-/// Executes the standard queue totals for vhost lifecycle step.
-///
-/// Executes the required business logic for queue totals for vhost.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Arc<BrokerState>`: Thread-safe pointer to the global shared broker storage & state.
@@ -2236,10 +2144,6 @@ pub fn queue_totals_for_vhost(broker: &Arc<BrokerState>) -> (usize, usize) {
     (msgs, inflight)
 }
 
-/// Executes the standard get process memory lifecycle step.
-///
-/// Executes the required business logic for get process memory.
-///
 /// # Returns
 ///
 /// * `u64` - The evaluated outcome or operation handle.
@@ -2253,10 +2157,6 @@ pub fn get_process_memory() -> u64 {
         .unwrap_or(0)
 }
 
-/// Executes the standard get disk free lifecycle step.
-///
-/// Executes the required business logic for get disk free.
-///
 /// # Returns
 ///
 /// * `u64` - The evaluated outcome or operation handle.
@@ -2276,10 +2176,6 @@ pub fn get_disk_free() -> u64 {
     10 * 1024 * 1024 * 1024
 }
 
-/// Executes the standard num cpus lifecycle step.
-///
-/// Executes the required business logic for num cpus.
-///
 /// # Returns
 ///
 /// * `usize` - The evaluated outcome or operation handle.
@@ -2289,10 +2185,6 @@ pub fn num_cpus() -> usize {
         .unwrap_or(1)
 }
 
-/// Executes the standard get version lifecycle step.
-///
-/// Executes the required business logic for get version.
-///
 /// # Returns
 ///
 /// * `String` - The evaluated outcome or operation handle.
@@ -2300,10 +2192,6 @@ pub async fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Executes the standard get node memory lifecycle step.
-///
-/// Executes the required business logic for get node memory.
-///
 /// # Returns
 ///
 /// * `Json<serde_json::Value>` - JSON formatted data encapsulation mirroring standard API schemas.

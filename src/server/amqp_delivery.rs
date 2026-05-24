@@ -30,10 +30,6 @@ use crate::core::properties::BasicProperties;
 use crate::core::types::*;
 use crate::state::Broker;
 
-/// Executes the standard spawn delivery task lifecycle step.
-///
-/// Executes the required business logic for spawn delivery task.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -49,10 +45,6 @@ pub fn spawn_delivery_task(broker: Broker) {
     });
 }
 
-/// Executes the standard deliver round lifecycle step.
-///
-/// Executes the required business logic for deliver round.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -224,9 +216,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard deliver args encode lifecycle step.
-    ///
-    /// Executes the required business logic for deliver args encode.
     #[test]
     fn deliver_args_encode() {
         let args = build_deliver_args("ctag-1", 42, false, "amq.direct", "my.key");
@@ -238,9 +227,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "my.key");
     }
 
-    /// Executes the standard deliver args redelivered lifecycle step.
-    ///
-    /// Executes the required business logic for deliver args redelivered.
     #[test]
     fn deliver_args_redelivered() {
         let args = build_deliver_args("t", 1, true, "", "");
@@ -250,9 +236,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 1);
     }
 
-    /// Executes the standard deliver frame structure lifecycle step.
-    ///
-    /// Executes the required business logic for deliver frame structure.
     #[test]
     fn deliver_frame_structure() {
         let args = build_deliver_args("tag", 99, false, "ex", "rk");
@@ -263,9 +246,6 @@ mod tests {
         assert_eq!(m.method_id, METHOD_BASIC_DELIVER);
     }
 
-    /// Executes the standard full delivery frame set lifecycle step.
-    ///
-    /// Executes the required business logic for full delivery frame set.
     #[test]
     fn full_delivery_frame_set() {
         let args = build_deliver_args("tag", 1, false, "", "");

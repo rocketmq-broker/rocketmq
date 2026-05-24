@@ -41,10 +41,6 @@ pub struct QueueOptions {
 }
 
 impl QueueOptions {
-    /// Executes the standard from headers lifecycle step.
-    ///
-    /// Executes the required business logic for from headers.
-    ///
     /// # Arguments
     ///
     /// * `headers` - `&str`: The `headers` argument.

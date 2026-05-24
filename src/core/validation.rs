@@ -28,10 +28,6 @@
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
 
-/// Executes the standard validate channel lifecycle step.
-///
-/// Executes the required business logic for validate channel.
-///
 /// # Arguments
 ///
 /// * `channel` - `u16`: The `channel` argument.
@@ -52,10 +48,6 @@ pub fn validate_channel(channel: u16, class_id: u16) -> Option<&'static str> {
     None
 }
 
-/// Executes the standard validate frame type lifecycle step.
-///
-/// Executes the required business logic for validate frame type.
-///
 /// # Arguments
 ///
 /// * `frame_type` - `u8`: The `frame_type` argument.
@@ -70,10 +62,6 @@ pub fn validate_frame_type(frame_type: u8) -> Option<&'static str> {
     }
 }
 
-/// Executes the standard validate frame size lifecycle step.
-///
-/// Executes the required business logic for validate frame size.
-///
 /// # Arguments
 ///
 /// * `payload_len` - `usize`: The `payload_len` argument.
@@ -93,10 +81,6 @@ pub fn validate_frame_size(payload_len: usize, frame_max: u32) -> Option<&'stati
     None
 }
 
-/// Executes the standard validate channel number lifecycle step.
-///
-/// Executes the required business logic for validate channel number.
-///
 /// # Arguments
 ///
 /// * `channel` - `u16`: The `channel` argument.
@@ -115,10 +99,6 @@ pub fn validate_channel_number(channel: u16, channel_max: u16) -> Option<&'stati
     None
 }
 
-/// Executes the standard validate heartbeat lifecycle step.
-///
-/// Executes the required business logic for validate heartbeat.
-///
 /// # Arguments
 ///
 /// * `channel` - `u16`: The `channel` argument.
@@ -137,10 +117,6 @@ pub fn validate_heartbeat(channel: u16, payload_len: usize) -> Option<&'static s
     None
 }
 
-/// Executes the standard validate content channel lifecycle step.
-///
-/// Executes the required business logic for validate content channel.
-///
 /// # Arguments
 ///
 /// * `channel` - `u16`: The `channel` argument.
@@ -162,18 +138,12 @@ mod tests {
 
     // ── Channel validation ────────────────────────────
 
-    /// Executes the standard connection class must be channel zero lifecycle step.
-    ///
-    /// Executes the required business logic for connection class must be channel zero.
     #[test]
     fn connection_class_must_be_channel_zero() {
         assert!(validate_channel(1, CLASS_CONNECTION).is_some());
         assert!(validate_channel(0, CLASS_CONNECTION).is_none());
     }
 
-    /// Executes the standard non connection must not be channel zero lifecycle step.
-    ///
-    /// Executes the required business logic for non connection must not be channel zero.
     #[test]
     fn non_connection_must_not_be_channel_zero() {
         assert!(validate_channel(0, CLASS_CHANNEL).is_some());
@@ -183,9 +153,6 @@ mod tests {
         assert!(validate_channel(0, CLASS_TX).is_some());
     }
 
-    /// Executes the standard non connection on valid channel lifecycle step.
-    ///
-    /// Executes the required business logic for non connection on valid channel.
     #[test]
     fn non_connection_on_valid_channel() {
         assert!(validate_channel(1, CLASS_CHANNEL).is_none());
@@ -195,9 +162,6 @@ mod tests {
 
     // ── Frame type validation ─────────────────────────
 
-    /// Executes the standard valid frame types lifecycle step.
-    ///
-    /// Executes the required business logic for valid frame types.
     #[test]
     fn valid_frame_types() {
         assert!(validate_frame_type(FRAME_METHOD).is_none());
@@ -206,9 +170,6 @@ mod tests {
         assert!(validate_frame_type(FRAME_HEARTBEAT).is_none());
     }
 
-    /// Executes the standard invalid frame types lifecycle step.
-    ///
-    /// Executes the required business logic for invalid frame types.
     #[test]
     fn invalid_frame_types() {
         assert!(validate_frame_type(0).is_some());
@@ -220,26 +181,17 @@ mod tests {
 
     // ── Frame size validation ─────────────────────────
 
-    /// Executes the standard frame size within limit lifecycle step.
-    ///
-    /// Executes the required business logic for frame size within limit.
     #[test]
     fn frame_size_within_limit() {
         assert!(validate_frame_size(100, 131072).is_none());
         assert!(validate_frame_size(131064, 131072).is_none()); // exactly at limit
     }
 
-    /// Executes the standard frame size exceeds limit lifecycle step.
-    ///
-    /// Executes the required business logic for frame size exceeds limit.
     #[test]
     fn frame_size_exceeds_limit() {
         assert!(validate_frame_size(131065, 131072).is_some()); // 131065 + 8 > 131072
     }
 
-    /// Executes the standard frame size unlimited lifecycle step.
-    ///
-    /// Executes the required business logic for frame size unlimited.
     #[test]
     fn frame_size_unlimited() {
         assert!(validate_frame_size(1_000_000, 0).is_none());
@@ -247,26 +199,17 @@ mod tests {
 
     // ── Channel number validation ─────────────────────
 
-    /// Executes the standard channel number within limit lifecycle step.
-    ///
-    /// Executes the required business logic for channel number within limit.
     #[test]
     fn channel_number_within_limit() {
         assert!(validate_channel_number(1, 2047).is_none());
         assert!(validate_channel_number(2047, 2047).is_none());
     }
 
-    /// Executes the standard channel number exceeds limit lifecycle step.
-    ///
-    /// Executes the required business logic for channel number exceeds limit.
     #[test]
     fn channel_number_exceeds_limit() {
         assert!(validate_channel_number(2048, 2047).is_some());
     }
 
-    /// Executes the standard channel number unlimited lifecycle step.
-    ///
-    /// Executes the required business logic for channel number unlimited.
     #[test]
     fn channel_number_unlimited() {
         assert!(validate_channel_number(65535, 0).is_none());
@@ -274,25 +217,16 @@ mod tests {
 
     // ── Heartbeat validation ──────────────────────────
 
-    /// Executes the standard heartbeat valid lifecycle step.
-    ///
-    /// Executes the required business logic for heartbeat valid.
     #[test]
     fn heartbeat_valid() {
         assert!(validate_heartbeat(0, 0).is_none());
     }
 
-    /// Executes the standard heartbeat wrong channel lifecycle step.
-    ///
-    /// Executes the required business logic for heartbeat wrong channel.
     #[test]
     fn heartbeat_wrong_channel() {
         assert!(validate_heartbeat(1, 0).is_some());
     }
 
-    /// Executes the standard heartbeat non empty lifecycle step.
-    ///
-    /// Executes the required business logic for heartbeat non empty.
     #[test]
     fn heartbeat_non_empty() {
         assert!(validate_heartbeat(0, 5).is_some());
@@ -300,17 +234,11 @@ mod tests {
 
     // ── Content channel validation ────────────────────
 
-    /// Executes the standard content on channel zero invalid lifecycle step.
-    ///
-    /// Executes the required business logic for content on channel zero invalid.
     #[test]
     fn content_on_channel_zero_invalid() {
         assert!(validate_content_channel(0).is_some());
     }
 
-    /// Executes the standard content on non zero valid lifecycle step.
-    ///
-    /// Executes the required business logic for content on non zero valid.
     #[test]
     fn content_on_non_zero_valid() {
         assert!(validate_content_channel(1).is_none());

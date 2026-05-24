@@ -48,10 +48,6 @@ pub struct BasicProperties {
 }
 
 impl BasicProperties {
-    /// Executes the standard flags lifecycle step.
-    ///
-    /// Executes the required business logic for flags.
-    ///
     /// # Returns
     ///
     /// * `u16` - The evaluated outcome or operation handle.
@@ -102,10 +98,6 @@ impl BasicProperties {
         f
     }
 
-    /// Executes the standard encode lifecycle step.
-    ///
-    /// Executes the required business logic for encode.
-    ///
     /// # Arguments
     ///
     /// * `w` - `&mut impl Write`: The `w` argument.
@@ -161,10 +153,6 @@ impl BasicProperties {
         Ok(())
     }
 
-    /// Executes the standard decode lifecycle step.
-    ///
-    /// Executes the required business logic for decode.
-    ///
     /// # Arguments
     ///
     /// * `r` - `&mut impl Read`: The `r` argument.
@@ -228,9 +216,6 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    /// Executes the standard empty properties roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for empty properties roundtrip.
     #[test]
     fn empty_properties_roundtrip() {
         let p = BasicProperties::default();
@@ -241,9 +226,6 @@ mod tests {
         assert_eq!(decoded, p);
     }
 
-    /// Executes the standard all properties roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for all properties roundtrip.
     #[test]
     fn all_properties_roundtrip() {
         let mut headers = FieldTable::new();
@@ -273,9 +255,6 @@ mod tests {
         assert_eq!(decoded, p);
     }
 
-    /// Executes the standard partial properties roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for partial properties roundtrip.
     #[test]
     fn partial_properties_roundtrip() {
         let p = BasicProperties {
@@ -293,9 +272,6 @@ mod tests {
         assert_eq!(decoded, p);
     }
 
-    /// Executes the standard flags bitmap individual lifecycle step.
-    ///
-    /// Executes the required business logic for flags bitmap individual.
     #[test]
     fn flags_bitmap_individual() {
         let mut p = BasicProperties::default();

@@ -45,10 +45,6 @@ pub struct AuthBackend {
 }
 
 impl AuthBackend {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Returns
     ///
     /// * `Self` - The evaluated outcome or operation handle.
@@ -127,10 +123,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// Executes the standard check vhost access lifecycle step.
-    ///
-    /// Executes the required business logic for check vhost access.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -146,10 +138,6 @@ impl AuthBackend {
 
     // ── Authorization ─────────────────────────────────────
 
-    /// Executes the standard check configure lifecycle step.
-    ///
-    /// Executes the required business logic for check configure.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -163,10 +151,6 @@ impl AuthBackend {
         self.check_permission(username, vhost, resource, |p| &p.configure)
     }
 
-    /// Executes the standard check write lifecycle step.
-    ///
-    /// Executes the required business logic for check write.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -180,10 +164,6 @@ impl AuthBackend {
         self.check_permission(username, vhost, resource, |p| &p.write)
     }
 
-    /// Executes the standard check read lifecycle step.
-    ///
-    /// Executes the required business logic for check read.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -233,10 +213,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// Executes the standard delete user lifecycle step.
-    ///
-    /// Executes the required business logic for delete user.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -259,10 +235,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// Executes the standard change password lifecycle step.
-    ///
-    /// Executes the required business logic for change password.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -281,10 +253,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// Executes the standard set user tags lifecycle step.
-    ///
-    /// Executes the required business logic for set user tags.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -321,10 +289,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// Executes the standard list users lifecycle step.
-    ///
-    /// Executes the required business logic for list users.
-    ///
     /// # Returns
     ///
     /// * `Vec<(String, Vec<UserTag>)>` - The evaluated outcome or operation handle.
@@ -335,10 +299,6 @@ impl AuthBackend {
             .collect()
     }
 
-    /// Executes the standard list user permissions lifecycle step.
-    ///
-    /// Executes the required business logic for list user permissions.
-    ///
     /// # Arguments
     ///
     /// * `username` - `&str`: The unique identifier string of the resource.
@@ -356,10 +316,6 @@ impl AuthBackend {
 
     // ── Persistence ───────────────────────────────────────
 
-    /// Executes the standard save to file lifecycle step.
-    ///
-    /// Executes the required business logic for save to file.
-    ///
     /// # Arguments
     ///
     /// * `path` - `&Path`: The `path` argument.
@@ -389,10 +345,6 @@ impl AuthBackend {
         Ok(())
     }
 
-    /// Executes the standard load from file lifecycle step.
-    ///
-    /// Executes the required business logic for load from file.
-    ///
     /// # Arguments
     ///
     /// * `path` - `&Path`: The `path` argument.
@@ -435,10 +387,6 @@ impl AuthBackend {
     }
 }
 
-/// Executes the standard is loopback lifecycle step.
-///
-/// Executes the required business logic for is loopback.
-///
 /// # Arguments
 ///
 /// * `addr` - `&SocketAddr`: The `addr` argument.
@@ -456,10 +404,6 @@ mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
 
-    /// Executes the standard localhost lifecycle step.
-    ///
-    /// Executes the required business logic for localhost.
-    ///
     /// # Returns
     ///
     /// * `SocketAddr` - The evaluated outcome or operation handle.
@@ -467,10 +411,6 @@ mod tests {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345)
     }
 
-    /// Executes the standard remote lifecycle step.
-    ///
-    /// Executes the required business logic for remote.
-    ///
     /// # Returns
     ///
     /// * `SocketAddr` - The evaluated outcome or operation handle.
@@ -478,45 +418,30 @@ mod tests {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 12345)
     }
 
-    /// Executes the standard default guest auth lifecycle step.
-    ///
-    /// Executes the required business logic for default guest auth.
     #[test]
     fn default_guest_auth() {
         let auth = AuthBackend::new();
         assert!(auth.authenticate("guest", "guest", localhost()).is_ok());
     }
 
-    /// Executes the standard guest wrong password lifecycle step.
-    ///
-    /// Executes the required business logic for guest wrong password.
     #[test]
     fn guest_wrong_password() {
         let auth = AuthBackend::new();
         assert!(auth.authenticate("guest", "wrong", localhost()).is_err());
     }
 
-    /// Executes the standard guest remote rejected lifecycle step.
-    ///
-    /// Executes the required business logic for guest remote rejected.
     #[test]
     fn guest_remote_rejected() {
         let auth = AuthBackend::new();
         assert!(auth.authenticate("guest", "guest", remote()).is_err());
     }
 
-    /// Executes the standard unknown user lifecycle step.
-    ///
-    /// Executes the required business logic for unknown user.
     #[test]
     fn unknown_user() {
         let auth = AuthBackend::new();
         assert!(auth.authenticate("nobody", "pass", localhost()).is_err());
     }
 
-    /// Executes the standard guest has vhost access lifecycle step.
-    ///
-    /// Executes the required business logic for guest has vhost access.
     #[test]
     fn guest_has_vhost_access() {
         let auth = AuthBackend::new();
@@ -524,9 +449,6 @@ mod tests {
         assert!(!auth.check_vhost_access("guest", "/staging"));
     }
 
-    /// Executes the standard guest full permissions lifecycle step.
-    ///
-    /// Executes the required business logic for guest full permissions.
     #[test]
     fn guest_full_permissions() {
         let auth = AuthBackend::new();
@@ -535,9 +457,6 @@ mod tests {
         assert!(auth.check_read("guest", "/", "my-queue"));
     }
 
-    /// Executes the standard add user and auth lifecycle step.
-    ///
-    /// Executes the required business logic for add user and auth.
     #[test]
     fn add_user_and_auth() {
         let auth = AuthBackend::new();
@@ -548,9 +467,6 @@ mod tests {
         assert!(auth.check_vhost_access("ops", "/"));
     }
 
-    /// Executes the standard restricted permissions lifecycle step.
-    ///
-    /// Executes the required business logic for restricted permissions.
     #[test]
     fn restricted_permissions() {
         let auth = AuthBackend::new();
@@ -567,9 +483,6 @@ mod tests {
         assert!(!auth.check_read("app", "/", "admin.logs"));
     }
 
-    /// Executes the standard delete user removes permissions lifecycle step.
-    ///
-    /// Executes the required business logic for delete user removes permissions.
     #[test]
     fn delete_user_removes_permissions() {
         let auth = AuthBackend::new();
@@ -580,18 +493,12 @@ mod tests {
         assert!(!auth.check_vhost_access("temp", "/"));
     }
 
-    /// Executes the standard cannot delete guest lifecycle step.
-    ///
-    /// Executes the required business logic for cannot delete guest.
     #[test]
     fn cannot_delete_guest() {
         let auth = AuthBackend::new();
         assert!(auth.delete_user("guest").is_err());
     }
 
-    /// Executes the standard change password lifecycle step.
-    ///
-    /// Executes the required business logic for change password.
     #[test]
     fn change_password() {
         let auth = AuthBackend::new();
@@ -603,9 +510,6 @@ mod tests {
         assert!(auth.authenticate("bob", "new", localhost()).is_ok());
     }
 
-    /// Executes the standard list users lifecycle step.
-    ///
-    /// Executes the required business logic for list users.
     #[test]
     fn list_users() {
         let auth = AuthBackend::new();
@@ -615,9 +519,6 @@ mod tests {
         assert_eq!(users.len(), 3); // guest + admin + alice
     }
 
-    /// Executes the standard persistence roundtrip lifecycle step.
-    ///
-    /// Executes the required business logic for persistence roundtrip.
     #[test]
     fn persistence_roundtrip() {
         let dir = std::env::current_dir().unwrap().join("data");

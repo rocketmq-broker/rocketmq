@@ -159,10 +159,6 @@ pub struct ClusterManager {
 }
 
 impl ClusterManager {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `node_id` - `u64`: The `node_id` argument.
@@ -198,10 +194,6 @@ impl ClusterManager {
         }
     }
 
-    /// Executes the standard is leader lifecycle step.
-    ///
-    /// Executes the required business logic for is leader.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -209,9 +201,6 @@ impl ClusterManager {
         self.leader_id.load(Ordering::SeqCst) == self.node_id
     }
 
-    /// Executes the standard start election lifecycle step.
-    ///
-    /// Executes the required business logic for start election.
     pub async fn start_election(&self) {
         let new_term = self.current_term.fetch_add(1, Ordering::SeqCst) + 1;
         self.voted_for.store(self.node_id, Ordering::SeqCst);
@@ -270,10 +259,6 @@ impl ClusterManager {
         }
     }
 
-    /// Executes the standard broadcast lifecycle step.
-    ///
-    /// Executes the required business logic for broadcast.
-    ///
     /// # Arguments
     ///
     /// * `frame` - `ClusterFrame`: The `frame` argument.
@@ -286,10 +271,6 @@ impl ClusterManager {
         }
     }
 
-    /// Executes the standard vote replication lifecycle step.
-    ///
-    /// Executes the required business logic for vote replication.
-    ///
     /// # Arguments
     ///
     /// * `msg_id` - `u64`: The `msg_id` argument.
@@ -306,10 +287,6 @@ impl ClusterManager {
         }
     }
 
-    /// Executes the standard replicate publish lifecycle step.
-    ///
-    /// Executes the required business logic for replicate publish.
-    ///
     /// # Arguments
     ///
     /// * `queue_name` - `&str`: The unique identifier string of the resource.
@@ -360,10 +337,6 @@ impl ClusterManager {
         }
     }
 
-    /// Executes the standard replicate ack lifecycle step.
-    ///
-    /// Executes the required business logic for replicate ack.
-    ///
     /// # Arguments
     ///
     /// * `queue_name` - `&str`: The unique identifier string of the resource.
@@ -411,10 +384,6 @@ impl ClusterManager {
 
 // ─── Utility Helper ──────────────────────────────────
 
-/// Executes the standard now ms lifecycle step.
-///
-/// Executes the required business logic for now ms.
-///
 /// # Returns
 ///
 /// * `u64` - The evaluated outcome or operation handle.

@@ -36,10 +36,6 @@ pub struct Message {
 }
 
 impl Message {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `id` - `u64`: The `id` argument.
@@ -83,10 +79,6 @@ impl Message {
         }
     }
 
-    /// Executes the standard is expired lifecycle step.
-    ///
-    /// Executes the required business logic for is expired.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -122,10 +114,6 @@ pub enum QueueMessage {
 }
 
 impl QueueMessage {
-    /// Executes the standard id lifecycle step.
-    ///
-    /// Executes the required business logic for id.
-    ///
     /// # Returns
     ///
     /// * `u64` - The evaluated outcome or operation handle.
@@ -136,10 +124,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard priority lifecycle step.
-    ///
-    /// Executes the required business logic for priority.
-    ///
     /// # Returns
     ///
     /// * `u8` - The evaluated outcome or operation handle.
@@ -150,10 +134,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard expiration lifecycle step.
-    ///
-    /// Executes the required business logic for expiration.
-    ///
     /// # Returns
     ///
     /// * `Option<Instant>` - The evaluated outcome or operation handle.
@@ -164,10 +144,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard is expired lifecycle step.
-    ///
-    /// Executes the required business logic for is expired.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -175,10 +151,6 @@ impl QueueMessage {
         self.expiration().is_some_and(|exp| Instant::now() >= exp)
     }
 
-    /// Executes the standard redelivered lifecycle step.
-    ///
-    /// Executes the required business logic for redelivered.
-    ///
     /// # Returns
     ///
     /// * `bool` - The evaluated outcome or operation handle.
@@ -189,10 +161,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard set redelivered lifecycle step.
-    ///
-    /// Executes the required business logic for set redelivered.
-    ///
     /// # Arguments
     ///
     /// * `val` - `bool`: The `val` argument.
@@ -203,10 +171,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard delivery count lifecycle step.
-    ///
-    /// Executes the required business logic for delivery count.
-    ///
     /// # Returns
     ///
     /// * `u32` - The evaluated outcome or operation handle.
@@ -217,10 +181,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard set delivery count lifecycle step.
-    ///
-    /// Executes the required business logic for set delivery count.
-    ///
     /// # Arguments
     ///
     /// * `val` - `u32`: The `val` argument.
@@ -231,10 +191,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard resolve lifecycle step.
-    ///
-    /// Executes the required business logic for resolve.
-    ///
     /// # Arguments
     ///
     /// * `wal` - `&crate::storage::wal::Wal`: The `wal` argument.
@@ -264,10 +220,6 @@ impl QueueMessage {
         }
     }
 
-    /// Executes the standard unwrap full lifecycle step.
-    ///
-    /// Executes the required business logic for unwrap full.
-    ///
     /// # Returns
     ///
     /// * `Message` - The evaluated outcome or operation handle.

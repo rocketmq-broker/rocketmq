@@ -40,10 +40,6 @@ use crate::state::Broker;
 
 // ─── Basic.Publish ────────────────────────────────────
 
-/// Executes the standard parse publish args lifecycle step.
-///
-/// Executes the required business logic for parse publish args.
-///
 /// # Arguments
 ///
 /// * `args` - `&[u8]`: The `args` argument.
@@ -272,10 +268,6 @@ pub async fn handle_publish(
 
 // ─── Publisher Confirm Helpers ────────────────────────
 
-/// Executes the standard alloc confirm tag lifecycle step.
-///
-/// Executes the required business logic for alloc confirm tag.
-///
 /// # Arguments
 ///
 /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -296,10 +288,6 @@ fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64>
     Some(tag)
 }
 
-/// Executes the standard send confirm ack lifecycle step.
-///
-/// Executes the required business logic for send confirm ack.
-///
 /// # Arguments
 ///
 /// * `channel` - `u16`: The `channel` argument.
@@ -469,10 +457,6 @@ pub async fn handle_cancel(
 
 // ─── Basic.Ack ────────────────────────────────────────
 
-/// Executes the standard handle ack lifecycle step.
-///
-/// Executes the required business logic for handle ack.
-///
 /// # Arguments
 ///
 /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -518,10 +502,6 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
 
 // ─── Basic.Reject ─────────────────────────────────────
 
-/// Executes the standard handle reject lifecycle step.
-///
-/// Executes the required business logic for handle reject.
-///
 /// # Arguments
 ///
 /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -562,10 +542,6 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
 
 // ─── Basic.Nack ───────────────────────────────────────
 
-/// Executes the standard handle nack lifecycle step.
-///
-/// Executes the required business logic for handle nack.
-///
 /// # Arguments
 ///
 /// * `conn_id` - `u64`: The `conn_id` argument.
@@ -771,9 +747,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    /// Executes the standard publish args parse lifecycle step.
-    ///
-    /// Executes the required business logic for publish args parse.
     #[test]
     fn publish_args_parse() {
         let mut args = Vec::new();
@@ -788,9 +761,6 @@ mod tests {
         assert!(!immediate);
     }
 
-    /// Executes the standard deliver args build lifecycle step.
-    ///
-    /// Executes the required business logic for deliver args build.
     #[test]
     fn deliver_args_build() {
         let args = build_deliver_args("ctag-1", 42, false, "amq.direct", "key1");
@@ -802,9 +772,6 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "key1");
     }
 
-    /// Executes the standard deliver args redelivered lifecycle step.
-    ///
-    /// Executes the required business logic for deliver args redelivered.
     #[test]
     fn deliver_args_redelivered() {
         let args = build_deliver_args("t", 1, true, "", "");
@@ -814,9 +781,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 1);
     }
 
-    /// Executes the standard consume args parse lifecycle step.
-    ///
-    /// Executes the required business logic for consume args parse.
     #[test]
     fn consume_args_parse() {
         let mut args = Vec::new();
@@ -832,9 +796,6 @@ mod tests {
         assert_eq!(flags & 0x02, 0x02);
     }
 
-    /// Executes the standard ack args parse lifecycle step.
-    ///
-    /// Executes the required business logic for ack args parse.
     #[test]
     fn ack_args_parse() {
         let mut args = Vec::new();
@@ -845,9 +806,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap(), 0x01);
     }
 
-    /// Executes the standard reject args parse lifecycle step.
-    ///
-    /// Executes the required business logic for reject args parse.
     #[test]
     fn reject_args_parse() {
         let mut args = Vec::new();
@@ -858,9 +816,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
     }
 
-    /// Executes the standard qos args parse lifecycle step.
-    ///
-    /// Executes the required business logic for qos args parse.
     #[test]
     fn qos_args_parse() {
         let mut args = Vec::new();
@@ -873,9 +828,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
     }
 
-    /// Executes the standard get args parse lifecycle step.
-    ///
-    /// Executes the required business logic for get args parse.
     #[test]
     fn get_args_parse() {
         let mut args = Vec::new();
@@ -888,9 +840,6 @@ mod tests {
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
     }
 
-    /// Executes the standard basic return frame structure lifecycle step.
-    ///
-    /// Executes the required business logic for basic return frame structure.
     #[test]
     fn basic_return_frame_structure() {
         let mut args = Vec::new();

@@ -46,10 +46,6 @@ pub struct DelayQueue {
 }
 
 impl DelayQueue {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Returns
     ///
     /// * `Self` - The evaluated outcome or operation handle.
@@ -60,10 +56,6 @@ impl DelayQueue {
         }
     }
 
-    /// Executes the standard schedule lifecycle step.
-    ///
-    /// Executes the required business logic for schedule.
-    ///
     /// # Arguments
     ///
     /// * `queue_name` - `String`: The unique identifier string of the resource.
@@ -82,10 +74,6 @@ impl DelayQueue {
         self.inner.lock().unwrap().insert((deliver_at, id), delayed);
     }
 
-    /// Executes the standard drain ready lifecycle step.
-    ///
-    /// Executes the required business logic for drain ready.
-    ///
     /// # Returns
     ///
     /// * `Vec<DelayedMessage>` - The evaluated outcome or operation handle.
@@ -104,10 +92,6 @@ impl DelayQueue {
         ready
     }
 
-    /// Executes the standard len lifecycle step.
-    ///
-    /// Executes the required business logic for len.
-    ///
     /// # Returns
     ///
     /// * `usize` - The evaluated outcome or operation handle.

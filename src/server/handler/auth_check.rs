@@ -54,10 +54,6 @@ pub async fn deny_access(
     true
 }
 
-/// Executes the standard build channel close lifecycle step.
-///
-/// Executes the required business logic for build channel close.
-///
 /// # Arguments
 ///
 /// * `code` - `u16`: The `code` argument.
@@ -92,10 +88,6 @@ pub async fn send_channel_error(
     let _ = writer.flush().await;
 }
 
-/// Executes the standard get conn auth lifecycle step.
-///
-/// Executes the required business logic for get conn auth.
-///
 /// # Arguments
 ///
 /// * `broker` - `&Broker`: Thread-safe pointer to the global shared broker storage & state.

@@ -75,10 +75,6 @@ pub struct RaftQueueState {
 }
 
 impl RaftQueueState {
-    /// Executes the standard new lifecycle step.
-    ///
-    /// Executes the required business logic for new.
-    ///
     /// # Arguments
     ///
     /// * `queue_name` - `String`: The unique identifier string of the resource.
@@ -108,10 +104,6 @@ impl RaftQueueState {
         }
     }
 
-    /// Executes the standard last log index lifecycle step.
-    ///
-    /// Executes the required business logic for last log index.
-    ///
     /// # Returns
     ///
     /// * `u64` - The evaluated outcome or operation handle.
@@ -119,10 +111,6 @@ impl RaftQueueState {
         self.log.last().map(|e| e.index).unwrap_or(0)
     }
 
-    /// Executes the standard last log term lifecycle step.
-    ///
-    /// Executes the required business logic for last log term.
-    ///
     /// # Returns
     ///
     /// * `u64` - The evaluated outcome or operation handle.
@@ -130,10 +118,6 @@ impl RaftQueueState {
         self.log.last().map(|e| e.term).unwrap_or(0)
     }
 
-    /// Executes the standard append local command lifecycle step.
-    ///
-    /// Executes the required business logic for append local command.
-    ///
     /// # Arguments
     ///
     /// * `command` - `RaftCommand`: The `command` argument.

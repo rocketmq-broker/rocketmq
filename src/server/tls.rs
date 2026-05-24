@@ -52,10 +52,6 @@ pub fn build_tls_acceptor(
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-/// Executes the standard load certs lifecycle step.
-///
-/// Executes the required business logic for load certs.
-///
 /// # Arguments
 ///
 /// * `path` - `&str`: The `path` argument.
@@ -76,10 +72,6 @@ fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::e
     Ok(certs)
 }
 
-/// Executes the standard load private key lifecycle step.
-///
-/// Executes the required business logic for load private key.
-///
 /// # Arguments
 ///
 /// * `path` - `&str`: The `path` argument.
@@ -109,10 +101,6 @@ fn load_private_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::e
     Err(format!("no private key found in {}", path).into())
 }
 
-/// Executes the standard generate self signed lifecycle step.
-///
-/// Executes the required business logic for generate self signed.
-///
 /// # Arguments
 ///
 /// * `cert_path` - `&str`: The `cert_path` argument.

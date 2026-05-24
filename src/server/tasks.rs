@@ -30,10 +30,6 @@ use tracing::{debug, info};
 use crate::state::Broker;
 use crate::storage::wal::EntryType;
 
-/// Executes the standard spawn all lifecycle step.
-///
-/// Executes the required business logic for spawn all.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -45,10 +41,6 @@ pub fn spawn_all(broker: Broker) {
     tokio::spawn(wal_compact_task(broker));
 }
 
-/// Executes the standard queue ttl task lifecycle step.
-///
-/// Executes the required business logic for queue ttl task.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -77,10 +69,6 @@ async fn queue_ttl_task(broker: Broker) {
     }
 }
 
-/// Executes the standard message ttl task lifecycle step.
-///
-/// Executes the required business logic for message ttl task.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -113,10 +101,6 @@ async fn message_ttl_task(broker: Broker) {
     }
 }
 
-/// Executes the standard dedup eviction task lifecycle step.
-///
-/// Executes the required business logic for dedup eviction task.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -139,10 +123,6 @@ async fn dedup_eviction_task(broker: Broker) {
     }
 }
 
-/// Executes the standard delay flush task lifecycle step.
-///
-/// Executes the required business logic for delay flush task.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
@@ -170,10 +150,6 @@ async fn delay_flush_task(broker: Broker) {
     }
 }
 
-/// Executes the standard wal compact task lifecycle step.
-///
-/// Executes the required business logic for wal compact task.
-///
 /// # Arguments
 ///
 /// * `broker` - `Broker`: Thread-safe pointer to the global shared broker storage & state.
