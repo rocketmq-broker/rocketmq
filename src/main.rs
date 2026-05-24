@@ -110,19 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-    let plain_broker = broker.clone();
-    tokio::spawn(async move {
-        loop {
-            match amqp_listener.accept().await {
-                Ok((stream, addr)) => {
-                    server::amqp_loop::spawn_amqp(stream, addr, plain_broker.clone());
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to accept plain AMQP connection");
-                }
-            }
-        }
-    });
+    tokio::spawn(handle_plain_accept(amqp_listener, broker.clone()));
 
     if let Some((tls_listener, acceptor)) = tls_acceptor {
         tokio::spawn(handle_tls_accept(tls_listener, acceptor, broker.clone()));
@@ -130,6 +118,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     std::future::pending::<()>().await;
     Ok(())
+}
+
+async fn handle_plain_accept(
+    amqp_listener: tokio::net::TcpListener,
+    broker: Arc<state::broker::BrokerState>,
+) {
+    loop {
+        match amqp_listener.accept().await {
+            Ok((stream, addr)) => {
+                server::amqp_loop::spawn_amqp(stream, addr, broker.clone());
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to accept plain AMQP connection");
+            }
+        }
+    }
 }
 
 async fn handle_tls_accept(
