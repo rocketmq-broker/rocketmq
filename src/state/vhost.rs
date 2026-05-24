@@ -82,6 +82,7 @@ pub const DEFAULT_VHOST: &str = "/";
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
     use crate::queue::QueueOptions;
 
