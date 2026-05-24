@@ -4,7 +4,7 @@ A lightweight, high-performance message broker written from scratch in Rust, imp
 
 ---
 
-## ⚡ Core Features
+## Core Features
 
 - **Protocol Negotiation**: Full AMQP connection and channel handshake lifecycle.
 - **Exchange Routing**: Direct, Fanout, Topic (wildcard `*` and `#`), and Headers exchanges.
@@ -16,7 +16,7 @@ A lightweight, high-performance message broker written from scratch in Rust, imp
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 Ensure you have the Rust toolchain installed (2024 edition).
 
@@ -33,7 +33,7 @@ cargo run --release
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Tune the broker dynamically via environment variables:
 
@@ -46,7 +46,7 @@ Tune the broker dynamically via environment variables:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Execute the comprehensive unit and integration test suite:
 
@@ -56,6 +56,6 @@ cargo test
 
 ---
 
-## 📄 License
+## License
 
 Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
