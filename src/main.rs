@@ -119,53 +119,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-    // ── Accept loop: plain + TLS ─────────────────────
-    loop {
-        tokio::select! {
-            // Plain AMQP connections
-            result = amqp_listener.accept() => {
-                let (stream, addr) = result?;
-                server::amqp_loop::spawn_amqp(stream, addr, broker.clone());
-            }
-
-            // TLS AMQP connections (if TLS is configured)
-            result = async {
-                match &tls_acceptor {
-                    Some((listener, _)) => listener.accept().await,
-                    None => std::future::pending().await,
+    // ── Plain AMQP accept loop ──────────────────────
+    let plain_broker = broker.clone();
+    tokio::spawn(async move {
+        loop {
+            match amqp_listener.accept().await {
+                Ok((stream, addr)) => {
+                    server::amqp_loop::spawn_amqp(stream, addr, plain_broker.clone());
                 }
-            } => {
-                let (tcp_stream, addr) = result?;
-                if let Some((_, ref acceptor)) = tls_acceptor {
-                    let acceptor = acceptor.clone();
-                    let broker = broker.clone();
-                    tokio::spawn(async move {
-                        match acceptor.accept(tcp_stream).await {
-                            Ok(tls_stream) => {
-                                info!(%addr, "TLS handshake complete");
-                                let boxed: Box<dyn server::AsyncStream> = Box::new(tls_stream);
-                                server::amqp_loop::spawn_amqp_on_stream(boxed, addr, broker);
-                            }
-                            Err(e) => {
-                                warn!(%addr, error = %e, "TLS handshake failed");
-                            }
-                        }
-                    });
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to accept plain AMQP connection");
                 }
             }
         }
-    }
-}
+    });
 
-#[cfg(test)]
-mod tests {
-    #[allow(unused_imports)]
-    use super::*;
-
-    /// Dedicated unit test verification for `main` function.
-    #[test]
-    fn test_coverage_for_main() {
-        let func_name = "main";
-        assert!(!func_name.is_empty());
+    // ── TLS AMQPS accept loop (if configured) ────────
+    if let Some((tls_listener, acceptor)) = tls_acceptor {
+        let tls_broker = broker.clone();
+        tokio::spawn(async move {
+            loop {
+                match tls_listener.accept().await {
+                    Ok((tcp_stream, addr)) => {
+                        let acceptor = acceptor.clone();
+                        let broker = tls_broker.clone();
+                        tokio::spawn(async move {
+                            match acceptor.accept(tcp_stream).await {
+                                Ok(tls_stream) => {
+                                    info!(%addr, "TLS handshake complete");
+                                    let boxed: Box<dyn server::AsyncStream> = Box::new(tls_stream);
+                                    server::amqp_loop::spawn_amqp_on_stream(boxed, addr, broker);
+                                }
+                                Err(e) => {
+                                    warn!(%addr, error = %e, "TLS handshake failed");
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to accept TLS AMQPS connection");
+                    }
+                }
+            }
+        });
     }
+
+    // Keep the main task alive pending forever (or until process shutdown)
+    std::future::pending::<()>().await;
+    Ok(())
 }
