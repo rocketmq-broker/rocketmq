@@ -19,7 +19,7 @@ pub mod system;
 // Callers use `crate::metrics::record_published(…)` etc.
 pub use counters::{
     record_acked, record_chan_closed, record_chan_opened, record_conn_closed, record_conn_opened,
-    record_delivered, record_nacked, record_published, record_queue_created, record_queue_declared,
+    record_delivered, record_published, record_queue_created, record_queue_declared,
     record_queue_deleted, record_schema_validation_failed,
 };
 
