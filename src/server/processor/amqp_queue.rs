@@ -143,23 +143,21 @@ pub async fn handle_declare(
         opts.schema_message = Some(String::from_utf8_lossy(v).to_string());
     }
 
-    if let Some(existing) = broker.queues.get(&name) {
-        if let Some(ref existing_schema) = existing.schema {
-            if let Some(raw) = &opts.schema {
-                if raw.as_slice() != existing_schema.raw.as_slice() {
-                    send_channel_error(
-                        writer,
-                        channel,
-                        PRECONDITION_FAILED,
-                        "PRECONDITION_FAILED - queue schema is immutable, cannot redeclare with different schema",
-                        CLASS_QUEUE,
-                        METHOD_QUEUE_DECLARE,
-                    )
-                    .await;
-                    return;
-                }
-            }
-        }
+    if let Some(existing) = broker.queues.get(&name)
+        && let Some(ref existing_schema) = existing.schema
+        && let Some(raw) = &opts.schema
+        && raw.as_slice() != existing_schema.raw.as_slice()
+    {
+        send_channel_error(
+            writer,
+            channel,
+            PRECONDITION_FAILED,
+            "PRECONDITION_FAILED - queue schema is immutable, cannot redeclare with different schema",
+            CLASS_QUEUE,
+            METHOD_QUEUE_DECLARE,
+        )
+        .await;
+        return;
     }
 
     let mut compiled_schema = None;
@@ -262,7 +260,7 @@ pub async fn handle_declare(
                 &name,
                 &schema.raw,
                 &schema.descriptor_set_bytes,
-                &schema.message_descriptor.full_name(),
+                schema.message_descriptor.full_name(),
             );
         }
     }
