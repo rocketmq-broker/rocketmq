@@ -157,61 +157,61 @@ pub async fn handle_publish(
     }
 
     for queue_name in &target_queues {
-        if let Some(queue_ref) = broker.queues.get(queue_name.as_str()) {
-            if let Some(ref schema) = queue_ref.schema {
-                let has_proto =
-                    crate::schema::validate::is_protobuf_content(&properties.content_type);
-                if !has_proto {
-                    let got = properties.content_type.clone();
-                    warn!(
-                        conn_id,
-                        queue = queue_name.as_str(),
-                        "schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
-                        got
-                    );
-                    crate::metrics::record_schema_validation_failed(&queue_name);
-                    send_channel_error(
-                        writer,
-                        channel,
-                        PRECONDITION_FAILED,
-                        &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, queue_name),
-                        CLASS_BASIC,
-                        METHOD_BASIC_PUBLISH,
-                    )
-                    .await;
+        if let Some(queue_ref) = broker.queues.get(queue_name.as_str())
+            && let Some(ref schema) = queue_ref.schema
+        {
+            let has_proto =
+                crate::schema::validate::is_protobuf_content(&properties.content_type);
+            if !has_proto {
+                let got = properties.content_type.clone();
+                warn!(
+                    conn_id,
+                    queue = queue_name.as_str(),
+                    "schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
+                    got
+                );
+                crate::metrics::record_schema_validation_failed(queue_name);
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, queue_name),
+                    CLASS_BASIC,
+                    METHOD_BASIC_PUBLISH,
+                )
+                .await;
 
-                    if let Some(tag) = confirm_tag {
-                        send_confirm_nack(channel, tag, writer).await;
-                    }
-                    return;
+                if let Some(tag) = confirm_tag {
+                    send_confirm_nack(channel, tag, writer).await;
                 }
+                return;
+            }
 
-                if let Err(err) = crate::schema::validate::validate_message(schema, body) {
-                    warn!(
-                        conn_id,
-                        queue = queue_name.as_str(),
-                        "schema validation failed: {}",
-                        err
-                    );
-                    crate::metrics::record_schema_validation_failed(&queue_name);
-                    send_channel_error(
-                        writer,
-                        channel,
-                        PRECONDITION_FAILED,
-                        &format!(
-                            "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
-                            queue_name, err
-                        ),
-                        CLASS_BASIC,
-                        METHOD_BASIC_PUBLISH,
-                    )
-                    .await;
+            if let Err(err) = crate::schema::validate::validate_message(schema, body) {
+                warn!(
+                    conn_id,
+                    queue = queue_name.as_str(),
+                    "schema validation failed: {}",
+                    err
+                );
+                crate::metrics::record_schema_validation_failed(queue_name);
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!(
+                        "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
+                        queue_name, err
+                    ),
+                    CLASS_BASIC,
+                    METHOD_BASIC_PUBLISH,
+                )
+                .await;
 
-                    if let Some(tag) = confirm_tag {
-                        send_confirm_nack(channel, tag, writer).await;
-                    }
-                    return;
+                if let Some(tag) = confirm_tag {
+                    send_confirm_nack(channel, tag, writer).await;
                 }
+                return;
             }
         }
     }
@@ -1136,14 +1136,14 @@ mod tests {
         while offset < n {
             if let Ok((decoded, consumed)) = decode_frame(&buf[offset..n]) {
                 offset += consumed;
-                if decoded.frame_type == FRAME_METHOD {
-                    if let Ok(m) = decode_method(&decoded.payload) {
-                        if m.class_id == CLASS_BASIC && m.method_id == METHOD_BASIC_NACK {
-                            got_nack = true;
-                        }
-                        if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
-                            got_channel_error = true;
-                        }
+                if decoded.frame_type == FRAME_METHOD
+                    && let Ok(m) = decode_method(&decoded.payload)
+                {
+                    if m.class_id == CLASS_BASIC && m.method_id == METHOD_BASIC_NACK {
+                        got_nack = true;
+                    }
+                    if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
+                        got_channel_error = true;
                     }
                 }
             } else {
