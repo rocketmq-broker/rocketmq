@@ -45,21 +45,18 @@ pub async fn perform_handshake(
     writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) -> Result<(), ()> {
-    // ── Step 1: Read protocol header ──────────────────
     let mut proto_header = [0u8; 8];
     if reader.read_exact(&mut proto_header).await.is_err() {
         return Err(());
     }
 
     if proto_header != PROTOCOL_HEADER {
-        // Send our supported protocol header and close
         let _ = writer.write_all(&PROTOCOL_HEADER).await;
         let _ = writer.flush().await;
         warn!(conn_id, "protocol header mismatch, sent ours and closing");
         return Err(());
     }
 
-    // ── Step 2: Send Connection.Start ─────────────────
     let start_args = build_connection_start();
     let start_frame =
         encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_START, &start_args);
@@ -68,7 +65,6 @@ pub async fn perform_handshake(
     }
     let _ = writer.flush().await;
 
-    // ── Step 3: Read Connection.StartOk ───────────────
     let frame = read_amqp_frame(reader).await?;
     let method = decode_method(&frame.payload).map_err(|_| ())?;
     if method.class_id != CLASS_CONNECTION || method.method_id != METHOD_CONNECTION_START_OK {
@@ -83,7 +79,6 @@ pub async fn perform_handshake(
 
     let (username, password) = parse_start_ok_credentials(&method.arguments)?;
 
-    // Authenticate via the auth backend (bcrypt verification + localhost check)
     if let Err(reason) = broker.auth.authenticate(&username, &password, peer_addr) {
         warn!(conn_id, user = username.as_str(), %reason, "authentication failed");
         let close = build_connection_close(
@@ -104,13 +99,11 @@ pub async fn perform_handshake(
         "SASL PLAIN authenticated"
     );
 
-    // Store auth info
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
         cs.username = username.clone();
         cs.authenticated = true;
     }
 
-    // ── Step 4: Send Connection.Tune ──────────────────
     let tune_args =
         build_connection_tune(DEFAULT_CHANNEL_MAX, DEFAULT_FRAME_MAX, DEFAULT_HEARTBEAT);
     let tune_frame = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_TUNE, &tune_args);
@@ -119,7 +112,6 @@ pub async fn perform_handshake(
     }
     let _ = writer.flush().await;
 
-    // ── Step 5: Read Connection.TuneOk ────────────────
     let frame = read_amqp_frame(reader).await?;
     let method = decode_method(&frame.payload).map_err(|_| ())?;
     if method.class_id != CLASS_CONNECTION || method.method_id != METHOD_CONNECTION_TUNE_OK {
@@ -138,7 +130,6 @@ pub async fn perform_handshake(
         channel_max, frame_max, heartbeat, "tune negotiated"
     );
 
-    // ── Step 6: Read Connection.Open ──────────────────
     let frame = read_amqp_frame(reader).await?;
     let method = decode_method(&frame.payload).map_err(|_| ())?;
     if method.class_id != CLASS_CONNECTION || method.method_id != METHOD_CONNECTION_OPEN {
@@ -147,7 +138,7 @@ pub async fn perform_handshake(
     }
 
     let vhost = parse_connection_open(&method.arguments)?;
-    // Validate vhost exists
+
     if !broker.vhosts.contains_key(&vhost) {
         warn!(conn_id, vhost = vhost.as_str(), "vhost not found");
         let close = build_connection_close(
@@ -162,7 +153,6 @@ pub async fn perform_handshake(
         return Err(());
     }
 
-    // Check user has access to this vhost
     let username = broker
         .conn_state
         .get(&conn_id)
@@ -191,7 +181,6 @@ pub async fn perform_handshake(
         cs.vhost = vhost.clone();
     }
 
-    // ── Step 7: Send Connection.OpenOk ────────────────
     let open_ok_args = build_connection_open_ok();
     let open_ok_frame = encode_method_frame(
         0,
@@ -233,11 +222,10 @@ pub fn build_connection_close_ok() -> Vec<u8> {
 /// supported authentication mechanisms.
 fn build_connection_start() -> Vec<u8> {
     let mut buf = Vec::new();
-    // version-major, version-minor
-    write_octet(&mut buf, 0).unwrap(); // major
-    write_octet(&mut buf, 9).unwrap(); // minor
 
-    // server-properties (field-table)
+    write_octet(&mut buf, 0).unwrap();
+    write_octet(&mut buf, 9).unwrap();
+
     let mut props = FieldTable::new();
     props.insert(
         "product".into(),
@@ -261,10 +249,8 @@ fn build_connection_start() -> Vec<u8> {
     );
     write_field_table(&mut buf, &props).unwrap();
 
-    // mechanisms (long-string)
     write_longstr(&mut buf, b"PLAIN AMQPLAIN").unwrap();
 
-    // locales (long-string)
     write_longstr(&mut buf, b"en_US").unwrap();
 
     buf
@@ -280,7 +266,7 @@ fn build_connection_tune(channel_max: u16, frame_max: u32, heartbeat: u16) -> Ve
 
 fn build_connection_open_ok() -> Vec<u8> {
     let mut buf = Vec::new();
-    // known-hosts (shortstr) — deprecated, send empty
+
     write_shortstr(&mut buf, "").unwrap();
     buf
 }
@@ -288,20 +274,15 @@ fn build_connection_open_ok() -> Vec<u8> {
 fn parse_start_ok_credentials(args: &[u8]) -> Result<(String, String), ()> {
     let mut r = Cursor::new(args);
 
-    // client-properties (field-table) — read and discard
     let _client_props = read_field_table(&mut r).map_err(|_| ())?;
 
-    // mechanism (shortstr)
     let mechanism = read_shortstr(&mut r).map_err(|_| ())?;
 
-    // response (longstr) — SASL PLAIN: \0user\0pass
     let response = read_longstr(&mut r).map_err(|_| ())?;
 
-    // locale (shortstr)
     let _locale = read_shortstr(&mut r).map_err(|_| ())?;
 
     if mechanism == "PLAIN" {
-        // PLAIN format: \0username\0password
         let parts: Vec<&[u8]> = response.split(|b| *b == 0).collect();
         if parts.len() >= 3 {
             let user = String::from_utf8_lossy(parts[1]).to_string();
@@ -311,7 +292,6 @@ fn parse_start_ok_credentials(args: &[u8]) -> Result<(String, String), ()> {
         warn!("malformed SASL PLAIN response");
         return Err(());
     } else if mechanism == "AMQPLAIN" {
-        // AMQPLAIN: field-table with LOGIN and PASSWORD
         let mut table_r = Cursor::new(&response);
         if let Ok(table) = read_field_table(&mut table_r) {
             let login = match table.get("LOGIN") {
@@ -338,7 +318,6 @@ fn parse_tune_ok(args: &[u8]) -> Result<(u16, u32, u16), ()> {
     let frame_max = read_long(&mut r).map_err(|_| ())?;
     let heartbeat = read_short(&mut r).map_err(|_| ())?;
 
-    // Client may lower but not raise values
     let ch = if channel_max == 0 {
         DEFAULT_CHANNEL_MAX
     } else {
@@ -355,13 +334,11 @@ fn parse_tune_ok(args: &[u8]) -> Result<(u16, u32, u16), ()> {
 fn parse_connection_open(args: &[u8]) -> Result<String, ()> {
     let mut r = Cursor::new(args);
     let vhost = read_shortstr(&mut r).map_err(|_| ())?;
-    // capabilities (shortstr) — deprecated, ignore
-    // insist (bit) — deprecated, ignore
+
     Ok(vhost)
 }
 
 pub async fn read_amqp_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Result<AmqpFrame, ()> {
-    // Read 7-byte header
     let mut header = [0u8; 7];
     reader.read_exact(&mut header).await.map_err(|_| ())?;
 
@@ -369,7 +346,6 @@ pub async fn read_amqp_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Result
     let channel = u16::from_be_bytes([header[1], header[2]]);
     let size = u32::from_be_bytes([header[3], header[4], header[5], header[6]]) as usize;
 
-    // Read payload + frame-end
     let mut payload = vec![0u8; size + 1];
     reader.read_exact(&mut payload).await.map_err(|_| ())?;
 
@@ -395,8 +371,8 @@ mod tests {
     fn connection_start_builds() {
         let args = build_connection_start();
         let mut r = Cursor::new(&args);
-        assert_eq!(read_octet(&mut r).unwrap(), 0); // major
-        assert_eq!(read_octet(&mut r).unwrap(), 9); // minor
+        assert_eq!(read_octet(&mut r).unwrap(), 0);
+        assert_eq!(read_octet(&mut r).unwrap(), 9);
         let props = read_field_table(&mut r).unwrap();
         assert!(props.contains_key("product"));
         assert!(props.contains_key("capabilities"));
@@ -418,9 +394,9 @@ mod tests {
     #[test]
     fn tune_ok_client_lowers() {
         let mut buf = Vec::new();
-        write_short(&mut buf, 100).unwrap(); // lower channel_max
-        write_long(&mut buf, 65536).unwrap(); // lower frame_max
-        write_short(&mut buf, 30).unwrap(); // heartbeat
+        write_short(&mut buf, 100).unwrap();
+        write_long(&mut buf, 65536).unwrap();
+        write_short(&mut buf, 30).unwrap();
         let (ch, fm, hb) = parse_tune_ok(&buf).unwrap();
         assert_eq!(ch, 100);
         assert_eq!(fm, 65536);
@@ -443,8 +419,8 @@ mod tests {
     fn connection_open_parse() {
         let mut buf = Vec::new();
         write_shortstr(&mut buf, "/staging").unwrap();
-        write_shortstr(&mut buf, "").unwrap(); // capabilities (deprecated)
-        write_octet(&mut buf, 0).unwrap(); // insist
+        write_shortstr(&mut buf, "").unwrap();
+        write_octet(&mut buf, 0).unwrap();
         let vhost = parse_connection_open(&buf).unwrap();
         assert_eq!(vhost, "/staging");
     }
@@ -464,13 +440,13 @@ mod tests {
     #[test]
     fn plain_auth_parse() {
         let mut buf = Vec::new();
-        // client-properties
+
         write_field_table(&mut buf, &FieldTable::new()).unwrap();
-        // mechanism
+
         write_shortstr(&mut buf, "PLAIN").unwrap();
-        // response: \0guest\0guest
+
         write_longstr(&mut buf, b"\x00guest\x00guest").unwrap();
-        // locale
+
         write_shortstr(&mut buf, "en_US").unwrap();
 
         let (user, pass) = parse_start_ok_credentials(&buf).unwrap();
@@ -480,7 +456,6 @@ mod tests {
 
     #[test]
     fn plain_auth_extracts_any_credentials() {
-        // parse_start_ok_credentials no longer validates — it just extracts
         let mut buf = Vec::new();
         write_field_table(&mut buf, &FieldTable::new()).unwrap();
         write_shortstr(&mut buf, "PLAIN").unwrap();

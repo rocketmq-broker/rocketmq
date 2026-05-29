@@ -39,8 +39,8 @@ use crate::core::method::*;
 use crate::core::properties::BasicProperties;
 use crate::core::validation;
 use crate::server::amqp_connection;
-use crate::server::handler::amqp_basic;
-use crate::server::handler::amqp_dispatch;
+use crate::server::processor::amqp_basic;
+use crate::server::processor::amqp_dispatch;
 use crate::state::{Broker, ConnectionState};
 
 struct ContentState {
@@ -69,7 +69,6 @@ pub fn spawn_amqp_on_stream(
     tokio::spawn(async move {
         let conn_id = broker.alloc_conn_id();
 
-        // Create AMQP delivery channel — server pushes raw frame bytes here
         let (amqp_tx, mut amqp_rx) =
             tokio::sync::mpsc::channel::<Vec<u8>>(crate::config::delivery_channel_capacity());
 
@@ -91,7 +90,6 @@ pub fn spawn_amqp_on_stream(
         let mut reader = BufReader::new(reader);
         let mut writer = BufWriter::new(writer);
 
-        // Handshake
         if amqp_connection::perform_handshake(conn_id, addr, &mut reader, &mut writer, &broker)
             .await
             .is_err()
@@ -101,7 +99,6 @@ pub fn spawn_amqp_on_stream(
             return;
         }
 
-        // Get negotiated heartbeat interval
         let heartbeat_secs = broker
             .conn_state
             .get(&conn_id)
@@ -117,14 +114,12 @@ pub fn spawn_amqp_on_stream(
 
         let mut hb_ticker = tokio::time::interval(heartbeat_interval);
         hb_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        hb_ticker.tick().await; // skip first immediate tick
+        hb_ticker.tick().await;
 
         let mut last_activity = Instant::now();
         let mut content_state: Option<ContentState> = None;
 
-        // ── Main frame loop ───────────────────────────
         loop {
-            // Get negotiated limits for validation
             let (neg_frame_max, neg_channel_max) = broker
                 .conn_state
                 .get(&conn_id)
@@ -132,7 +127,7 @@ pub fn spawn_amqp_on_stream(
                 .unwrap_or((DEFAULT_FRAME_MAX, DEFAULT_CHANNEL_MAX));
 
             tokio::select! {
-                // ── Incoming frames from client ───────
+
                 result = amqp_connection::read_amqp_frame(&mut reader) => {
                     let frame = match result {
                         Ok(f) => f,
@@ -141,7 +136,7 @@ pub fn spawn_amqp_on_stream(
                     last_activity = Instant::now();
                     debug!(conn_id, frame_type = frame.frame_type, channel = frame.channel, payload_len = frame.payload.len(), "FRAME_IN");
 
-                    // ── Frame-level validation ────────────
+
                     if let Some(err) = validation::validate_frame_type(frame.frame_type) {
                         warn!(conn_id, err, frame_type = frame.frame_type, "frame validation failed");
                         send_connection_close(&mut writer, UNEXPECTED_FRAME, err).await;
@@ -169,14 +164,14 @@ pub fn spawn_amqp_on_stream(
                                 }
                             };
 
-                            // Validate channel/class relationship
+
                             if let Some(err) = validation::validate_channel(frame.channel, method.class_id) {
                                 warn!(conn_id, err, channel = frame.channel, class_id = method.class_id, "channel/class mismatch");
                                 send_connection_close(&mut writer, COMMAND_INVALID, err).await;
                                 break;
                             }
 
-                            // Basic.Publish is special: it starts content framing
+
                             if method.class_id == CLASS_BASIC && method.method_id == METHOD_BASIC_PUBLISH {
                                 let (exchange, routing_key, mandatory, _immediate) =
                                     amqp_basic::parse_publish_args(&method.arguments);
@@ -193,7 +188,7 @@ pub fn spawn_amqp_on_stream(
                                 continue;
                             }
 
-                            // All other methods go through the dispatcher
+
                             let keep = amqp_dispatch::dispatch_method(
                                 conn_id, frame.channel, &method, &mut writer, &broker,
                             ).await;
@@ -209,7 +204,7 @@ pub fn spawn_amqp_on_stream(
                                         cs.properties = header.properties;
                                         cs.body_received.reserve(header.body_size as usize);
 
-                                        // Zero-length body: deliver immediately
+
                                         if header.body_size == 0 {
                                             let state = content_state.take().unwrap();
                                             amqp_basic::handle_publish(
@@ -262,7 +257,7 @@ pub fn spawn_amqp_on_stream(
                     }
                 }
 
-                // ── Heartbeat ─────────────────────────
+
                 _ = hb_ticker.tick() => {
                     if last_activity.elapsed() > heartbeat_timeout {
                         warn!(conn_id, "heartbeat timeout");
@@ -273,10 +268,10 @@ pub fn spawn_amqp_on_stream(
                     if writer.flush().await.is_err() { break; }
                 }
 
-                // ── Outgoing delivery frames ──────────
+
                 Some(frame_bytes) = amqp_rx.recv() => {
                     if writer.write_all(&frame_bytes).await.is_err() { break; }
-                    // Drain any additional queued frames without blocking
+
                     while let Ok(more) = amqp_rx.try_recv() {
                         if writer.write_all(&more).await.is_err() { break; }
                     }

@@ -147,26 +147,26 @@ pub struct BrokerState {
     pub queues: DashMap<String, QueueState>,
     pub connections: DashMap<u64, ConnHandle>,
     pub conn_state: DashMap<u64, ConnectionState>,
-    wal: OnceLock<Arc<crate::storage::wal::Wal>>,
+    wal: Arc<crate::storage::wal::Wal>,
     pub dedup_cache: DashMap<String, Instant>,
     pub delay_queue: DelayQueue,
     pub vhosts: DashMap<String, VHost>,
     pub auth: AuthBackend,
-    cluster: OnceLock<Arc<crate::cluster::ClusterManager>>,
+    cluster: OnceLock<Arc<crate::cluster::ClusterCoordinator>>,
     /// Epoch ms when the broker started.
     started_at_ms: u64,
 }
 
 impl BrokerState {
     /// Creates a new instance with default values.
-    pub fn new() -> Self {
+    pub fn new(wal: Arc<crate::storage::wal::Wal>) -> Self {
         let auth = AuthBackend::new();
         let db_path = crate::config::get_user_db_path();
         let user_db = std::path::Path::new(&db_path);
         if let Err(e) = auth.load_from_file(user_db) {
             tracing::warn!(error = %e, "failed to load user database, using defaults");
         }
-        // Persist current state (creates file on first run)
+
         if let Err(e) = auth.save_to_file(user_db) {
             tracing::warn!(error = %e, "failed to save user database");
         }
@@ -178,7 +178,7 @@ impl BrokerState {
             queues: DashMap::new(),
             connections: DashMap::new(),
             conn_state: DashMap::new(),
-            wal: OnceLock::new(),
+            wal,
             dedup_cache: DashMap::new(),
             delay_queue: DelayQueue::new(),
             vhosts: {
@@ -199,7 +199,7 @@ impl BrokerState {
     }
 
     /// Stores the cluster manager handle for cross-node coordination.
-    pub fn set_cluster(&self, cluster: Arc<crate::cluster::ClusterManager>) {
+    pub fn set_cluster(&self, cluster: Arc<crate::cluster::ClusterCoordinator>) {
         let _ = self.cluster.set(cluster);
     }
 
@@ -217,18 +217,13 @@ impl BrokerState {
     }
 
     /// Returns a reference to the cluster manager, if one has been set.
-    pub fn cluster(&self) -> Option<&Arc<crate::cluster::ClusterManager>> {
+    pub fn cluster(&self) -> Option<&Arc<crate::cluster::ClusterCoordinator>> {
         self.cluster.get()
     }
 
-    /// Stores the WAL handle for use by connection handlers.
-    pub fn set_wal(&self, wal: Arc<crate::storage::wal::Wal>) {
-        let _ = self.wal.set(wal);
-    }
-
-    /// Returns a reference to the WAL, if one has been initialized.
-    pub fn wal(&self) -> Option<&Arc<crate::storage::wal::Wal>> {
-        self.wal.get()
+    /// Returns a reference to the WAL.
+    pub fn wal(&self) -> &Arc<crate::storage::wal::Wal> {
+        &self.wal
     }
 
     /// Allocates a globally unique, monotonically increasing connection ID.
@@ -250,7 +245,6 @@ impl BrokerState {
             let (name, queue) = entry.pair_mut();
             queue.listeners.retain(|&(id, _)| id != conn_id);
 
-            // Clean up consumer_tags belonging to this connection
             queue
                 .consumer_tags
                 .retain(|_tag, &mut (cid, _)| cid != conn_id);
@@ -264,7 +258,6 @@ impl BrokerState {
             self.queues.remove(name);
         }
 
-        // Auto-delete queues with no listeners left
         let auto_delete: Vec<String> = self
             .queues
             .iter()
@@ -311,6 +304,20 @@ mod tests {
     use super::*;
     use crate::queue::QueueOptions;
 
+    /// Creates a test BrokerState with a temporary WAL file.
+    fn test_broker() -> BrokerState {
+        use std::sync::atomic::AtomicU32;
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test_broker_wal");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("test_{}.wal", id));
+        let wal = Arc::new(crate::storage::wal::Wal::open(&path).unwrap());
+        BrokerState::new(wal)
+    }
+
     #[test]
     fn channel_state_prefetch_gating() {
         let mut ch = ChannelState::new(1);
@@ -323,27 +330,27 @@ mod tests {
     #[test]
     fn channel_state_flow_control() {
         let mut ch = ChannelState::new(1);
-        assert!(ch.can_deliver()); // flow_active defaults to true
+        assert!(ch.can_deliver());
 
         ch.flow_active = false;
-        assert!(!ch.can_deliver()); // paused by flow control
+        assert!(!ch.can_deliver());
 
         ch.flow_active = true;
-        assert!(ch.can_deliver()); // resumed
+        assert!(ch.can_deliver());
     }
 
     #[test]
     fn channel_state_flow_overrides_prefetch() {
         let mut ch = ChannelState::new(1);
-        ch.prefetch_count = 10; // plenty of room
+        ch.prefetch_count = 10;
         ch.unacked_count = 0;
         ch.flow_active = false;
-        assert!(!ch.can_deliver()); // flow takes precedence
+        assert!(!ch.can_deliver());
     }
 
     #[test]
     fn broker_state_alloc_ids_monotonic() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         assert_eq!(bs.alloc_conn_id(), 1);
         assert_eq!(bs.alloc_conn_id(), 2);
         assert_eq!(bs.alloc_msg_id(), 1);
@@ -352,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn broker_state_default_exchanges() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         let ex = bs.exchanges.read().await;
         assert_eq!(ex.len(), 5);
         assert!(ex.contains_key(""));
@@ -364,7 +371,7 @@ mod tests {
 
     #[test]
     fn broker_state_remove_connection() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         let (amqp_tx, _rx) = mpsc::channel(1);
         bs.connections.insert(
             1,
@@ -385,7 +392,7 @@ mod tests {
 
     #[test]
     fn broker_state_exclusive_queue_removed() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         let (amqp_tx, _rx) = mpsc::channel(1);
         bs.connections.insert(
             1,
@@ -412,14 +419,14 @@ mod tests {
 
     #[test]
     fn broker_has_default_vhost() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         assert!(bs.vhosts.contains_key("/"));
         assert_eq!(bs.vhosts.len(), 1);
     }
 
     #[test]
     fn broker_create_vhost() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.vhosts
             .insert("/staging".to_string(), VHost::new("/staging".to_string()));
         assert!(bs.vhosts.contains_key("/staging"));
@@ -428,7 +435,7 @@ mod tests {
 
     #[test]
     fn broker_delete_vhost() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.vhosts
             .insert("/temp".to_string(), VHost::new("/temp".to_string()));
         assert_eq!(bs.vhosts.len(), 2);
@@ -439,39 +446,37 @@ mod tests {
 
     #[test]
     fn broker_cannot_delete_nonexistent_vhost() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         let removed = bs.vhosts.remove("nonexistent");
         assert!(removed.is_none());
     }
 
     #[tokio::test]
     async fn vhost_has_own_exchanges() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.vhosts
             .insert("/prod".to_string(), VHost::new("/prod".to_string()));
 
         let vh = bs.vhosts.get("/prod").unwrap();
         let ex = vh.exchanges.read().await;
-        // Each vhost gets its own set of default exchanges
+
         assert_eq!(ex.len(), 5);
     }
 
     #[test]
     fn vhost_queues_are_isolated() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.vhosts
             .insert("/a".to_string(), VHost::new("/a".to_string()));
         bs.vhosts
             .insert("/b".to_string(), VHost::new("/b".to_string()));
 
-        // Add queue to vhost /a
         bs.vhosts
             .get("/a")
             .unwrap()
             .queues
             .insert("q1".into(), QueueState::new());
 
-        // vhost /a has q1, vhost /b does not
         assert!(bs.vhosts.get("/a").unwrap().queues.contains_key("q1"));
         assert!(!bs.vhosts.get("/b").unwrap().queues.contains_key("q1"));
     }
@@ -491,17 +496,15 @@ mod tests {
 
     #[test]
     fn connection_vhost_tracks_per_connection() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.conn_state.insert(1, ConnectionState::new());
         bs.conn_state.insert(2, ConnectionState::new());
 
-        // Connection 1 uses default
         assert_eq!(bs.conn_state.get(&1).unwrap().vhost, "/");
 
-        // Connection 2 switches to different vhost
         bs.conn_state.get_mut(&2).unwrap().vhost = "/staging".to_string();
         assert_eq!(bs.conn_state.get(&2).unwrap().vhost, "/staging");
-        // Connection 1 unaffected
+
         assert_eq!(bs.conn_state.get(&1).unwrap().vhost, "/");
     }
 
@@ -589,10 +592,9 @@ mod tests {
         });
         cs.tx_buffer.push(PendingOp::Ack { msg_id: 5 });
 
-        // Simulate rollback
         cs.tx_buffer.clear();
         assert!(cs.tx_buffer.is_empty());
-        // tx_mode stays on after rollback (per AMQP spec)
+
         assert!(cs.tx_mode);
     }
 
@@ -607,7 +609,6 @@ mod tests {
             body: b"data".to_vec(),
         });
 
-        // Simulate commit: take buffer
         let ops = std::mem::take(&mut cs.tx_buffer);
         assert_eq!(ops.len(), 1);
         assert!(cs.tx_buffer.is_empty());
@@ -615,10 +616,9 @@ mod tests {
 
     #[test]
     fn tx_commit_applies_publish_to_queue() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.queues.insert("q1".into(), QueueState::new());
 
-        // Simulate a commit with a Publish op
         let op = PendingOp::Publish {
             exchange: "".to_string(),
             routing_key: "q1".to_string(),
@@ -626,7 +626,6 @@ mod tests {
             body: b"committed".to_vec(),
         };
 
-        // Apply the op
         if let PendingOp::Publish {
             exchange,
             routing_key,
@@ -655,14 +654,12 @@ mod tests {
 
     #[test]
     fn tx_commit_applies_ack_removes_inflight() {
-        let bs = BrokerState::new();
+        let bs = test_broker();
         bs.queues.insert("q1".into(), QueueState::new());
 
-        // Put a message in inflight
         let msg = crate::queue::Message::new(42, vec![], b"test".to_vec());
         bs.queues.get_mut("q1").unwrap().inflight.insert(42, msg);
 
-        // Simulate ack op
         let op = PendingOp::Ack { msg_id: 42 };
         if let PendingOp::Ack { msg_id } = &op {
             for mut entry in bs.queues.iter_mut() {
@@ -681,7 +678,6 @@ mod tests {
         let mut cs = ConnectionState::new();
         cs.tx_mode = true;
 
-        // First transaction
         cs.tx_buffer.push(PendingOp::Publish {
             exchange: "".to_string(),
             routing_key: "q1".to_string(),
@@ -691,7 +687,6 @@ mod tests {
         let ops1 = std::mem::take(&mut cs.tx_buffer);
         assert_eq!(ops1.len(), 1);
 
-        // Second transaction (buffer was cleared after commit)
         cs.tx_buffer.push(PendingOp::Ack { msg_id: 10 });
         cs.tx_buffer.push(PendingOp::Ack { msg_id: 20 });
         let ops2 = std::mem::take(&mut cs.tx_buffer);
@@ -784,13 +779,6 @@ mod tests {
     #[test]
     fn test_coverage_for_broker_state_cluster() {
         let func_name = "cluster";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `set_wal` function.
-    #[test]
-    fn test_coverage_for_broker_state_set_wal() {
-        let func_name = "set_wal";
         assert!(!func_name.is_empty());
     }
 

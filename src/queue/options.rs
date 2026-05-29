@@ -41,6 +41,9 @@ pub struct QueueOptions {
     pub retry_multiplier: Option<f64>,
     pub rate_limit: Option<u32>,
     pub stream_mode: bool,
+    pub schema: Option<Vec<u8>>,
+    pub schema_type: Option<String>,
+    pub schema_message: Option<String>,
 }
 
 impl QueueOptions {
@@ -75,6 +78,9 @@ impl QueueOptions {
                     "x-queue-type" if v == "stream" => {
                         opts.stream_mode = true;
                     }
+                    "x-schema" => opts.schema = Some(v.as_bytes().to_vec()),
+                    "x-schema-type" => opts.schema_type = Some(v.to_string()),
+                    "x-schema-message" => opts.schema_message = Some(v.to_string()),
                     _ => {}
                 }
             }

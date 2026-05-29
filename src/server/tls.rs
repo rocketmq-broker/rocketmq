@@ -36,7 +36,6 @@ pub fn build_tls_acceptor(
     cert_path: &str,
     key_path: &str,
 ) -> Result<TlsAcceptor, Box<dyn std::error::Error>> {
-    // Auto-generate self-signed certs if they don't exist
     if !Path::new(cert_path).exists() || !Path::new(key_path).exists() {
         generate_self_signed(cert_path, key_path)?;
     }

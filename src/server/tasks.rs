@@ -82,7 +82,7 @@ async fn message_ttl_task(broker: Broker) {
         for mut entry in broker.queues.iter_mut() {
             let queue = entry.value_mut();
             let mut expired_count = 0usize;
-            // Drain expired messages from the front of the queue
+
             while let Some(msg) = queue.messages.peek_front() {
                 if msg.is_expired() {
                     queue.messages.pop_front();
@@ -157,10 +157,7 @@ async fn wal_compact_task(broker: Broker) {
     loop {
         interval.tick().await;
 
-        let wal = match broker.wal() {
-            Some(w) => w,
-            None => continue,
-        };
+        let wal = broker.wal();
 
         let entries = match wal.read_all() {
             Ok(e) => e,
@@ -172,7 +169,6 @@ async fn wal_compact_task(broker: Broker) {
             continue;
         }
 
-        // Collect all acked message IDs
         let mut acked_ids: std::collections::HashSet<u64> = std::collections::HashSet::new();
         for entry in &entries {
             if entry.entry_type == EntryType::Ack && entry.data.len() >= 8 {
@@ -185,7 +181,6 @@ async fn wal_compact_task(broker: Broker) {
             continue;
         }
 
-        // Rebuild: keep only live entries (skip acked enqueues and their ack entries)
         let mut kept = 0u64;
         let mut removed = 0u64;
         if let Err(e) = wal.truncate() {
@@ -196,7 +191,6 @@ async fn wal_compact_task(broker: Broker) {
         for entry in &entries {
             match entry.entry_type {
                 EntryType::Enqueue => {
-                    // Parse msg_id from enqueue data (offset: 2+name_len -> 8 bytes)
                     let queue_len = u16::from_be_bytes([entry.data[0], entry.data[1]]) as usize;
                     if entry.data.len() >= 2 + queue_len + 8 {
                         let msg_id = u64::from_be_bytes(
@@ -206,14 +200,13 @@ async fn wal_compact_task(broker: Broker) {
                         );
                         if acked_ids.contains(&msg_id) {
                             removed += 1;
-                            continue; // Skip — this message was acked
+                            continue;
                         }
                     }
                     let _ = wal.append(entry.entry_type, &entry.data);
                     kept += 1;
                 }
                 EntryType::Ack => {
-                    // Skip ack entries for messages we just removed
                     if entry.data.len() >= 8 {
                         let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
                         if acked_ids.contains(&msg_id) {
@@ -225,7 +218,6 @@ async fn wal_compact_task(broker: Broker) {
                     kept += 1;
                 }
                 _ => {
-                    // Keep all declarations and bindings
                     let _ = wal.append(entry.entry_type, &entry.data);
                     kept += 1;
                 }

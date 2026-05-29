@@ -74,7 +74,7 @@ pub struct ContentHeader {
 // ─── Frame Encoding ───────────────────────────────────
 
 pub fn encode_method_frame(channel: u16, class_id: u16, method_id: u16, args: &[u8]) -> Vec<u8> {
-    let payload_size = 4 + args.len(); // class_id(2) + method_id(2) + args
+    let payload_size = 4 + args.len();
     let mut buf = Vec::with_capacity(8 + payload_size);
     buf.push(FRAME_METHOD);
     buf.extend_from_slice(&channel.to_be_bytes());
@@ -95,14 +95,13 @@ pub fn encode_content_header(
     let mut prop_buf = Vec::new();
     properties.encode(&mut prop_buf).expect("properties encode");
 
-    // class_id(2) + weight(2) + body_size(8) + prop_buf
     let payload_size = 2 + 2 + 8 + prop_buf.len();
     let mut buf = Vec::with_capacity(8 + payload_size);
     buf.push(FRAME_HEADER);
     buf.extend_from_slice(&channel.to_be_bytes());
     buf.extend_from_slice(&(payload_size as u32).to_be_bytes());
     buf.extend_from_slice(&class_id.to_be_bytes());
-    buf.extend_from_slice(&0u16.to_be_bytes()); // weight = 0 (unused)
+    buf.extend_from_slice(&0u16.to_be_bytes());
     buf.extend_from_slice(&body_size.to_be_bytes());
     buf.extend_from_slice(&prop_buf);
     buf.push(FRAME_END);
@@ -188,7 +187,7 @@ pub fn decode_content_header(payload: &[u8]) -> io::Result<ContentHeader> {
         ));
     }
     let class_id = u16::from_be_bytes([payload[0], payload[1]]);
-    // weight at [2..4] — unused, always 0
+
     let body_size = u64::from_be_bytes([
         payload[4],
         payload[5],
@@ -254,7 +253,7 @@ mod tests {
 
     #[test]
     fn method_frame_roundtrip() {
-        let args = vec![0x00, 0x0A, 0x41, 0x42]; // some args
+        let args = vec![0x00, 0x0A, 0x41, 0x42];
         let wire = encode_method_frame(1, 10, 10, &args);
 
         let (frame, consumed) = decode_frame(&wire).unwrap();
@@ -307,11 +306,10 @@ mod tests {
 
     #[test]
     fn body_split_multiple() {
-        let body = vec![0x41; 100]; // 100 bytes
-        let frames = split_body_frames(1, &body, 50); // max 42 bytes per body
+        let body = vec![0x41; 100];
+        let frames = split_body_frames(1, &body, 50);
         assert!(frames.len() >= 3);
 
-        // Reconstruct body
         let mut reconstructed = Vec::new();
         for wire in &frames {
             let (frame, _) = decode_frame(wire).unwrap();
@@ -329,7 +327,7 @@ mod tests {
     #[test]
     fn frame_bad_end_marker() {
         let mut wire = encode_heartbeat();
-        wire[7] = 0x00; // corrupt frame-end
+        wire[7] = 0x00;
         assert!(decode_frame(&wire).is_err());
     }
 
@@ -340,7 +338,6 @@ mod tests {
 
     #[test]
     fn frame_incomplete_payload() {
-        // Header says size=100 but only 10 bytes follow
         let wire = vec![1, 0, 1, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xCE];
         assert!(decode_frame(&wire).is_err());
     }

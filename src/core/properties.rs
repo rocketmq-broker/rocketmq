@@ -227,7 +227,7 @@ mod tests {
             app_id: Some("myapp".into()),
             cluster_id: Some("cluster1".into()),
         };
-        assert_eq!(p.flags(), 0xFFFC); // all 14 flags set (bits 15..2)
+        assert_eq!(p.flags(), 0xFFFC);
 
         let mut buf = Vec::new();
         p.encode(&mut buf).unwrap();

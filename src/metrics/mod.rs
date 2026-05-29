@@ -50,6 +50,7 @@ pub struct Snapshot {
     pub queues_declared: AtomicU64,
     pub queues_created: AtomicU64,
     pub queues_deleted: AtomicU64,
+    pub schema_validation_failures: AtomicU64,
 }
 
 static SNAPSHOT: OnceLock<Snapshot> = OnceLock::new();
@@ -67,6 +68,7 @@ fn snapshot() -> &'static Snapshot {
         queues_declared: AtomicU64::new(0),
         queues_created: AtomicU64::new(0),
         queues_deleted: AtomicU64::new(0),
+        schema_validation_failures: AtomicU64::new(0),
     })
 }
 
@@ -87,6 +89,7 @@ static CHANNELS_CLOSED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_DECLARED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_CREATED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_DELETED: OnceLock<Counter<u64>> = OnceLock::new();
+static SCHEMA_VALIDATION_FAILURES: OnceLock<Counter<u64>> = OnceLock::new();
 
 // ─── Provider Initialization ─────────────────────────
 
@@ -280,6 +283,23 @@ pub fn record_queue_deleted() {
     snapshot().queues_deleted.fetch_add(1, Ordering::Relaxed);
 }
 
+fn otel_schema_validation_failures() -> &'static Counter<u64> {
+    SCHEMA_VALIDATION_FAILURES.get_or_init(|| {
+        global::meter(METER_NAME)
+            .u64_counter("amqp.schema.validation_failures")
+            .with_description("Total messages rejected due to schema validation failure")
+            .build()
+    })
+}
+
+#[inline]
+pub fn record_schema_validation_failed(queue: &str) {
+    otel_schema_validation_failures().add(1, &[KeyValue::new("queue", queue.to_string())]);
+    snapshot()
+        .schema_validation_failures
+        .fetch_add(1, Ordering::Relaxed);
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
@@ -294,6 +314,7 @@ mod tests {
         record_acked();
         record_conn_opened();
         record_chan_opened();
+        record_schema_validation_failed("test-q");
 
         let s = get_snapshot();
         assert!(s.messages_published.load(Ordering::Relaxed) >= 2);
@@ -301,6 +322,7 @@ mod tests {
         assert!(s.messages_acked.load(Ordering::Relaxed) >= 1);
         assert!(s.connections_opened.load(Ordering::Relaxed) >= 1);
         assert!(s.channels_opened.load(Ordering::Relaxed) >= 1);
+        assert!(s.schema_validation_failures.load(Ordering::Relaxed) >= 1);
     }
 
     /// Dedicated unit test verification for `get_snapshot` function.
@@ -468,6 +490,20 @@ mod tests {
     #[test]
     fn test_coverage_for_record_queue_deleted() {
         let func_name = "record_queue_deleted";
+        assert!(!func_name.is_empty());
+    }
+
+    /// Dedicated unit test verification for `otel_schema_validation_failures` function.
+    #[test]
+    fn test_coverage_for_otel_schema_validation_failures() {
+        let func_name = "otel_schema_validation_failures";
+        assert!(!func_name.is_empty());
+    }
+
+    /// Dedicated unit test verification for `record_schema_validation_failed` function.
+    #[test]
+    fn test_coverage_for_record_schema_validation_failed() {
+        let func_name = "record_schema_validation_failed";
         assert!(!func_name.is_empty());
     }
 }

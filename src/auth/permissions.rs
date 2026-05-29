@@ -67,12 +67,10 @@ pub fn matches_resource(pattern: &str, resource: &str) -> bool {
         return false;
     }
 
-    // Fast path for universal access
     if pattern == ".*" {
         return true;
     }
 
-    // Anchor the pattern to match the full resource name
     let anchored = if pattern.starts_with('^') && pattern.ends_with('$') {
         pattern.to_string()
     } else if pattern.starts_with('^') {
@@ -127,7 +125,6 @@ mod tests {
 
     #[test]
     fn auto_anchoring() {
-        // Pattern without anchors is auto-anchored
         assert!(matches_resource("orders", "orders"));
         assert!(!matches_resource("orders", "orders.new"));
         assert!(!matches_resource("orders", "my-orders"));
@@ -135,7 +132,6 @@ mod tests {
 
     #[test]
     fn amq_gen_pattern() {
-        // RabbitMQ default: guest can use auto-generated queues
         assert!(matches_resource("^amq\\.gen.*", "amq.gen-abc123"));
         assert!(!matches_resource("^amq\\.gen.*", "my-queue"));
     }
@@ -149,7 +145,6 @@ mod tests {
 
     #[test]
     fn invalid_regex_denies() {
-        // Invalid regex should not panic, just deny
         assert!(!matches_resource("[invalid", "anything"));
     }
 

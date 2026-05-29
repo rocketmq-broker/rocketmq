@@ -36,6 +36,8 @@ mod queue;
 #[allow(dead_code)]
 mod routing;
 #[allow(dead_code)]
+pub mod schema;
+#[allow(dead_code)]
 mod server;
 #[allow(dead_code)]
 mod state;
@@ -58,11 +60,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _meter_provider = metrics::init_meter_provider();
 
-    let broker: state::Broker = Arc::new(state::BrokerState::new());
+    let wal = storage::open_wal()?;
 
-    let wal = storage::init_with_recovery(&broker)?;
+    let broker: state::Broker = Arc::new(state::BrokerState::new(wal));
 
-    broker.set_wal(wal);
+    storage::recover(&broker)?;
 
     let node_id = get_node_id();
     let cluster_addr = get_cluster_addr();
@@ -75,7 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "initializing cluster management"
     );
 
-    let cluster_manager = Arc::new(cluster::ClusterManager::new(node_id, cluster_addr.clone()));
+    let cluster_manager = Arc::new(cluster::ClusterCoordinator::new(
+        node_id,
+        cluster_addr.clone(),
+    ));
     broker.set_cluster(cluster_manager.clone());
 
     cluster::start_cluster_listener(broker.clone(), cluster_manager.clone(), cluster_addr).await?;

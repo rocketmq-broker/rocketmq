@@ -20,7 +20,9 @@
 use super::message::Message;
 use super::options::QueueOptions;
 use super::priority::PriorityQueue;
+use crate::schema::CompiledSchema;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -28,7 +30,7 @@ use std::time::Instant;
 static CONSUMER_TAG_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub struct TokenBucket {
-    pub rate: u32, // tokens per second
+    pub rate: u32,
     pub tokens: f64,
     pub last_refill: Instant,
 }
@@ -63,7 +65,7 @@ impl TokenBucket {
 
 pub struct ConsumerGroup {
     pub name: String,
-    pub members: Vec<(u64, u16)>, // (conn_id, channel_id)
+    pub members: Vec<(u64, u16)>,
     next_member: usize,
 }
 
@@ -136,6 +138,7 @@ pub struct QueueState {
     pub stat_published: u64,
     pub stat_delivered: u64,
     pub stat_acked: u64,
+    pub schema: Option<Arc<CompiledSchema>>,
 }
 
 impl QueueState {
@@ -164,13 +167,14 @@ impl QueueState {
             stat_published: 0,
             stat_delivered: 0,
             stat_acked: 0,
+            schema: None,
         }
     }
 
     pub fn check_rate_limit(&mut self) -> bool {
         match &mut self.rate_limiter {
             Some(bucket) => bucket.try_consume(),
-            None => true, // no limit
+            None => true,
         }
     }
 
@@ -192,7 +196,6 @@ impl QueueState {
             .insert(tag.clone(), (conn_id, channel_id));
         self.consumer_count = self.listeners.len();
 
-        // Add to consumer group if specified
         if let Some(group_name) = group {
             self.groups
                 .entry(group_name.clone())
@@ -208,11 +211,11 @@ impl QueueState {
             self.listeners
                 .retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
             self.consumer_count = self.listeners.len();
-            // Remove from all groups
+
             self.groups.values_mut().for_each(|g| {
                 g.remove_member(conn_id, channel_id);
             });
-            // Clean up empty groups
+
             self.groups.retain(|_, g| !g.members.is_empty());
             true
         } else {
@@ -221,7 +224,6 @@ impl QueueState {
     }
 
     pub fn next_target(&mut self, broker: &crate::state::Broker) -> Option<(u64, u16)> {
-        // If there are groups, use group-based delivery (return first available)
         if !self.groups.is_empty() {
             for group in self.groups.values_mut() {
                 if let Some(target) = group.next_target(broker) {
@@ -231,7 +233,6 @@ impl QueueState {
             return None;
         }
 
-        // Fallback: ungrouped round-robin
         if self.listeners.is_empty() {
             return None;
         }

@@ -21,6 +21,11 @@ axum = "0.8"
 tower-http = { version = "0.6", features = ["fs"] }
 opentelemetry = { version = "0.29", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.29", features = ["metrics", "rt-tokio"] }
+prost = "0.13"
+prost-types = "0.13"
+prost-reflect = { version = "0.14", features = ["serde"] }
+protox = "0.7"
+bytes = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

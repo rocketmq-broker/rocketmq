@@ -60,7 +60,7 @@ pub fn validate_frame_size(payload_len: usize, frame_max: u32) -> Option<&'stati
 
 pub fn validate_channel_number(channel: u16, channel_max: u16) -> Option<&'static str> {
     if channel_max == 0 {
-        return None; // 0 means unlimited
+        return None;
     }
     if channel > channel_max {
         return Some("channel number exceeds negotiated channel-max");
@@ -138,12 +138,12 @@ mod tests {
     #[test]
     fn frame_size_within_limit() {
         assert!(validate_frame_size(100, 131072).is_none());
-        assert!(validate_frame_size(131064, 131072).is_none()); // exactly at limit
+        assert!(validate_frame_size(131064, 131072).is_none());
     }
 
     #[test]
     fn frame_size_exceeds_limit() {
-        assert!(validate_frame_size(131065, 131072).is_some()); // 131065 + 8 > 131072
+        assert!(validate_frame_size(131065, 131072).is_some());
     }
 
     #[test]

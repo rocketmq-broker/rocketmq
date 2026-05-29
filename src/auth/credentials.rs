@@ -131,11 +131,10 @@ mod tests {
 
     #[test]
     fn hash_is_unique() {
-        // Two hashes of the same password should differ (bcrypt uses random salt)
         let h1 = hash_password("same");
         let h2 = hash_password("same");
         assert_ne!(h1, h2);
-        // But both verify
+
         assert!(bcrypt::verify("same", &h1).unwrap());
         assert!(bcrypt::verify("same", &h2).unwrap());
     }

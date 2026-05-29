@@ -38,22 +38,22 @@ pub type FieldTable = BTreeMap<String, FieldValue>;
 /// nested field tables, and void.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldValue {
-    Boolean(bool),          // 't'
-    ShortShortInt(i8),      // 'b'
-    ShortShortUint(u8),     // 'B'
-    ShortInt(i16),          // 'U'
-    ShortUint(u16),         // 'u'
-    LongInt(i32),           // 'I'
-    LongUint(u32),          // 'i'
-    LongLongInt(i64),       // 'L'
-    LongLongUint(u64),      // 'l'
-    Float(f32),             // 'f'
-    Double(f64),            // 'd'
-    ShortString(String),    // 's'
-    LongString(Vec<u8>),    // 'S'
-    Timestamp(u64),         // 'T'
-    FieldTable(FieldTable), // 'F'
-    Void,                   // 'V'
+    Boolean(bool),
+    ShortShortInt(i8),
+    ShortShortUint(u8),
+    ShortInt(i16),
+    ShortUint(u16),
+    LongInt(i32),
+    LongUint(u32),
+    LongLongInt(i64),
+    LongLongUint(u64),
+    Float(f32),
+    Double(f64),
+    ShortString(String),
+    LongString(Vec<u8>),
+    Timestamp(u64),
+    FieldTable(FieldTable),
+    Void,
 }
 
 // ─── Reading ───────────────────────────────────────────

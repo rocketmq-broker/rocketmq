@@ -53,7 +53,6 @@ impl AuthBackend {
             permissions: DashMap::new(),
         };
 
-        // Seed default guest user (like RabbitMQ)
         let guest = UserEntry::new(
             crate::config::default_guest_user(),
             crate::config::default_guest_pass(),
@@ -63,7 +62,6 @@ impl AuthBackend {
             .users
             .insert(crate::config::default_guest_user().to_string(), guest);
 
-        // Grant guest full access to default vhost "/"
         backend.permissions.insert(
             (
                 crate::config::default_guest_user().to_string(),
@@ -72,7 +70,6 @@ impl AuthBackend {
             Permission::full_access(crate::config::default_guest_user(), "/"),
         );
 
-        // Seed admin user
         let admin = UserEntry::new(
             crate::config::default_admin_user(),
             crate::config::default_admin_pass(),
@@ -82,7 +79,6 @@ impl AuthBackend {
             .users
             .insert(crate::config::default_admin_user().to_string(), admin);
 
-        // Grant admin full access to default vhost "/"
         backend.permissions.insert(
             (
                 crate::config::default_admin_user().to_string(),
@@ -107,7 +103,6 @@ impl AuthBackend {
             .get(username)
             .ok_or_else(|| format!("user '{}' not found", username))?;
 
-        // RabbitMQ rule: guest can only connect from localhost
         if username == crate::config::default_guest_user() && !is_loopback(&peer_addr) {
             return Err(format!(
                 "user '{}' can only connect via localhost",
@@ -186,7 +181,6 @@ impl AuthBackend {
             .remove(username)
             .ok_or_else(|| format!("user '{}' not found", username))?;
 
-        // Remove all permissions for this user
         self.permissions.retain(|key, _| key.0 != username);
 
         info!(user = username, "user deleted");
@@ -262,7 +256,6 @@ impl AuthBackend {
         let json =
             serde_json::to_string_pretty(&data).map_err(|e| format!("serialize error: {}", e))?;
 
-        // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("mkdir error: {}", e))?;
         }
@@ -378,8 +371,7 @@ mod tests {
     fn restricted_permissions() {
         let auth = AuthBackend::new();
         auth.add_user("app", "pass", vec![UserTag::None]).unwrap();
-        // Can only configure queues starting with "app."
-        // Can write to any exchange, can read from "app.*" queues
+
         auth.set_permissions("app", "/", "^app\\..*", ".*", "^app\\..*")
             .unwrap();
 
@@ -423,7 +415,7 @@ mod tests {
         auth.add_user("alice", "pass", vec![UserTag::Monitoring])
             .unwrap();
         let users = auth.list_users();
-        assert_eq!(users.len(), 3); // guest + admin + alice
+        assert_eq!(users.len(), 3);
     }
 
     #[test]
@@ -452,7 +444,6 @@ mod tests {
         assert!(auth2.check_configure("persist-test", "/", "app.queue"));
         assert!(!auth2.check_configure("persist-test", "/", "system.queue"));
 
-        // Cleanup
         let _ = std::fs::remove_file(&path);
     }
 

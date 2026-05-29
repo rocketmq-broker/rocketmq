@@ -71,10 +71,9 @@ impl DelayQueue {
         let now = Instant::now();
         let mut inner = self.inner.lock().unwrap();
 
-        // Split at the first key that is still in the future
         let split_key = (now, u64::MAX);
         let remaining = inner.split_off(&split_key);
-        // Everything left in `inner` is ready (deliver_at <= now)
+
         let ready: Vec<DelayedMessage> = std::mem::replace(&mut *inner, remaining)
             .into_values()
             .collect();

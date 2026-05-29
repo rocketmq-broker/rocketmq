@@ -130,6 +130,7 @@ pub enum EntryType {
     Ack = 0x03,
     DeclareExchange = 0x04,
     Bind = 0x05,
+    SetQueueSchema = 0x06,
 }
 
 impl TryFrom<u8> for EntryType {
@@ -141,6 +142,7 @@ impl TryFrom<u8> for EntryType {
             0x03 => Ok(Self::Ack),
             0x04 => Ok(Self::DeclareExchange),
             0x05 => Ok(Self::Bind),
+            0x06 => Ok(Self::SetQueueSchema),
             _ => Err(()),
         }
     }
@@ -157,7 +159,7 @@ pub struct WalEntry {
 /// A single on-disk segment file backing the WAL.
 ///
 /// Entries are appended sequentially. When `size` exceeds `max_size`,
-/// the [`SegmentManager`] rotates to a new segment.
+/// the [`SegmentCoordinator`] rotates to a new segment.
 pub struct Segment {
     pub id: u64,
     pub path: PathBuf,
@@ -169,12 +171,11 @@ pub struct Segment {
 impl Segment {
     /// Appends a raw entry to the WAL and returns its monotonic sequence number.
     pub fn append(&mut self, entry_type: EntryType, data: &[u8]) -> io::Result<(u64, u32)> {
-        let total_len = (1 + data.len()) as u32; // entry_type + data
+        let total_len = (1 + data.len()) as u32;
         let mut entry_buf = Vec::with_capacity(WAL_HEADER_SIZE + data.len());
 
         entry_buf.extend_from_slice(&total_len.to_be_bytes());
 
-        // CRC32 over entry_type + data
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(&[entry_type as u8]);
         hasher.update(data);
@@ -188,7 +189,6 @@ impl Segment {
         self.writer.write_all(&entry_buf)?;
         self.writer.flush()?;
 
-        // Force fdatasync to ensure durability
         self.writer.get_ref().sync_data()?;
 
         let entry_len = entry_buf.len() as u32;
@@ -203,13 +203,13 @@ impl Segment {
 /// Handles segment rotation when the active segment exceeds its size
 /// limit, and provides methods to append entries and read them back
 /// across all segments.
-pub struct SegmentManager {
+pub struct SegmentCoordinator {
     pub dir: PathBuf,
     pub active: Mutex<Segment>,
     pub max_segment_size: u64,
 }
 
-impl SegmentManager {
+impl SegmentCoordinator {
     /// Creates a new instance with the given dir, max_segment_size.
     pub fn new(dir: PathBuf, max_segment_size: u64) -> io::Result<Self> {
         std::fs::create_dir_all(&dir)?;
@@ -245,7 +245,6 @@ impl SegmentManager {
         let entry_size = (WAL_HEADER_SIZE + data.len()) as u64;
 
         if active.size + entry_size > active.max_size {
-            // Rotate!
             active.writer.flush()?;
             active.writer.get_ref().sync_all()?;
 
@@ -283,7 +282,6 @@ impl SegmentManager {
         let mut file = File::open(&path)?;
         file.seek(SeekFrom::Start(offset))?;
 
-        // Read and validate the WAL entry header
         let mut header = [0u8; WAL_HEADER_SIZE];
         file.read_exact(&mut header)?;
 
@@ -301,7 +299,6 @@ impl SegmentManager {
         let mut payload = vec![0u8; total_len - 1];
         file.read_exact(&mut payload)?;
 
-        // CRC integrity check
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(&[entry_type]);
         hasher.update(&payload);
@@ -319,11 +316,9 @@ impl SegmentManager {
             ));
         }
 
-        // Parse the Enqueue payload using std::io::Cursor for clean sequential reads
         let mut cur = io::Cursor::new(&payload);
         let corrupt = |msg: &str| io::Error::new(io::ErrorKind::InvalidData, msg.to_string());
 
-        // Skip queue_name (u16-prefixed)
         let queue_len = cur
             .read_u16::<BigEndian>()
             .map_err(|_| corrupt("truncated queue_name len"))? as usize;
@@ -331,12 +326,10 @@ impl SegmentManager {
         cur.read_exact(&mut skip_buf)
             .map_err(|_| corrupt("truncated queue_name"))?;
 
-        // Skip msg_id (u64)
         let _msg_id = cur
             .read_u64::<BigEndian>()
             .map_err(|_| corrupt("truncated msg_id"))?;
 
-        // Skip exchange (u16-prefixed)
         let ex_len = cur
             .read_u16::<BigEndian>()
             .map_err(|_| corrupt("truncated exchange len"))? as usize;
@@ -344,7 +337,6 @@ impl SegmentManager {
         cur.read_exact(&mut skip_buf)
             .map_err(|_| corrupt("truncated exchange"))?;
 
-        // Skip routing_key (u16-prefixed)
         let rk_len = cur
             .read_u16::<BigEndian>()
             .map_err(|_| corrupt("truncated routing_key len"))? as usize;
@@ -352,7 +344,6 @@ impl SegmentManager {
         cur.read_exact(&mut skip_buf)
             .map_err(|_| corrupt("truncated routing_key"))?;
 
-        // Read headers (u32-prefixed)
         let headers_len = cur
             .read_u32::<BigEndian>()
             .map_err(|_| corrupt("truncated headers len"))? as usize;
@@ -360,7 +351,6 @@ impl SegmentManager {
         cur.read_exact(&mut headers)
             .map_err(|_| corrupt("truncated headers"))?;
 
-        // Read body (u32-prefixed)
         let body_len = cur
             .read_u32::<BigEndian>()
             .map_err(|_| corrupt("truncated body len"))? as usize;
@@ -419,11 +409,11 @@ impl SegmentManager {
 
 /// Write-ahead log providing crash-safe persistence for the broker.
 ///
-/// Wraps a [`SegmentManager`] and exposes high-level helpers for
+/// Wraps a [`SegmentCoordinator`] and exposes high-level helpers for
 /// logging queue declarations, message enqueues, acknowledgements,
 /// exchange declarations, and bindings.
 pub struct Wal {
-    pub segment_manager: Arc<SegmentManager>,
+    pub segment_manager: Arc<SegmentCoordinator>,
     path: PathBuf,
     entry_count: AtomicU64,
 }
@@ -438,10 +428,9 @@ impl Wal {
             .unwrap_or_else(|| Path::new("data"))
             .join("segments");
 
-        // Max segment size from broker config (default 64MB).
         let max_size = crate::config::get_max_segment_size();
 
-        let segment_manager = Arc::new(SegmentManager::new(segments_dir, max_size)?);
+        let segment_manager = Arc::new(SegmentCoordinator::new(segments_dir, max_size)?);
         let entries = segment_manager.read_all_entries()?;
 
         info!(
@@ -501,6 +490,33 @@ impl Wal {
         w.write_str_u16(name);
         w.write_u8(durable as u8);
         self.append(EntryType::DeclareQueue, &w.finish())
+    }
+
+    /// Logs a `SetQueueSchema` entry to the WAL for crash recovery.
+    pub fn log_set_queue_schema(
+        &self,
+        schema_id: u64,
+        queue_name: &str,
+        raw_proto: &[u8],
+        descriptor_set_bytes: &[u8],
+        message_name: &str,
+    ) -> std::io::Result<u64> {
+        let cap = 8
+            + 2
+            + queue_name.len()
+            + 4
+            + raw_proto.len()
+            + 4
+            + descriptor_set_bytes.len()
+            + 2
+            + message_name.len();
+        let mut w = WalWriter::with_capacity(cap);
+        w.write_u64(schema_id);
+        w.write_str_u16(queue_name);
+        w.write_bytes_u32(raw_proto);
+        w.write_bytes_u32(descriptor_set_bytes);
+        w.write_str_u16(message_name);
+        self.append(EntryType::SetQueueSchema, &w.finish())
     }
 
     pub fn log_enqueue(
@@ -672,6 +688,55 @@ mod tests {
         let durable = data[2 + name_len] == 1;
         assert_eq!(name, "orders");
         assert!(durable);
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn wal_roundtrip_set_queue_schema() {
+        let path = tmp_wal("test_set_schema.wal");
+        let wal = Wal::open(&path).unwrap();
+        wal.log_set_queue_schema(
+            123,
+            "orders",
+            b"raw proto data",
+            b"compiled descriptor bytes",
+            "mypackage.UserCreated",
+        )
+        .unwrap();
+
+        let entries = wal.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].entry_type, EntryType::SetQueueSchema);
+
+        let data = &entries[0].data;
+        let mut cur = std::io::Cursor::new(data);
+        use byteorder::{BigEndian, ReadBytesExt};
+        let schema_id = cur.read_u64::<BigEndian>().unwrap();
+        assert_eq!(schema_id, 123);
+
+        let q_len = cur.read_u16::<BigEndian>().unwrap() as usize;
+        let mut q_buf = vec![0u8; q_len];
+        std::io::Read::read_exact(&mut cur, &mut q_buf).unwrap();
+        assert_eq!(std::str::from_utf8(&q_buf).unwrap(), "orders");
+
+        let raw_len = cur.read_u32::<BigEndian>().unwrap() as usize;
+        let mut raw_buf = vec![0u8; raw_len];
+        std::io::Read::read_exact(&mut cur, &mut raw_buf).unwrap();
+        assert_eq!(&raw_buf, b"raw proto data");
+
+        let desc_len = cur.read_u32::<BigEndian>().unwrap() as usize;
+        let mut desc_buf = vec![0u8; desc_len];
+        std::io::Read::read_exact(&mut cur, &mut desc_buf).unwrap();
+        assert_eq!(&desc_buf, b"compiled descriptor bytes");
+
+        let msg_len = cur.read_u16::<BigEndian>().unwrap() as usize;
+        let mut msg_buf = vec![0u8; msg_len];
+        std::io::Read::read_exact(&mut cur, &mut msg_buf).unwrap();
+        assert_eq!(
+            std::str::from_utf8(&msg_buf).unwrap(),
+            "mypackage.UserCreated"
+        );
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

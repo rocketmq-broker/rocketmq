@@ -19,7 +19,22 @@
 
 use super::priority::PriorityQueue;
 use super::{DelayQueue, Message, QueueOptions, QueueState};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Creates a test BrokerState with a temporary WAL file.
+fn test_broker() -> crate::state::BrokerState {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test_queue_wal");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(format!("test_{}.wal", id));
+    let wal = Arc::new(crate::storage::wal::Wal::open(&path).unwrap());
+    crate::state::BrokerState::new(wal)
+}
 
 #[test]
 fn queue_options_from_headers_full() {
@@ -190,8 +205,8 @@ fn priority_queue_empty_operations() {
 #[test]
 fn queue_state_round_robin() {
     let mut q = QueueState::new();
-    let bs = crate::state::BrokerState::new();
-    // Since cs.channels.get returns none for nonexistent, we need to populate connection state for tests to pass prefetch check
+    let bs = test_broker();
+
     bs.conn_state
         .insert(10, crate::state::ConnectionState::new());
     bs.conn_state
@@ -217,7 +232,7 @@ fn queue_state_round_robin() {
     q.listeners = vec![(10, 1), (20, 1), (30, 1)];
     assert_eq!(q.next_target(&bs.into()), Some((10, 1)));
 
-    let bs2 = crate::state::BrokerState::new();
+    let bs2 = test_broker();
     bs2.conn_state
         .insert(10, crate::state::ConnectionState::new());
     bs2.conn_state
@@ -241,7 +256,7 @@ fn queue_state_round_robin() {
         .insert(1, crate::state::ChannelState::new(1));
     assert_eq!(q.next_target(&bs2.into()), Some((20, 1)));
 
-    let bs3 = crate::state::BrokerState::new();
+    let bs3 = test_broker();
     bs3.conn_state
         .insert(10, crate::state::ConnectionState::new());
     bs3.conn_state
@@ -265,7 +280,7 @@ fn queue_state_round_robin() {
         .insert(1, crate::state::ChannelState::new(1));
     assert_eq!(q.next_target(&bs3.into()), Some((30, 1)));
 
-    let bs4 = crate::state::BrokerState::new();
+    let bs4 = test_broker();
     bs4.conn_state
         .insert(10, crate::state::ConnectionState::new());
     bs4.conn_state
@@ -293,7 +308,7 @@ fn queue_state_round_robin() {
 #[test]
 fn queue_state_no_listeners() {
     let mut q = QueueState::new();
-    let bs = crate::state::BrokerState::new();
+    let bs = test_broker();
     assert_eq!(q.next_target(&bs.into()), None);
 }
 
@@ -326,7 +341,6 @@ fn consumer_cancel_by_tag() {
     assert_eq!(q.listeners[0], (20, 1));
     assert_eq!(q.consumer_count, 1);
 
-    // Cancel unknown tag returns false
     assert!(!q.cancel_consumer("nonexistent"));
 }
 
@@ -335,9 +349,9 @@ fn consumer_add_idempotent() {
     let mut q = QueueState::new();
     q.add_consumer(10, 1, Some("tag-a".to_string()), None);
     q.add_consumer(10, 1, Some("tag-b".to_string()), None);
-    // Same conn_id+channel_id should not duplicate in listeners
+
     assert_eq!(q.listeners.len(), 1);
-    // But both tags should be tracked
+
     assert!(q.consumer_tags.contains_key("tag-a"));
     assert!(q.consumer_tags.contains_key("tag-b"));
 }
@@ -349,7 +363,6 @@ fn delay_queue_schedule_and_drain() {
     dq.schedule("q1".to_string(), msg, Duration::from_millis(1));
     assert_eq!(dq.len(), 1);
 
-    // Not ready yet (might be, but let's test drain_ready logic)
     std::thread::sleep(Duration::from_millis(5));
     let ready = dq.drain_ready();
     assert_eq!(ready.len(), 1);
@@ -395,12 +408,8 @@ fn priority_queue_peek_front() {
         b"a".to_vec(),
     )));
     assert_eq!(pq.peek_front().unwrap().clone().unwrap_full().body, b"a");
-    assert_eq!(pq.len(), 1); // peek doesn't remove
+    assert_eq!(pq.len(), 1);
 }
-
-// ──────────────────────────────────────────────
-// Consumer Group tests (3.2)
-// ──────────────────────────────────────────────
 
 use super::state::ConsumerGroup;
 
@@ -415,7 +424,7 @@ fn consumer_group_add_member() {
 fn consumer_group_add_duplicate_rejected() {
     let mut g = ConsumerGroup::new("workers".to_string());
     assert!(g.add_member(1, 1));
-    assert!(!g.add_member(1, 1)); // duplicate
+    assert!(!g.add_member(1, 1));
     assert_eq!(g.members.len(), 1);
 }
 
@@ -477,7 +486,7 @@ fn queue_cancel_last_consumer_removes_group() {
     q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
 
     q.cancel_consumer("w1");
-    // Empty group should be cleaned up
+
     assert!(q.groups.is_empty());
 }
 
@@ -487,10 +496,6 @@ fn queue_consumer_no_group() {
     q.add_consumer(1, 1, Some("solo".to_string()), None);
     assert!(q.groups.is_empty());
 }
-
-// ──────────────────────────────────────────────
-// Token Bucket / Rate Limiting tests (3.5)
-// ──────────────────────────────────────────────
 
 use super::state::TokenBucket;
 
@@ -511,8 +516,8 @@ fn token_bucket_consume() {
 #[test]
 fn token_bucket_exhaustion() {
     let mut tb = TokenBucket::new(2);
-    tb.tokens = 0.5; // Simulate exhausted
-    tb.last_refill = std::time::Instant::now(); // No time to refill
+    tb.tokens = 0.5;
+    tb.last_refill = std::time::Instant::now();
     assert!(!tb.try_consume());
 }
 
@@ -522,7 +527,7 @@ fn token_bucket_refill() {
     tb.tokens = 0.0;
     tb.last_refill = std::time::Instant::now() - Duration::from_secs(1);
     tb.refill();
-    assert!(tb.tokens >= 999.0); // ~1000 tokens refilled in 1 second
+    assert!(tb.tokens >= 999.0);
 }
 
 #[test]
@@ -531,7 +536,7 @@ fn token_bucket_caps_at_rate() {
     tb.tokens = 10.0;
     tb.last_refill = std::time::Instant::now() - Duration::from_secs(100);
     tb.refill();
-    assert!(tb.tokens <= 10.0); // Capped
+    assert!(tb.tokens <= 10.0);
 }
 
 #[test]
@@ -540,7 +545,7 @@ fn queue_rate_limit_from_options() {
     opts.rate_limit = Some(100);
     let mut q = QueueState::with_options(opts);
     assert!(q.rate_limiter.is_some());
-    assert!(q.check_rate_limit()); // Should pass (full bucket)
+    assert!(q.check_rate_limit());
 }
 
 #[test]
@@ -552,7 +557,7 @@ fn queue_no_rate_limit() {
 #[test]
 fn queue_check_rate_limit_no_limiter() {
     let mut q = QueueState::new();
-    assert!(q.check_rate_limit()); // Always true when no limiter
+    assert!(q.check_rate_limit());
 }
 
 // ──────────────────────────────────────────────
@@ -609,4 +614,17 @@ fn options_stream_type_non_stream() {
     let input = "name:q1\r\nx-queue-type:classic\r\n";
     let (_, opts) = QueueOptions::from_headers(input);
     assert!(!opts.stream_mode);
+}
+
+#[test]
+fn options_schema_from_headers() {
+    let input = "name:schema-q\r\nx-schema:syntax = \"proto3\"; message User {}\r\nx-schema-type:protobuf\r\nx-schema-message:mypackage.User\r\n";
+    let (name, opts) = QueueOptions::from_headers(input);
+    assert_eq!(name, "schema-q");
+    assert_eq!(
+        opts.schema.as_deref(),
+        Some(b"syntax = \"proto3\"; message User {}".as_slice())
+    );
+    assert_eq!(opts.schema_type.as_deref(), Some("protobuf"));
+    assert_eq!(opts.schema_message.as_deref(), Some("mypackage.User"));
 }

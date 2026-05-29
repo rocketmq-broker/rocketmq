@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn vhost_empty_has_no_exchanges() {
         let vh = VHost::empty("test".to_string());
-        // Can't await in sync test, so use try_read
+
         let ex = vh.exchanges.try_read().unwrap();
         assert_eq!(ex.len(), 0);
     }
@@ -99,13 +99,11 @@ mod tests {
     fn vhost_queue_operations() {
         let vh = VHost::new("/".to_string());
 
-        // Declare queue
         let opts = QueueOptions::default();
         vh.queues
             .insert("q1".into(), QueueState::with_options(opts));
         assert!(vh.queues.contains_key("q1"));
 
-        // Delete queue
         vh.queues.remove("q1");
         assert!(!vh.queues.contains_key("q1"));
     }
@@ -129,7 +127,7 @@ mod tests {
             );
         }
         let ex = vh.exchanges.read().await;
-        assert_eq!(ex.len(), 6); // 5 default + 1 custom
+        assert_eq!(ex.len(), 6);
         assert!(ex.contains_key("custom.direct"));
     }
 

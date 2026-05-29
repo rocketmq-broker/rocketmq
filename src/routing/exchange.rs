@@ -440,7 +440,7 @@ mod tests {
     fn topic_star_requires_exactly_one_word() {
         assert!(topic_matches("a.*.c", "a.b.c"));
         assert!(!topic_matches("a.*.c", "a.b.d.c")); // * can't match two words
-        assert!(!topic_matches("*", "a.b")); // * is one word only
+        assert!(!topic_matches("*", "a.b"));
     }
 
     #[test]
@@ -475,12 +475,10 @@ mod tests {
             headers_match: Some(HeadersMatch::Any(required)),
         });
 
-        // Match on just one header
         let mut h = HashMap::new();
         h.insert("color".into(), "red".into());
         assert_eq!(ex.route("", &h), vec!["q1"]);
 
-        // No matching headers
         let mut h2 = HashMap::new();
         h2.insert("color".into(), "blue".into());
         assert!(ex.route("", &h2).is_empty());
@@ -505,7 +503,7 @@ mod tests {
         });
 
         let empty = HashMap::new();
-        // Fanout ignores routing key entirely
+
         let routed = ex.route("totally_different", &empty);
         assert_eq!(routed, vec!["q1"]);
     }

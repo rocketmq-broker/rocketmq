@@ -50,12 +50,10 @@ async fn deliver_round(broker: &Broker) {
     for mut entry in broker.queues.iter_mut() {
         let (queue_name, queue) = entry.pair_mut();
 
-        // Skip if no messages or no consumers
         if queue.messages.is_empty() || queue.consumer_tags.is_empty() {
             continue;
         }
 
-        // Try to deliver as many messages as we have consumers with capacity
         let consumers: Vec<(String, u64, u16)> = queue
             .consumer_tags
             .iter()
@@ -66,7 +64,6 @@ async fn deliver_round(broker: &Broker) {
             continue;
         }
 
-        // Round-robin starting from next_listener
         let n_consumers = consumers.len();
         let mut delivered = 0usize;
 
@@ -76,7 +73,6 @@ async fn deliver_round(broker: &Broker) {
 
             let (ref consumer_tag, conn_id, channel) = consumers[idx];
 
-            // Check QoS prefetch
             let prefetch_ok = broker.conn_state.get(&conn_id).is_none_or(|cs| {
                 cs.channels
                     .get(&channel)
@@ -84,19 +80,17 @@ async fn deliver_round(broker: &Broker) {
             });
 
             if !prefetch_ok {
-                // All consumers at capacity — stop trying
                 if delivered == 0 {
                     break;
                 }
                 continue;
             }
 
-            // Pop message
             let q_msg = match queue.messages.pop_front() {
                 Some(m) => m,
                 None => break,
             };
-            let msg = match q_msg.resolve(broker.wal().expect("WAL must be initialized")) {
+            let msg = match q_msg.resolve(broker.wal()) {
                 Ok(m) => m,
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to resolve message payload from segments");
@@ -106,7 +100,6 @@ async fn deliver_round(broker: &Broker) {
 
             let delivery_tag = msg.id;
 
-            // Parse stored properties or use defaults (borrow msg.headers)
             let properties = if msg.headers.is_empty() {
                 BasicProperties::default()
             } else {
@@ -114,7 +107,6 @@ async fn deliver_round(broker: &Broker) {
                 BasicProperties::decode(&mut cursor).unwrap_or_default()
             };
 
-            // Build AMQP frames from borrowed msg — no body clone
             let deliver_args = build_deliver_args(
                 consumer_tag,
                 delivery_tag,
@@ -136,21 +128,17 @@ async fn deliver_round(broker: &Broker) {
                 combined.extend_from_slice(&body_frame);
             }
 
-            // Move to inflight only after frames are built
             queue.inflight.insert(delivery_tag, msg);
             queue.last_activity = Instant::now();
 
-            // Track unacked
             if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
                 && let Some(ch) = cs.channels.get_mut(&channel)
             {
                 ch.unacked_count += 1;
             }
 
-            // Send through the AMQP delivery channel
             if let Some(handle) = broker.connections.get(&conn_id) {
                 if handle.amqp_tx.try_send(combined).is_err() {
-                    // Channel full or closed — requeue message
                     if let Some(msg) = queue.inflight.remove(&delivery_tag) {
                         queue
                             .messages
@@ -171,7 +159,6 @@ async fn deliver_round(broker: &Broker) {
                     "delivered via AMQP"
                 );
             } else {
-                // Connection gone — requeue and skip this consumer
                 if let Some(msg) = queue.inflight.remove(&delivery_tag) {
                     queue
                         .messages
@@ -185,7 +172,6 @@ async fn deliver_round(broker: &Broker) {
                 continue;
             }
 
-            // Limit per-round to avoid holding the lock too long
             if delivered >= 100 {
                 break;
             }
@@ -253,7 +239,6 @@ mod tests {
         let header = encode_content_header(1, CLASS_BASIC, body.len() as u64, &props);
         let body_frame = encode_body_frame(1, body);
 
-        // All three frames should be valid
         let (f1, _) = decode_frame(&method).unwrap();
         assert_eq!(f1.frame_type, FRAME_METHOD);
         let (f2, _) = decode_frame(&header).unwrap();
