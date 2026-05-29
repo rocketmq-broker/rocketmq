@@ -93,8 +93,7 @@ pub async fn process_tx_commit(
             )
             .unwrap_or_default();
 
-            let has_proto =
-                crate::schema::validate::is_protobuf_content(&properties.content_type);
+            let has_proto = crate::schema::validate::is_protobuf_content(&properties.content_type);
             if !has_proto {
                 let got = properties.content_type.clone();
                 warn!(
@@ -362,7 +361,8 @@ mod tests {
                 offset += consumed;
                 if decoded.frame_type == FRAME_METHOD
                     && let Ok(m) = decode_method(&decoded.payload)
-                    && m.class_id == CLASS_CHANNEL && m.method_id == 40
+                    && m.class_id == CLASS_CHANNEL
+                    && m.method_id == 40
                 {
                     got_channel_error = true;
                 }

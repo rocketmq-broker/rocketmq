@@ -149,6 +149,14 @@ pub async fn get_node_memory() -> Json<serde_json::Value> {
     }))
 }
 
+pub fn resolve_exchange_name(name: &str) -> &str {
+    if name.is_empty() || name == "amq.default" {
+        ""
+    } else {
+        name
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
@@ -740,13 +748,5 @@ mod tests {
     fn test_coverage_for_get_node_memory() {
         let func_name = "get_node_memory";
         assert!(!func_name.is_empty());
-    }
-}
-
-pub fn resolve_exchange_name(name: &str) -> &str {
-    if name.is_empty() || name == "amq.default" {
-        ""
-    } else {
-        name
     }
 }

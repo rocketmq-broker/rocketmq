@@ -160,8 +160,7 @@ pub async fn handle_publish(
         if let Some(queue_ref) = broker.queues.get(queue_name.as_str())
             && let Some(ref schema) = queue_ref.schema
         {
-            let has_proto =
-                crate::schema::validate::is_protobuf_content(&properties.content_type);
+            let has_proto = crate::schema::validate::is_protobuf_content(&properties.content_type);
             if !has_proto {
                 let got = properties.content_type.clone();
                 warn!(
