@@ -33,7 +33,7 @@ pub struct RateState {
     pub publish_rate: f64,
     pub deliver_rate: f64,
     pub ack_rate: f64,
-    // Churn counters
+
     pub last_conn_created: u64,
     pub last_conn_closed: u64,
     pub last_chan_created: u64,
@@ -60,14 +60,13 @@ const MAX_SAMPLES: usize = 61;
 /// Global ring buffer for time-series chart data.
 /// Records real data points on each API poll.
 pub struct SampleHistory {
-    // Cumulative counter samples (for rate charts - JS computes delta/time)
-    pub publish_samples: VecDeque<(u64, u64)>, // (timestamp_ms, cumulative_published)
-    pub deliver_samples: VecDeque<(u64, u64)>, // (timestamp_ms, cumulative_delivered)
-    pub ack_samples: VecDeque<(u64, u64)>,     // (timestamp_ms, cumulative_acked)
-    // Absolute depth samples (for queue length charts - JS uses value directly)
-    pub msg_total_samples: VecDeque<(u64, u64)>, // (timestamp_ms, total_messages)
-    pub msg_ready_samples: VecDeque<(u64, u64)>, // (timestamp_ms, ready_messages)
-    pub msg_unacked_samples: VecDeque<(u64, u64)>, // (timestamp_ms, unacked_messages)
+    pub publish_samples: VecDeque<(u64, u64)>,
+    pub deliver_samples: VecDeque<(u64, u64)>,
+    pub ack_samples: VecDeque<(u64, u64)>,
+
+    pub msg_total_samples: VecDeque<(u64, u64)>,
+    pub msg_ready_samples: VecDeque<(u64, u64)>,
+    pub msg_unacked_samples: VecDeque<(u64, u64)>,
 }
 
 pub static SAMPLE_HISTORY: OnceLock<Mutex<SampleHistory>> = OnceLock::new();
@@ -317,7 +316,6 @@ impl RateDetails {
     pub fn from_history(rate: f64, metric: &str, current_value: u64) -> Self {
         let samples = get_history_samples(metric);
         if samples.is_empty() {
-            // First call - no history yet, return a single point
             let ts = now_ms();
             Self {
                 rate,
@@ -336,14 +334,14 @@ impl RateDetails {
     /// have a dedicated sample history buffer.
     pub fn from_current(rate: f64, current_value: u64) -> Self {
         let ts = now_ms();
-        // Generate 13 samples over 60s so the chart has data to plot
+
         let interval_ms = 5000u64;
         let num_samples = 13usize;
         let samples: Vec<SamplePoint> = (0..num_samples)
             .rev()
             .map(|i| {
                 let t = ts - (i as u64 * interval_ms);
-                // For cumulative counters: extrapolate backwards from current value
+
                 let val = if rate > 0.0 {
                     current_value
                         .saturating_sub((rate * (i as f64) * (interval_ms as f64 / 1000.0)) as u64)
@@ -374,8 +372,7 @@ pub struct MessageStats {
     pub ack: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ack_details: Option<RateDetails>,
-    // 'deliver' alias — the chart JS items look for 'deliver_details',
-    // while RabbitMQ's API also uses 'deliver_get_details'.
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deliver: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -476,7 +473,7 @@ pub struct NodeInfo {
     pub enabled_plugins: Vec<String>,
     pub mem_calculation_strategy: String,
     pub being_drained: bool,
-    // Fields required by node.ejs template
+
     pub db_dir: String,
     pub log_files: Vec<String>,
     pub log_file: String,
