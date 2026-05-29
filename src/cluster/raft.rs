@@ -50,20 +50,16 @@ pub enum RaftRole {
 pub struct RaftQueueState {
     pub queue_name: String,
 
-    // Persistent state on all servers
     pub current_term: u64,
     pub voted_for: Option<u64>,
     pub log: Vec<LogEntry>,
 
-    // Volatile state on all servers
     pub commit_index: u64,
     pub last_applied: u64,
 
-    // Volatile state on leaders
     pub next_index: HashMap<u64, u64>,
     pub match_index: HashMap<u64, u64>,
 
-    // Node Identity
     pub role: RaftRole,
     pub leader_id: Option<u64>,
 }
@@ -71,7 +67,6 @@ pub struct RaftQueueState {
 impl RaftQueueState {
     /// Creates a new instance with the given queue_name.
     pub fn new(queue_name: String) -> Self {
-        // Initialize log with a dummy entry at index 0 to simplify logic
         let initial_log = vec![LogEntry {
             index: 0,
             term: 0,
@@ -102,7 +97,7 @@ impl RaftQueueState {
 
     pub fn append_local_command(&mut self, command: RaftCommand) -> Option<(u64, u64)> {
         if !matches!(self.role, RaftRole::Leader) {
-            return None; // Only leader can accept writes
+            return None;
         }
 
         let new_index = self.last_log_index() + 1;
@@ -126,17 +121,14 @@ impl RaftQueueState {
         entries: Vec<LogEntry>,
         leader_commit: u64,
     ) -> (u64, bool) {
-        // 1. Reply false if term < currentTerm
         if term < self.current_term {
             return (self.current_term, false);
         }
 
-        // Acknowledge leader
         self.current_term = term;
         self.role = RaftRole::Follower;
         self.leader_id = Some(leader_id);
 
-        // 2. Reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
         if prev_log_index > 0 {
             if prev_log_index > self.last_log_index() {
                 return (self.current_term, false);
@@ -146,7 +138,6 @@ impl RaftQueueState {
             }
         }
 
-        // 3. If an existing entry conflicts with a new one, delete the existing entry and all that follow it
         for entry in &entries {
             let idx = entry.index as usize;
             if idx < self.log.len() {
@@ -155,12 +146,10 @@ impl RaftQueueState {
                     self.log.push(entry.clone());
                 }
             } else {
-                // 4. Append any new entries not already in the log
                 self.log.push(entry.clone());
             }
         }
 
-        // 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
         if leader_commit > self.commit_index {
             self.commit_index = min(leader_commit, self.last_log_index());
         }
