@@ -83,30 +83,33 @@ pub fn queue_totals_for_vhost(broker: &Arc<BrokerState>) -> (usize, usize) {
     (msgs, inflight)
 }
 
+/// Returns the RSS of the current process in bytes (cross-platform).
 pub fn get_process_memory() -> u64 {
-    std::fs::read_to_string("/proc/self/statm")
-        .ok()
-        .and_then(|s| {
-            let rss_pages = s.split_whitespace().nth(1)?.parse::<u64>().ok()?;
-            Some(rss_pages * 4096)
-        })
-        .unwrap_or(0)
+    crate::metrics::system::process_rss_bytes()
 }
 
+/// Returns free disk space on the data partition in bytes (cross-platform).
 pub fn get_disk_free() -> u64 {
-    #[cfg(target_os = "linux")]
-    {
-        use std::ffi::CString;
-        let dir_path = crate::config::get_data_dir();
-        let path = CString::new(dir_path).unwrap_or_default();
-        unsafe {
-            let mut buf: libc::statvfs = std::mem::zeroed();
-            if libc::statvfs(path.as_ptr(), &mut buf) == 0 {
-                return buf.f_bavail as u64 * buf.f_frsize as u64;
-            }
-        }
+    let data_dir = crate::config::get_data_dir();
+    let data_path = std::path::Path::new(&data_dir);
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+
+    // Find the disk whose mount point best matches data_dir
+    let best = disks
+        .iter()
+        .filter(|d| data_path.starts_with(d.mount_point()))
+        .max_by_key(|d| d.mount_point().as_os_str().len());
+
+    if let Some(disk) = best {
+        return disk.available_space();
     }
-    10 * 1024 * 1024 * 1024
+
+    // Fallback: largest disk
+    disks
+        .iter()
+        .map(|d| d.available_space())
+        .max()
+        .unwrap_or(10 * 1024 * 1024 * 1024)
 }
 
 pub fn num_cpus() -> usize {

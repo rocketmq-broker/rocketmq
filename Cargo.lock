@@ -1126,7 +1126,6 @@ dependencies = [
  "bytes",
  "crc32fast",
  "dashmap",
- "libc",
  "opentelemetry",
  "opentelemetry-prometheus",
  "opentelemetry_sdk",
