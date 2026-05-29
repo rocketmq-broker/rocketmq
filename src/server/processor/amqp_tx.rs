@@ -50,7 +50,7 @@ pub async fn handle_tx_select(
 
 // ─── Tx.Commit ────────────────────────────────────────
 
-pub async fn handle_tx_commit(
+pub async fn process_tx_commit(
     conn_id: u64,
     channel: u16,
     writer: &mut crate::server::AmqpWriter,
@@ -79,6 +79,71 @@ pub async fn handle_tx_commit(
     };
 
     for op in &ops {
+        if let PendingOp::Publish {
+            routing_key,
+            headers,
+            body,
+            ..
+        } = op
+        {
+            if let Some(queue_ref) = broker.queues.get(routing_key.as_str()) {
+                if let Some(ref schema) = queue_ref.schema {
+                    let properties = crate::core::properties::BasicProperties::decode(
+                        &mut std::io::Cursor::new(headers),
+                    )
+                    .unwrap_or_default();
+
+                    let has_proto =
+                        crate::schema::validate::is_protobuf_content(&properties.content_type);
+                    if !has_proto {
+                        let got = properties.content_type.clone();
+                        warn!(
+                            conn_id,
+                            queue = routing_key.as_str(),
+                            "transactional schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
+                            got
+                        );
+                        crate::metrics::record_schema_validation_failed(routing_key);
+                        send_channel_error(
+                            writer,
+                            channel,
+                            PRECONDITION_FAILED,
+                            &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, routing_key),
+                            CLASS_TX,
+                            METHOD_TX_COMMIT,
+                        )
+                        .await;
+                        return;
+                    }
+
+                    if let Err(err) = crate::schema::validate::validate_message(schema, body) {
+                        warn!(
+                            conn_id,
+                            queue = routing_key.as_str(),
+                            "transactional schema validation failed: {}",
+                            err
+                        );
+                        crate::metrics::record_schema_validation_failed(routing_key);
+                        send_channel_error(
+                            writer,
+                            channel,
+                            PRECONDITION_FAILED,
+                            &format!(
+                                "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
+                                routing_key, err
+                            ),
+                            CLASS_TX,
+                            METHOD_TX_COMMIT,
+                        )
+                        .await;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    for op in &ops {
         match op {
             PendingOp::Publish {
                 exchange,
@@ -103,8 +168,8 @@ pub async fn handle_tx_commit(
             PendingOp::Ack { msg_id } => {
                 for mut entry in broker.queues.iter_mut() {
                     if entry.value_mut().inflight.remove(msg_id).is_some() {
-                        if let Some(wal) = broker.wal() {
-                            let _ = wal.log_ack(*msg_id);
+                        {
+                            let _ = broker.wal().log_ack(*msg_id);
                         }
                         break;
                     }
@@ -121,7 +186,7 @@ pub async fn handle_tx_commit(
 
 // ─── Tx.Rollback ──────────────────────────────────────
 
-pub async fn handle_tx_rollback(
+pub async fn process_tx_rollback(
     conn_id: u64,
     channel: u16,
     writer: &mut crate::server::AmqpWriter,
@@ -168,12 +233,11 @@ pub async fn handle_confirm_select(
 ) {
     let no_wait = args.first().copied().unwrap_or(0) & 0x01 != 0;
 
-    // Enable confirm mode on the channel (per AMQP spec, confirms are per-channel)
     if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
         && let Some(ch) = cs.channels.get_mut(&channel)
     {
         ch.confirm_mode = true;
-        ch.next_delivery_tag = 1; // Reset tag counter
+        ch.next_delivery_tag = 1;
     }
 
     info!(conn_id, channel, "confirm mode enabled");
@@ -232,17 +296,133 @@ mod tests {
         assert!(!func_name.is_empty());
     }
 
-    /// Dedicated unit test verification for `handle_tx_commit` function.
-    #[test]
-    fn test_coverage_for_handle_tx_commit() {
-        let func_name = "handle_tx_commit";
-        assert!(!func_name.is_empty());
+    fn test_broker() -> Broker {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test_tx_wal");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("test_{}.wal", id));
+        let wal = std::sync::Arc::new(crate::storage::wal::Wal::open(&path).unwrap());
+        crate::state::BrokerState::new(wal).into()
     }
 
-    /// Dedicated unit test verification for `handle_tx_rollback` function.
+    /// Dedicated unit test verification for `process_tx_commit` function with schema validation.
+    #[tokio::test]
+    async fn test_coverage_for_handle_tx_commit() {
+        let broker: Broker = test_broker();
+
+        let mut conn_state = crate::state::ConnectionState::new();
+        conn_state.username = "guest".to_string();
+        conn_state.vhost = "/".to_string();
+        conn_state.tx_mode = true;
+
+        let mut q = crate::queue::QueueState::new();
+        let schema_content = b"syntax = \"proto3\"; message User { string name = 1; }";
+        let compiled = crate::schema::compile_proto(schema_content, "User").unwrap();
+        q.schema = Some(std::sync::Arc::new(compiled));
+        broker.queues.insert("schema-queue".to_string(), q);
+
+        let (mut rx_stream, tx_stream) = tokio::io::duplex(65536);
+        let boxed: Box<dyn crate::server::AsyncStream> = Box::new(tx_stream);
+        let (_read_half, write_half) = tokio::io::split(boxed);
+        let mut writer = tokio::io::BufWriter::new(write_half);
+
+        let properties_json = crate::core::properties::BasicProperties {
+            content_type: Some("application/json".to_string()),
+            ..Default::default()
+        };
+        let mut prop_bytes = Vec::new();
+        properties_json.encode(&mut prop_bytes).unwrap();
+
+        conn_state
+            .tx_buffer
+            .push(crate::state::broker::PendingOp::Publish {
+                exchange: "amq.direct".to_string(),
+                routing_key: "schema-queue".to_string(),
+                headers: prop_bytes,
+                body: b"{}".to_vec(),
+            });
+        broker.conn_state.insert(1, conn_state);
+
+        process_tx_commit(1, 1, &mut writer, &broker).await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 0);
+        }
+
+        let mut buf = vec![0u8; 4096];
+        use tokio::io::AsyncReadExt;
+        let n = rx_stream.read(&mut buf).await.unwrap();
+        let mut got_channel_error = false;
+        let mut offset = 0;
+        while offset < n {
+            if let Ok((decoded, consumed)) = decode_frame(&buf[offset..n]) {
+                offset += consumed;
+                if decoded.frame_type == FRAME_METHOD {
+                    if let Ok(m) = decode_method(&decoded.payload) {
+                        if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
+                            got_channel_error = true;
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        assert!(got_channel_error);
+
+        let mut conn_state = broker.conn_state.get_mut(&1).unwrap();
+        conn_state.tx_buffer.clear();
+        let properties_proto = crate::core::properties::BasicProperties {
+            content_type: Some("application/x-protobuf".to_string()),
+            ..Default::default()
+        };
+        let mut prop_bytes_proto = Vec::new();
+        properties_proto.encode(&mut prop_bytes_proto).unwrap();
+
+        let mut valid_body = vec![0x0A, 5];
+        valid_body.extend_from_slice(b"Alice");
+
+        conn_state
+            .tx_buffer
+            .push(crate::state::broker::PendingOp::Publish {
+                exchange: "amq.direct".to_string(),
+                routing_key: "schema-queue".to_string(),
+                headers: prop_bytes_proto,
+                body: valid_body,
+            });
+        drop(conn_state);
+
+        let (mut rx_stream2, tx_stream2) = tokio::io::duplex(65536);
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 1024];
+            while let Ok(n) = rx_stream2.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+            }
+        });
+        let boxed2: Box<dyn crate::server::AsyncStream> = Box::new(tx_stream2);
+        let (_read_half2, write_half2) = tokio::io::split(boxed2);
+        let mut writer2 = tokio::io::BufWriter::new(write_half2);
+
+        process_tx_commit(1, 1, &mut writer2, &broker).await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 1);
+        }
+    }
+
+    /// Dedicated unit test verification for `process_tx_rollback` function.
     #[test]
     fn test_coverage_for_handle_tx_rollback() {
-        let func_name = "handle_tx_rollback";
+        let func_name = "process_tx_rollback";
         assert!(!func_name.is_empty());
     }
 

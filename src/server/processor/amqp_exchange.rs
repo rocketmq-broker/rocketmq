@@ -51,7 +51,6 @@ pub async fn handle_declare(
     let _arguments = read_field_table(&mut r).unwrap_or_default();
 
     if passive {
-        // Passive declare: only assert the exchange exists, never create.
         let exists = broker.exchanges.read().await.contains_key(&name);
         if !exists {
             send_channel_error(
@@ -66,9 +65,6 @@ pub async fn handle_declare(
             return;
         }
     } else {
-        // Active declare: validate name/type, then create if needed.
-
-        // Guard "amq." reserved namespace
         if name.starts_with("amq.") {
             send_channel_error(
                 writer,
@@ -82,7 +78,6 @@ pub async fn handle_declare(
             return;
         }
 
-        // Permission check: configure permission needed for declare
         if super::auth_check::check_configure(
             conn_id,
             channel,
@@ -97,7 +92,6 @@ pub async fn handle_declare(
             return;
         }
 
-        // Validate exchange type
         let kind = match ExchangeType::from_str(&kind_str) {
             Some(k) => k,
             None => {
@@ -135,11 +129,8 @@ pub async fn handle_declare(
             });
         }
 
-        // WAL: persist durable exchange declarations
-        if durable
-            && is_new
-            && let Some(wal) = broker.wal()
-        {
+        if durable && is_new {
+            let wal = broker.wal();
             let _ = wal.log_declare_exchange(&name, kind_byte, true);
         }
     }
@@ -205,7 +196,6 @@ pub async fn handle_bind(
     writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
-    // Not to be confused with Queue.Bind — this is exchange-to-exchange binding
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
     let destination = read_shortstr(&mut r).unwrap_or_default();
@@ -214,7 +204,6 @@ pub async fn handle_bind(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_wait = flags & 0x01 != 0;
 
-    // For now, treat as queue bind on the source exchange
     {
         let mut exchanges = broker.exchanges.write().await;
         if let Some(ex) = exchanges.get_mut(&source) {
@@ -278,10 +267,10 @@ mod tests {
     #[test]
     fn exchange_declare_args_encode() {
         let mut args = Vec::new();
-        write_short(&mut args, 0).unwrap(); // ticket
+        write_short(&mut args, 0).unwrap();
         write_shortstr(&mut args, "test.ex").unwrap();
         write_shortstr(&mut args, "direct").unwrap();
-        write_octet(&mut args, 0x02).unwrap(); // durable
+        write_octet(&mut args, 0x02).unwrap();
         write_field_table(&mut args, &FieldTable::new()).unwrap();
 
         let mut r = Cursor::new(&args);

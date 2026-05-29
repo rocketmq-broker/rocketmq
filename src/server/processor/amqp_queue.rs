@@ -50,7 +50,6 @@ pub async fn handle_declare(
     let no_wait = flags & 0x10 != 0;
     let arguments = read_field_table(&mut r).unwrap_or_default();
 
-    // Server-named queue
     if name.is_empty() {
         name = format!("amq.gen-{}", broker.alloc_msg_id());
     } else if !passive && name.starts_with("amq.") && !name.starts_with("amq.gen-") {
@@ -66,7 +65,6 @@ pub async fn handle_declare(
         return;
     }
 
-    // Permission check: configure permission needed for declare (skip for passive)
     if !passive
         && super::auth_check::check_configure(
             conn_id,
@@ -103,7 +101,6 @@ pub async fn handle_declare(
         return;
     }
 
-    // Check exclusive ownership
     if let Some(existing) = broker.queues.get(&name)
         && existing.options.exclusive
         && existing.owner_conn_id != Some(conn_id)
@@ -127,7 +124,6 @@ pub async fn handle_declare(
         ..QueueOptions::default()
     };
 
-    // Parse x-message-ttl, x-max-length, x-dead-letter-exchange from arguments table
     if let Some(FieldValue::LongInt(v)) = arguments.get("x-message-ttl") {
         opts.message_ttl = Some(std::time::Duration::from_millis(*v as u64));
     }
@@ -137,6 +133,99 @@ pub async fn handle_declare(
     if let Some(FieldValue::LongString(v)) = arguments.get("x-dead-letter-exchange") {
         opts.dead_letter_exchange = Some(String::from_utf8_lossy(v).to_string());
     }
+    if let Some(FieldValue::LongString(v)) = arguments.get("x-schema") {
+        opts.schema = Some(v.clone());
+    }
+    if let Some(FieldValue::LongString(v)) = arguments.get("x-schema-type") {
+        opts.schema_type = Some(String::from_utf8_lossy(v).to_string());
+    }
+    if let Some(FieldValue::LongString(v)) = arguments.get("x-schema-message") {
+        opts.schema_message = Some(String::from_utf8_lossy(v).to_string());
+    }
+
+    if let Some(existing) = broker.queues.get(&name) {
+        if let Some(ref existing_schema) = existing.schema {
+            if let Some(raw) = &opts.schema {
+                if raw.as_slice() != existing_schema.raw.as_slice() {
+                    send_channel_error(
+                        writer,
+                        channel,
+                        PRECONDITION_FAILED,
+                        "PRECONDITION_FAILED - queue schema is immutable, cannot redeclare with different schema",
+                        CLASS_QUEUE,
+                        METHOD_QUEUE_DECLARE,
+                    )
+                    .await;
+                    return;
+                }
+            }
+        }
+    }
+
+    let mut compiled_schema = None;
+    if let Some(raw) = &opts.schema {
+        let _schema_type = match &opts.schema_type {
+            Some(t) if t == "protobuf" => t.clone(),
+            Some(t) => {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!("PRECONDITION_FAILED - unsupported schema type '{}'. Only 'protobuf' is supported.", t),
+                    CLASS_QUEUE,
+                    METHOD_QUEUE_DECLARE,
+                )
+                .await;
+                return;
+            }
+            None => {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    "PRECONDITION_FAILED - x-schema-type is required when declaring a schema queue",
+                    CLASS_QUEUE,
+                    METHOD_QUEUE_DECLARE,
+                )
+                .await;
+                return;
+            }
+        };
+
+        let message_name = match &opts.schema_message {
+            Some(m) => m.clone(),
+            None => {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    "PRECONDITION_FAILED - x-schema-message is required when declaring a schema queue",
+                    CLASS_QUEUE,
+                    METHOD_QUEUE_DECLARE,
+                )
+                .await;
+                return;
+            }
+        };
+
+        match crate::schema::compile_proto(raw, &message_name) {
+            Ok(compiled) => {
+                compiled_schema = Some(std::sync::Arc::new(compiled));
+            }
+            Err(e) => {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!("PRECONDITION_FAILED - schema compilation failed: {}", e),
+                    CLASS_QUEUE,
+                    METHOD_QUEUE_DECLARE,
+                )
+                .await;
+                return;
+            }
+        }
+    }
 
     let is_new = !broker.queues.contains_key(&name);
     broker.queues.entry(name.clone()).or_insert_with(|| {
@@ -144,6 +233,7 @@ pub async fn handle_declare(
         if exclusive {
             q.owner_conn_id = Some(conn_id);
         }
+        q.schema = compiled_schema.clone();
         q
     });
 
@@ -163,12 +253,18 @@ pub async fn handle_declare(
         });
     }
 
-    // WAL: persist durable queue declarations
-    if durable
-        && is_new
-        && let Some(wal) = broker.wal()
-    {
+    if durable && is_new {
+        let wal = broker.wal();
         let _ = wal.log_declare_queue(&name, true);
+        if let Some(ref schema) = compiled_schema {
+            let _ = wal.log_set_queue_schema(
+                schema.id,
+                &name,
+                &schema.raw,
+                &schema.descriptor_set_bytes,
+                &schema.message_descriptor.full_name(),
+            );
+        }
     }
 
     crate::metrics::record_queue_declared();
@@ -214,7 +310,6 @@ pub async fn handle_delete(
         return;
     }
 
-    // Pre-checks
     if let Some(q) = broker.queues.get(&name) {
         if if_unused && !q.consumer_tags.is_empty() {
             send_channel_error(
@@ -406,8 +501,8 @@ pub async fn handle_bind(
         "queue bound"
     );
 
-    // WAL: persist binding
-    if let Some(wal) = broker.wal() {
+    {
+        let wal = broker.wal();
         let _ = wal.log_bind(&exchange, &queue, &routing_key);
     }
 
@@ -507,13 +602,13 @@ mod tests {
 
     #[test]
     fn declare_args_parse() {
-        let args = make_declare_args("test.q", 0x06); // durable + exclusive
+        let args = make_declare_args("test.q", 0x06);
         let mut r = Cursor::new(&args);
         let _ = read_short(&mut r).unwrap();
         assert_eq!(read_shortstr(&mut r).unwrap(), "test.q");
         let flags = read_octet(&mut r).unwrap();
-        assert_eq!(flags & 0x02, 0x02); // durable
-        assert_eq!(flags & 0x04, 0x04); // exclusive
+        assert_eq!(flags & 0x02, 0x02);
+        assert_eq!(flags & 0x04, 0x04);
     }
 
     #[test]
@@ -589,11 +684,106 @@ mod tests {
         assert_eq!(read_shortstr(&mut r).unwrap(), "*.stock");
     }
 
+    fn test_broker() -> Broker {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test_queue_handler_wal");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("test_{}.wal", id));
+        let wal = std::sync::Arc::new(crate::storage::wal::Wal::open(&path).unwrap());
+        crate::state::BrokerState::new(wal).into()
+    }
+
     /// Dedicated unit test verification for `handle_declare` function.
-    #[test]
-    fn test_coverage_for_handle_declare() {
-        let func_name = "handle_declare";
-        assert!(!func_name.is_empty());
+    #[tokio::test]
+    async fn test_coverage_for_handle_declare() {
+        let broker: Broker = test_broker();
+
+        let mut conn_state = crate::state::ConnectionState::new();
+        conn_state.username = "guest".to_string();
+        conn_state.vhost = "/".to_string();
+        broker.conn_state.insert(1, conn_state);
+
+        let (mut rx_stream, tx_stream) = tokio::io::duplex(65536);
+
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 1024];
+            while let Ok(n) = rx_stream.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+            }
+        });
+
+        let boxed: Box<dyn crate::server::AsyncStream> = Box::new(tx_stream);
+        let (_read_half, write_half) = tokio::io::split(boxed);
+        let mut writer = tokio::io::BufWriter::new(write_half);
+
+        let schema_content = b"syntax = \"proto3\"; message User { string name = 1; }";
+        let mut arguments = FieldTable::new();
+        arguments.insert(
+            "x-schema".to_string(),
+            FieldValue::LongString(schema_content.to_vec()),
+        );
+        arguments.insert(
+            "x-schema-type".to_string(),
+            FieldValue::LongString(b"protobuf".to_vec()),
+        );
+        arguments.insert(
+            "x-schema-message".to_string(),
+            FieldValue::LongString(b"User".to_vec()),
+        );
+
+        let mut args = Vec::new();
+        write_short(&mut args, 0).unwrap();
+        write_shortstr(&mut args, "schema-queue").unwrap();
+        write_octet(&mut args, 0).unwrap();
+        write_field_table(&mut args, &arguments).unwrap();
+
+        handle_declare(1, 1, &args, &mut writer, &broker).await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert!(queue.schema.is_some());
+            let compiled = queue.schema.as_ref().unwrap();
+            assert_eq!(compiled.message_descriptor.name(), "User");
+        }
+
+        handle_declare(1, 1, &args, &mut writer, &broker).await;
+
+        let diff_schema = b"syntax = \"proto3\"; message User { string name = 1; int32 age = 2; }";
+        let mut diff_arguments = FieldTable::new();
+        diff_arguments.insert(
+            "x-schema".to_string(),
+            FieldValue::LongString(diff_schema.to_vec()),
+        );
+        diff_arguments.insert(
+            "x-schema-type".to_string(),
+            FieldValue::LongString(b"protobuf".to_vec()),
+        );
+        diff_arguments.insert(
+            "x-schema-message".to_string(),
+            FieldValue::LongString(b"User".to_vec()),
+        );
+
+        let mut diff_args = Vec::new();
+        write_short(&mut diff_args, 0).unwrap();
+        write_shortstr(&mut diff_args, "schema-queue").unwrap();
+        write_octet(&mut diff_args, 0).unwrap();
+        write_field_table(&mut diff_args, &diff_arguments).unwrap();
+
+        handle_declare(1, 1, &diff_args, &mut writer, &broker).await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            let compiled = queue.schema.as_ref().unwrap();
+
+            assert_eq!(compiled.message_descriptor.fields().count(), 1);
+        }
     }
 
     /// Dedicated unit test verification for `handle_delete` function.

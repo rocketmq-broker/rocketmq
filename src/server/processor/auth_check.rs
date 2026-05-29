@@ -107,9 +107,9 @@ pub async fn check_configure(
             writer,
         )
         .await;
-        return true; // denied
+        return true;
     }
-    false // allowed
+    false
 }
 
 pub async fn check_write(
@@ -127,9 +127,9 @@ pub async fn check_write(
             conn_id, channel, resource, "write", class_id, method_id, writer,
         )
         .await;
-        return true; // denied
+        return true;
     }
-    false // allowed
+    false
 }
 
 pub async fn check_read(
@@ -147,9 +147,9 @@ pub async fn check_read(
             conn_id, channel, resource, "read", class_id, method_id, writer,
         )
         .await;
-        return true; // denied
+        return true;
     }
-    false // allowed
+    false
 }
 
 #[cfg(test)]

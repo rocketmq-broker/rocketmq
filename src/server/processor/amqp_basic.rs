@@ -62,7 +62,6 @@ pub async fn handle_publish(
     writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
-    // Permission check: write permission needed to publish to an exchange
     if super::auth_check::check_write(
         conn_id,
         channel,
@@ -77,8 +76,27 @@ pub async fn handle_publish(
         return;
     }
 
-    // Allocate confirm delivery tag if channel is in confirm mode
     let confirm_tag = alloc_confirm_tag(conn_id, channel, broker);
+
+    let tx_mode = broker
+        .conn_state
+        .get(&conn_id)
+        .map(|cs| cs.tx_mode)
+        .unwrap_or(false);
+
+    if tx_mode {
+        if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+            let mut prop_bytes = Vec::new();
+            properties.encode(&mut prop_bytes).unwrap_or_default();
+            cs.tx_buffer.push(crate::state::broker::PendingOp::Publish {
+                exchange: exchange_name.to_string(),
+                routing_key: routing_key.to_string(),
+                headers: prop_bytes,
+                body: body.to_vec(),
+            });
+        }
+        return;
+    }
 
     let priority = properties.priority.unwrap_or(0);
     let per_msg_ttl = properties
@@ -87,33 +105,29 @@ pub async fn handle_publish(
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_millis);
 
-    // Route through exchange
-    let target_queues = {
-        let exchanges = broker.exchanges.read().await;
-        let exchange = match exchanges.get(exchange_name) {
-            Some(ex) => ex,
-            None => {
-                warn!(conn_id, exchange = exchange_name, "exchange not found");
-                // Still ack in confirm mode (message was processed, just unroutable)
-                if let Some(tag) = confirm_tag {
-                    send_confirm_ack(channel, tag, writer).await;
-                }
-                return;
+    let exchanges = broker.exchanges.read().await;
+    let exchange = match exchanges.get(exchange_name) {
+        Some(ex) => ex,
+        None => {
+            warn!(conn_id, exchange = exchange_name, "exchange not found");
+
+            if let Some(tag) = confirm_tag {
+                send_confirm_ack(channel, tag, writer).await;
             }
-        };
-        let msg_headers: HashMap<String, String> = properties
-            .headers
-            .as_ref()
-            .map(|h| {
-                h.iter()
-                    .map(|(k, v)| (k.clone(), format!("{:?}", v)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let targets = exchange.route(routing_key, &msg_headers);
-        debug!(conn_id, exchange = exchange_name, routing_key, targets = ?targets, "routed");
-        targets
+            return;
+        }
     };
+    let msg_headers: HashMap<String, String> = properties
+        .headers
+        .as_ref()
+        .map(|h| {
+            h.iter()
+                .map(|(k, v)| (k.clone(), format!("{:?}", v)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let target_queues = exchange.route(routing_key, &msg_headers);
+    debug!(conn_id, exchange = exchange_name, routing_key, targets = ?target_queues, "routed");
 
     if target_queues.is_empty() {
         if mandatory {
@@ -135,11 +149,71 @@ pub async fn handle_publish(
             routing_key,
             "no matching bindings"
         );
-        // Confirm ack even for unroutable messages (per AMQP spec)
+
         if let Some(tag) = confirm_tag {
             send_confirm_ack(channel, tag, writer).await;
         }
         return;
+    }
+
+    for queue_name in &target_queues {
+        if let Some(queue_ref) = broker.queues.get(queue_name.as_str()) {
+            if let Some(ref schema) = queue_ref.schema {
+                let has_proto =
+                    crate::schema::validate::is_protobuf_content(&properties.content_type);
+                if !has_proto {
+                    let got = properties.content_type.clone();
+                    warn!(
+                        conn_id,
+                        queue = queue_name.as_str(),
+                        "schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
+                        got
+                    );
+                    crate::metrics::record_schema_validation_failed(&queue_name);
+                    send_channel_error(
+                        writer,
+                        channel,
+                        PRECONDITION_FAILED,
+                        &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, queue_name),
+                        CLASS_BASIC,
+                        METHOD_BASIC_PUBLISH,
+                    )
+                    .await;
+
+                    if let Some(tag) = confirm_tag {
+                        send_confirm_nack(channel, tag, writer).await;
+                    }
+                    return;
+                }
+
+                if let Err(err) = crate::schema::validate::validate_message(schema, body) {
+                    warn!(
+                        conn_id,
+                        queue = queue_name.as_str(),
+                        "schema validation failed: {}",
+                        err
+                    );
+                    crate::metrics::record_schema_validation_failed(&queue_name);
+                    send_channel_error(
+                        writer,
+                        channel,
+                        PRECONDITION_FAILED,
+                        &format!(
+                            "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
+                            queue_name, err
+                        ),
+                        CLASS_BASIC,
+                        METHOD_BASIC_PUBLISH,
+                    )
+                    .await;
+
+                    if let Some(tag) = confirm_tag {
+                        send_confirm_nack(channel, tag, writer).await;
+                    }
+                    return;
+                }
+            }
+        }
     }
 
     let is_persistent = properties.delivery_mode == Some(2);
@@ -167,7 +241,6 @@ pub async fn handle_publish(
             0
         };
 
-        // Overflow eviction
         if let Some(max_len) = queue.options.max_length {
             while queue.messages.len() >= max_len {
                 if queue.messages.pop_oldest().is_none() {
@@ -176,25 +249,22 @@ pub async fn handle_publish(
             }
         }
 
-        // Encode properties back to bytes for storage
         let mut prop_bytes = Vec::new();
         properties.encode(&mut prop_bytes).unwrap_or_default();
 
-        // WAL: persist message before enqueueing (durable queue + delivery_mode=2)
         let mut disk_ref = None;
-        if queue.options.durable
-            && is_persistent
-            && let Some(wal) = broker.wal()
-            && let Ok((seg_id, offset, length)) = wal.log_enqueue(
+        if queue.options.durable && is_persistent {
+            let wal = broker.wal();
+            if let Ok((seg_id, offset, length)) = wal.log_enqueue(
                 queue_name,
                 msg_id,
                 exchange_name,
                 routing_key,
                 &prop_bytes,
                 body,
-            )
-        {
-            disk_ref = Some((seg_id, offset, length));
+            ) {
+                disk_ref = Some((seg_id, offset, length));
+            }
         }
 
         let msg = if let Some((segment_id, offset, length)) = disk_ref {
@@ -235,7 +305,6 @@ pub async fn handle_publish(
         queue.stat_published += 1;
         crate::metrics::record_published(queue_name);
 
-        // Background replication for non-confirm publishes
         if confirm_tag.is_none()
             && let Some(c) = broker.cluster()
         {
@@ -248,7 +317,6 @@ pub async fn handle_publish(
         }
     }
 
-    // Send confirm ack after all queues received the message
     if let Some(tag) = confirm_tag {
         if let Some(c) = broker.cluster() {
             for (queue_name, msg_id) in &published_messages {
@@ -275,8 +343,22 @@ fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64>
 async fn send_confirm_ack(channel: u16, delivery_tag: u64, writer: &mut crate::server::AmqpWriter) {
     let mut args = Vec::new();
     write_longlong(&mut args, delivery_tag).unwrap();
-    write_octet(&mut args, 0).unwrap(); // multiple = false
+    write_octet(&mut args, 0).unwrap();
     let frame = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_ACK, &args);
+    let _ = writer.write_all(&frame).await;
+    let _ = writer.flush().await;
+}
+
+async fn send_confirm_nack(
+    channel: u16,
+    delivery_tag: u64,
+    writer: &mut crate::server::AmqpWriter,
+) {
+    let mut args = Vec::new();
+    write_longlong(&mut args, delivery_tag).unwrap();
+    write_octet(&mut args, 0).unwrap();
+    write_octet(&mut args, 0).unwrap();
+    let frame = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_NACK, &args);
     let _ = writer.write_all(&frame).await;
     let _ = writer.flush().await;
 }
@@ -335,7 +417,6 @@ pub async fn handle_consume(
         Some(consumer_tag_arg)
     };
 
-    // Permission check: read permission needed to consume from a queue
     if super::auth_check::check_read(
         conn_id,
         channel,
@@ -350,7 +431,6 @@ pub async fn handle_consume(
         return;
     }
 
-    // Check exclusive
     if exclusive
         && let Some(q) = broker.queues.get(&queue_name)
         && !q.consumer_tags.is_empty()
@@ -451,14 +531,13 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
 
     for mut entry in broker.queues.iter_mut() {
         if entry.value_mut().inflight.remove(&delivery_tag).is_some() {
-            if let Some(wal) = broker.wal() {
-                let _ = wal.log_ack(delivery_tag);
+            {
+                let _ = broker.wal().log_ack(delivery_tag);
             }
             entry.value_mut().stat_acked += 1;
             crate::metrics::record_acked();
             info!(conn_id, delivery_tag, "acked");
 
-            // Replicate Ack to peers
             if let Some(c) = broker.cluster() {
                 let c = c.clone();
                 let q_name = entry.key().clone();
@@ -577,7 +656,7 @@ pub async fn handle_get(
 
     match q_msg {
         Some(q_msg) => {
-            let msg = match q_msg.resolve(broker.wal().expect("WAL must be initialized")) {
+            let msg = match q_msg.resolve(broker.wal()) {
                 Ok(m) => m,
                 Err(e) => {
                     warn!("Failed to resolve basic.get message: {}", e);
@@ -601,7 +680,6 @@ pub async fn handle_get(
                 .map(|q| q.messages.len() as u32)
                 .unwrap_or(0);
 
-            // Basic.GetOk args
             let mut reply_args = Vec::new();
             write_longlong(&mut reply_args, delivery_tag).unwrap();
             write_octet(&mut reply_args, if msg.redelivered { 1 } else { 0 }).unwrap();
@@ -627,9 +705,8 @@ pub async fn handle_get(
             }
         }
         None => {
-            // Basic.GetEmpty
             let mut reply_args = Vec::new();
-            write_shortstr(&mut reply_args, "").unwrap(); // cluster-id (deprecated)
+            write_shortstr(&mut reply_args, "").unwrap();
             let reply =
                 encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_EMPTY, &reply_args);
             let _ = writer.write_all(&reply).await;
@@ -678,7 +755,6 @@ pub async fn handle_recover(
     writer: &mut crate::server::AmqpWriter,
     _broker: &Broker,
 ) {
-    // Requeue unacked — simplified: just send RecoverOk
     info!(conn_id, channel, "recover");
     let reply = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_RECOVER_OK, &[]);
     let _ = writer.write_all(&reply).await;
@@ -714,7 +790,7 @@ mod tests {
         write_short(&mut args, 0).unwrap();
         write_shortstr(&mut args, "amq.direct").unwrap();
         write_shortstr(&mut args, "my.key").unwrap();
-        write_octet(&mut args, 0x01).unwrap(); // mandatory=true
+        write_octet(&mut args, 0x01).unwrap();
         let (ex, rk, mandatory, immediate) = parse_publish_args(&args);
         assert_eq!(ex, "amq.direct");
         assert_eq!(rk, "my.key");
@@ -748,7 +824,7 @@ mod tests {
         write_short(&mut args, 0).unwrap();
         write_shortstr(&mut args, "test.queue").unwrap();
         write_shortstr(&mut args, "my-tag").unwrap();
-        write_octet(&mut args, 0x02).unwrap(); // no_ack
+        write_octet(&mut args, 0x02).unwrap();
         let mut r = Cursor::new(&args);
         let _ = read_short(&mut r).unwrap();
         assert_eq!(read_shortstr(&mut r).unwrap(), "test.queue");
@@ -761,7 +837,7 @@ mod tests {
     fn ack_args_parse() {
         let mut args = Vec::new();
         write_longlong(&mut args, 99).unwrap();
-        write_octet(&mut args, 0x01).unwrap(); // multiple
+        write_octet(&mut args, 0x01).unwrap();
         let mut r = Cursor::new(&args);
         assert_eq!(read_longlong(&mut r).unwrap(), 99);
         assert_eq!(read_octet(&mut r).unwrap(), 0x01);
@@ -771,7 +847,7 @@ mod tests {
     fn reject_args_parse() {
         let mut args = Vec::new();
         write_longlong(&mut args, 7).unwrap();
-        write_octet(&mut args, 0x01).unwrap(); // requeue
+        write_octet(&mut args, 0x01).unwrap();
         let mut r = Cursor::new(&args);
         assert_eq!(read_longlong(&mut r).unwrap(), 7);
         assert_eq!(read_octet(&mut r).unwrap() & 0x01, 0x01);
@@ -782,7 +858,7 @@ mod tests {
         let mut args = Vec::new();
         write_long(&mut args, 0).unwrap();
         write_short(&mut args, 10).unwrap();
-        write_octet(&mut args, 0x01).unwrap(); // global
+        write_octet(&mut args, 0x01).unwrap();
         let mut r = Cursor::new(&args);
         assert_eq!(read_long(&mut r).unwrap(), 0);
         assert_eq!(read_short(&mut r).unwrap(), 10);
@@ -794,7 +870,7 @@ mod tests {
         let mut args = Vec::new();
         write_short(&mut args, 0).unwrap();
         write_shortstr(&mut args, "q1").unwrap();
-        write_octet(&mut args, 0x01).unwrap(); // no_ack
+        write_octet(&mut args, 0x01).unwrap();
         let mut r = Cursor::new(&args);
         let _ = read_short(&mut r).unwrap();
         assert_eq!(read_shortstr(&mut r).unwrap(), "q1");
@@ -822,11 +898,260 @@ mod tests {
         assert!(!func_name.is_empty());
     }
 
-    /// Dedicated unit test verification for `handle_publish` function.
-    #[test]
-    fn test_coverage_for_handle_publish() {
-        let func_name = "handle_publish";
-        assert!(!func_name.is_empty());
+    fn test_broker() -> Broker {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test_basic_handler_wal");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("test_{}.wal", id));
+        let wal = std::sync::Arc::new(crate::storage::wal::Wal::open(&path).unwrap());
+        crate::state::BrokerState::new(wal).into()
+    }
+
+    /// Dedicated unit test verification for `handle_publish` function with schema validation.
+    #[tokio::test]
+    async fn test_coverage_for_handle_publish() {
+        let broker: Broker = test_broker();
+
+        let mut conn_state = crate::state::ConnectionState::new();
+        conn_state.username = "guest".to_string();
+        conn_state.vhost = "/".to_string();
+        broker.conn_state.insert(1, conn_state);
+
+        let (mut rx_stream, tx_stream) = tokio::io::duplex(65536);
+
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 1024];
+            while let Ok(n) = rx_stream.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+            }
+        });
+
+        let boxed: Box<dyn crate::server::AsyncStream> = Box::new(tx_stream);
+        let (_read_half, write_half) = tokio::io::split(boxed);
+        let mut writer = tokio::io::BufWriter::new(write_half);
+
+        let mut q = crate::queue::QueueState::new();
+        let schema_content = b"syntax = \"proto3\"; message User { string name = 1; }";
+        let compiled = crate::schema::compile_proto(schema_content, "User").unwrap();
+        q.schema = Some(std::sync::Arc::new(compiled));
+        broker.queues.insert("schema-queue".to_string(), q);
+
+        {
+            let mut exchanges = broker.exchanges.write().await;
+            if let Some(ex) = exchanges.get_mut("amq.direct") {
+                ex.bindings.push(crate::routing::exchange::Binding {
+                    queue_name: "schema-queue".to_string(),
+                    routing_key: "schema-queue".to_string(),
+                    headers_match: None,
+                });
+            }
+        }
+
+        let properties_no_ct = BasicProperties::default();
+        let body_garbage = b"invalid payload but no content-type";
+        handle_publish(
+            1,
+            1,
+            "amq.direct",
+            "schema-queue",
+            false,
+            &properties_no_ct,
+            body_garbage,
+            &mut writer,
+            &broker,
+        )
+        .await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 0);
+        }
+
+        let non_schema_q = crate::queue::QueueState::new();
+        broker
+            .queues
+            .insert("non-schema-queue".to_string(), non_schema_q);
+        {
+            let mut exchanges = broker.exchanges.write().await;
+            if let Some(ex) = exchanges.get_mut("amq.direct") {
+                ex.bindings.push(crate::routing::exchange::Binding {
+                    queue_name: "non-schema-queue".to_string(),
+                    routing_key: "non-schema-queue".to_string(),
+                    headers_match: None,
+                });
+            }
+        }
+        handle_publish(
+            1,
+            1,
+            "amq.direct",
+            "non-schema-queue",
+            false,
+            &properties_no_ct,
+            body_garbage,
+            &mut writer,
+            &broker,
+        )
+        .await;
+
+        {
+            let queue = broker.queues.get("non-schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 1);
+        }
+
+        let properties_json = BasicProperties {
+            content_type: Some("application/json".to_string()),
+            ..Default::default()
+        };
+        handle_publish(
+            1,
+            1,
+            "amq.direct",
+            "schema-queue",
+            false,
+            &properties_json,
+            b"{}",
+            &mut writer,
+            &broker,
+        )
+        .await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 0);
+        }
+
+        let properties_proto = BasicProperties {
+            content_type: Some("application/x-protobuf".to_string()),
+            ..Default::default()
+        };
+        handle_publish(
+            1,
+            1,
+            "amq.direct",
+            "schema-queue",
+            false,
+            &properties_proto,
+            b"bad encoded protobuf",
+            &mut writer,
+            &broker,
+        )
+        .await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 0);
+        }
+
+        let mut valid_body = vec![0x0A, 5];
+        valid_body.extend_from_slice(b"Alice");
+
+        handle_publish(
+            1,
+            1,
+            "amq.direct",
+            "schema-queue",
+            false,
+            &properties_proto,
+            &valid_body,
+            &mut writer,
+            &broker,
+        )
+        .await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            assert_eq!(queue.messages.len(), 1);
+        }
+    }
+
+    /// Integration test verifying publisher confirm ACKs/NACKs on schema validation success/failure.
+    #[tokio::test]
+    async fn test_schema_publisher_confirms() {
+        let broker: Broker = test_broker();
+
+        let mut conn_state = crate::state::ConnectionState::new();
+        conn_state.username = "guest".to_string();
+        conn_state.vhost = "/".to_string();
+
+        let mut ch = crate::state::broker::ChannelState::new(1);
+        ch.confirm_mode = true;
+        ch.next_delivery_tag = 1;
+        conn_state.channels.insert(1, ch);
+        broker.conn_state.insert(1, conn_state);
+
+        let (mut rx_stream, tx_stream) = tokio::io::duplex(65536);
+        let boxed: Box<dyn crate::server::AsyncStream> = Box::new(tx_stream);
+        let (_read_half, write_half) = tokio::io::split(boxed);
+        let mut writer = tokio::io::BufWriter::new(write_half);
+
+        let mut q = crate::queue::QueueState::new();
+        let schema_content = b"syntax = \"proto3\"; message User { string name = 1; }";
+        let compiled = crate::schema::compile_proto(schema_content, "User").unwrap();
+        q.schema = Some(std::sync::Arc::new(compiled));
+        broker.queues.insert("schema-queue".to_string(), q);
+
+        {
+            let mut exchanges = broker.exchanges.write().await;
+            if let Some(ex) = exchanges.get_mut("amq.direct") {
+                ex.bindings.push(crate::routing::exchange::Binding {
+                    queue_name: "schema-queue".to_string(),
+                    routing_key: "schema-queue".to_string(),
+                    headers_match: None,
+                });
+            }
+        }
+
+        let properties_proto = BasicProperties {
+            content_type: Some("application/x-protobuf".to_string()),
+            ..Default::default()
+        };
+        handle_publish(
+            1,
+            1,
+            "amq.direct",
+            "schema-queue",
+            false,
+            &properties_proto,
+            b"invalid",
+            &mut writer,
+            &broker,
+        )
+        .await;
+
+        let mut buf = vec![0u8; 4096];
+        use tokio::io::AsyncReadExt;
+        let n = rx_stream.read(&mut buf).await.unwrap();
+
+        let mut offset = 0;
+        let mut got_nack = false;
+        let mut got_channel_error = false;
+        while offset < n {
+            if let Ok((decoded, consumed)) = decode_frame(&buf[offset..n]) {
+                offset += consumed;
+                if decoded.frame_type == FRAME_METHOD {
+                    if let Ok(m) = decode_method(&decoded.payload) {
+                        if m.class_id == CLASS_BASIC && m.method_id == METHOD_BASIC_NACK {
+                            got_nack = true;
+                        }
+                        if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
+                            got_channel_error = true;
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        assert!(got_nack);
+        assert!(got_channel_error);
     }
 
     /// Dedicated unit test verification for `alloc_confirm_tag` function.

@@ -22,7 +22,7 @@
 //! Routes incoming method frames by class_id/method_id to the appropriate handler.
 
 use tokio::io::AsyncWriteExt;
-// BufWriter replaced by AmqpWriter
+
 use tracing::{info, warn};
 
 use crate::core::amqp_codec::*;
@@ -38,20 +38,18 @@ pub async fn dispatch_method(
     broker: &Broker,
 ) -> bool {
     match (method.class_id, method.method_id) {
-        // ── Connection class (channel 0 only) ─────────
         (CLASS_CONNECTION, METHOD_CONNECTION_CLOSE) => {
             info!(conn_id, "client requested Connection.Close");
             let reply = encode_method_frame(0, CLASS_CONNECTION, METHOD_CONNECTION_CLOSE_OK, &[]);
             let _ = writer.write_all(&reply).await;
             let _ = writer.flush().await;
-            false // signal to close
+            false
         }
         (CLASS_CONNECTION, METHOD_CONNECTION_CLOSE_OK) => {
             info!(conn_id, "received Connection.CloseOk");
             false
         }
 
-        // ── Channel class ─────────────────────────────
         (CLASS_CHANNEL, METHOD_CHANNEL_OPEN) => {
             handle_channel_open(conn_id, channel, writer, broker).await;
             true
@@ -60,16 +58,12 @@ pub async fn dispatch_method(
             handle_channel_close(conn_id, channel, &method.arguments, writer, broker).await;
             true
         }
-        (CLASS_CHANNEL, METHOD_CHANNEL_CLOSE_OK) => {
-            // Acknowledgement of our close — nothing to do
-            true
-        }
+        (CLASS_CHANNEL, METHOD_CHANNEL_CLOSE_OK) => true,
         (CLASS_CHANNEL, METHOD_CHANNEL_FLOW) => {
             handle_channel_flow(conn_id, channel, &method.arguments, writer, broker).await;
             true
         }
 
-        // ── Exchange class ────────────────────────────
         (CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE) => {
             super::amqp_exchange::handle_declare(
                 conn_id,
@@ -109,7 +103,6 @@ pub async fn dispatch_method(
             true
         }
 
-        // ── Queue class ───────────────────────────────
         (CLASS_QUEUE, METHOD_QUEUE_DECLARE) => {
             super::amqp_queue::handle_declare(conn_id, channel, &method.arguments, writer, broker)
                 .await;
@@ -136,9 +129,6 @@ pub async fn dispatch_method(
             true
         }
 
-        // ── Basic class ───────────────────────────────
-        // Note: Basic.Publish is handled via content framing in the connection loop,
-        // not here. The connection reads method+header+body then calls handle_publish.
         (CLASS_BASIC, METHOD_BASIC_CONSUME) => {
             super::amqp_basic::handle_consume(conn_id, channel, &method.arguments, writer, broker)
                 .await;
@@ -177,21 +167,19 @@ pub async fn dispatch_method(
             true
         }
 
-        // ── Tx class ──────────────────────────────────
         (CLASS_TX, METHOD_TX_SELECT) => {
             super::amqp_tx::handle_tx_select(conn_id, channel, writer, broker).await;
             true
         }
         (CLASS_TX, METHOD_TX_COMMIT) => {
-            super::amqp_tx::handle_tx_commit(conn_id, channel, writer, broker).await;
+            super::amqp_tx::process_tx_commit(conn_id, channel, writer, broker).await;
             true
         }
         (CLASS_TX, METHOD_TX_ROLLBACK) => {
-            super::amqp_tx::handle_tx_rollback(conn_id, channel, writer, broker).await;
+            super::amqp_tx::process_tx_rollback(conn_id, channel, writer, broker).await;
             true
         }
 
-        // ── Confirm class ─────────────────────────────
         (CLASS_CONFIRM, METHOD_CONFIRM_SELECT) => {
             super::amqp_tx::handle_confirm_select(
                 conn_id,
@@ -204,7 +192,6 @@ pub async fn dispatch_method(
             true
         }
 
-        // ── Unknown ───────────────────────────────────
         _ => {
             warn!(
                 conn_id,
@@ -237,7 +224,6 @@ async fn handle_channel_open(
     info!(conn_id, channel, "channel opened");
     crate::metrics::record_chan_opened();
 
-    // Channel.OpenOk: reserved(longstr) — send empty
     let mut args = Vec::new();
     write_longstr(&mut args, b"").unwrap();
     let reply = encode_method_frame(channel, CLASS_CHANNEL, METHOD_CHANNEL_OPEN_OK, &args);
@@ -252,7 +238,6 @@ async fn handle_channel_close(
     writer: &mut crate::server::AmqpWriter,
     broker: &Broker,
 ) {
-    // Parse: reply_code(short) reply_text(shortstr) class_id(short) method_id(short)
     if args.len() >= 4 {
         let code = u16::from_be_bytes([args[0], args[1]]);
         if code != REPLY_SUCCESS {
