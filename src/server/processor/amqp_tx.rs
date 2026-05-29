@@ -85,60 +85,58 @@ pub async fn process_tx_commit(
             body,
             ..
         } = op
+            && let Some(queue_ref) = broker.queues.get(routing_key.as_str())
+            && let Some(ref schema) = queue_ref.schema
         {
-            if let Some(queue_ref) = broker.queues.get(routing_key.as_str()) {
-                if let Some(ref schema) = queue_ref.schema {
-                    let properties = crate::core::properties::BasicProperties::decode(
-                        &mut std::io::Cursor::new(headers),
-                    )
-                    .unwrap_or_default();
+            let properties = crate::core::properties::BasicProperties::decode(
+                &mut std::io::Cursor::new(headers),
+            )
+            .unwrap_or_default();
 
-                    let has_proto =
-                        crate::schema::validate::is_protobuf_content(&properties.content_type);
-                    if !has_proto {
-                        let got = properties.content_type.clone();
-                        warn!(
-                            conn_id,
-                            queue = routing_key.as_str(),
-                            "transactional schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
-                            got
-                        );
-                        crate::metrics::record_schema_validation_failed(routing_key);
-                        send_channel_error(
-                            writer,
-                            channel,
-                            PRECONDITION_FAILED,
-                            &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, routing_key),
-                            CLASS_TX,
-                            METHOD_TX_COMMIT,
-                        )
-                        .await;
-                        return;
-                    }
+            let has_proto =
+                crate::schema::validate::is_protobuf_content(&properties.content_type);
+            if !has_proto {
+                let got = properties.content_type.clone();
+                warn!(
+                    conn_id,
+                    queue = routing_key.as_str(),
+                    "transactional schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
+                    got
+                );
+                crate::metrics::record_schema_validation_failed(routing_key);
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, routing_key),
+                    CLASS_TX,
+                    METHOD_TX_COMMIT,
+                )
+                .await;
+                return;
+            }
 
-                    if let Err(err) = crate::schema::validate::validate_message(schema, body) {
-                        warn!(
-                            conn_id,
-                            queue = routing_key.as_str(),
-                            "transactional schema validation failed: {}",
-                            err
-                        );
-                        crate::metrics::record_schema_validation_failed(routing_key);
-                        send_channel_error(
-                            writer,
-                            channel,
-                            PRECONDITION_FAILED,
-                            &format!(
-                                "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
-                                routing_key, err
-                            ),
-                            CLASS_TX,
-                            METHOD_TX_COMMIT,
-                        )
-                        .await;
-                        return;
-                    }
-                }
+            if let Err(err) = crate::schema::validate::validate_message(schema, body) {
+                warn!(
+                    conn_id,
+                    queue = routing_key.as_str(),
+                    "transactional schema validation failed: {}",
+                    err
+                );
+                crate::metrics::record_schema_validation_failed(routing_key);
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!(
+                        "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
+                        routing_key, err
+                    ),
+                    CLASS_TX,
+                    METHOD_TX_COMMIT,
+                )
+                .await;
+                return;
             }
         }
     }
@@ -362,12 +360,11 @@ mod tests {
         while offset < n {
             if let Ok((decoded, consumed)) = decode_frame(&buf[offset..n]) {
                 offset += consumed;
-                if decoded.frame_type == FRAME_METHOD {
-                    if let Ok(m) = decode_method(&decoded.payload) {
-                        if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
-                            got_channel_error = true;
-                        }
-                    }
+                if decoded.frame_type == FRAME_METHOD
+                    && let Ok(m) = decode_method(&decoded.payload)
+                    && m.class_id == CLASS_CHANNEL && m.method_id == 40
+                {
+                    got_channel_error = true;
                 }
             } else {
                 break;
