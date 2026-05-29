@@ -64,6 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let broker: state::Broker = Arc::new(state::BrokerState::new(wal));
 
+    // Register broker-state observable gauges now that we have a handle.
+    metrics::broker_gauges::register_all(broker.clone());
+
     storage::recover(&broker)?;
 
     let node_id = get_node_id();

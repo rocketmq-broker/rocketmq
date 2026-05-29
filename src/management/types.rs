@@ -173,19 +173,18 @@ fn refresh_rates(state: &mut RateState) {
         return;
     }
 
-    let s = crate::metrics::get_snapshot();
-    let ord = std::sync::atomic::Ordering::Relaxed;
+    let s = crate::metrics::counters::read_all();
 
-    let cp = s.messages_published.load(ord);
-    let cd = s.messages_delivered.load(ord);
-    let ca = s.messages_acked.load(ord);
-    let cc_o = s.connections_opened.load(ord);
-    let cc_c = s.connections_closed.load(ord);
-    let ch_o = s.channels_opened.load(ord);
-    let ch_c = s.channels_closed.load(ord);
-    let qd = s.queues_declared.load(ord);
-    let qc = s.queues_created.load(ord);
-    let qdel = s.queues_deleted.load(ord);
+    let cp = s.messages_published;
+    let cd = s.messages_delivered;
+    let ca = s.messages_acked;
+    let cc_o = s.connections_opened;
+    let cc_c = s.connections_closed;
+    let ch_o = s.channels_opened;
+    let ch_c = s.channels_closed;
+    let qd = s.queues_declared;
+    let qc = s.queues_created;
+    let qdel = s.queues_deleted;
 
     state.publish_rate = (cp.saturating_sub(state.last_publish) as f64) / elapsed;
     state.deliver_rate = (cd.saturating_sub(state.last_deliver) as f64) / elapsed;
@@ -215,14 +214,13 @@ pub fn get_rates() -> (u64, f64, u64, f64, u64, f64) {
     let mut state = rate_state().lock().unwrap();
     refresh_rates(&mut state);
 
-    let s = crate::metrics::get_snapshot();
-    let ord = std::sync::atomic::Ordering::Relaxed;
+    let s = crate::metrics::counters::read_all();
     (
-        s.messages_published.load(ord),
+        s.messages_published,
         state.publish_rate,
-        s.messages_delivered.load(ord),
+        s.messages_delivered,
         state.deliver_rate,
-        s.messages_acked.load(ord),
+        s.messages_acked,
         state.ack_rate,
     )
 }
@@ -231,23 +229,21 @@ pub fn get_churn_rates() -> serde_json::Value {
     let mut state = rate_state().lock().unwrap();
     refresh_rates(&mut state);
 
-    let s = crate::metrics::get_snapshot();
-    let ord = std::sync::atomic::Ordering::Relaxed;
-
+    let s = crate::metrics::counters::read_all();
     serde_json::json!({
-        "connection_created": s.connections_opened.load(ord),
+        "connection_created": s.connections_opened,
         "connection_created_details": { "rate": state.conn_created_rate },
-        "connection_closed": s.connections_closed.load(ord),
+        "connection_closed": s.connections_closed,
         "connection_closed_details": { "rate": state.conn_closed_rate },
-        "channel_created": s.channels_opened.load(ord),
+        "channel_created": s.channels_opened,
         "channel_created_details": { "rate": state.chan_created_rate },
-        "channel_closed": s.channels_closed.load(ord),
+        "channel_closed": s.channels_closed,
         "channel_closed_details": { "rate": state.chan_closed_rate },
-        "queue_declared": s.queues_declared.load(ord),
+        "queue_declared": s.queues_declared,
         "queue_declared_details": { "rate": state.queue_declared_rate },
-        "queue_created": s.queues_created.load(ord),
+        "queue_created": s.queues_created,
         "queue_created_details": { "rate": state.queue_created_rate },
-        "queue_deleted": s.queues_deleted.load(ord),
+        "queue_deleted": s.queues_deleted,
         "queue_deleted_details": { "rate": state.queue_deleted_rate }
     })
 }

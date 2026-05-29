@@ -8,69 +8,18 @@ use crate::state::Broker;
 // ─── Prometheus Metricsexposition ───────────────────────
 
 pub async fn prometheus_metrics(State(broker): State<Broker>) -> String {
-    let s = crate::metrics::get_snapshot();
     let mut out = String::with_capacity(4096);
 
-    write_counter(
-        &mut out,
-        "amqp_messages_published_total",
-        "Total messages published",
-        s.messages_published
-            .load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_messages_delivered_total",
-        "Total messages delivered to consumers",
-        s.messages_delivered
-            .load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_messages_acked_total",
-        "Total consumer acknowledgements",
-        s.messages_acked.load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_messages_nacked_total",
-        "Total consumer negative-acks",
-        s.messages_nacked.load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_schema_validation_failures_total",
-        "Total messages rejected due to schema validation failure",
-        s.schema_validation_failures
-            .load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_connections_opened_total",
-        "Total connections accepted",
-        s.connections_opened
-            .load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_connections_closed_total",
-        "Total connections closed",
-        s.connections_closed
-            .load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_channels_opened_total",
-        "Total channels opened",
-        s.channels_opened.load(std::sync::atomic::Ordering::Relaxed),
-    );
-    write_counter(
-        &mut out,
-        "amqp_channels_closed_total",
-        "Total channels closed",
-        s.channels_closed.load(std::sync::atomic::Ordering::Relaxed),
-    );
+    // 1. Export OpenTelemetry metrics from the Prometheus Registry
+    let metric_families = crate::metrics::get_registry().gather();
+    let encoder = prometheus::TextEncoder::new();
+    let mut buffer = vec![];
+    prometheus::Encoder::encode(&encoder, &metric_families, &mut buffer).unwrap();
+    if let Ok(s) = String::from_utf8(buffer) {
+        out.push_str(&s);
+    }
 
+    // 2. Append dynamic gauge metrics from Broker state
     write_gauge(
         &mut out,
         "amqp_connections",
