@@ -17,9 +17,7 @@
 // File: mod.rs
 // Description: Core schema registry, compilation pipeline, and validation entrypoints.
 
-pub mod registry;
 pub mod validate;
-pub mod wire;
 
 use prost::Message;
 use prost_reflect::{DescriptorPool, MessageDescriptor};

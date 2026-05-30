@@ -38,43 +38,6 @@ use super::auth_check::send_channel_error;
 use crate::queue::Message;
 use crate::state::Broker;
 
-// ─── Registry Schema Validation ───────────────────────
-
-/// Validates a message body against the schema registry using the Confluent wire format.
-///
-/// 1. Decodes the 5-byte wire prefix `[0x00, schema_id_be32]`
-/// 2. Looks up the schema in the registry by ID
-/// 3. Verifies the schema belongs to the expected subject
-/// 4. Validates the protobuf payload against the schema's MessageDescriptor
-fn validate_registry_schema(
-    broker: &Broker,
-    expected_subject: &str,
-    body: &[u8],
-) -> Result<(), String> {
-    let (schema_id, payload) = crate::schema::wire::decode_prefix(body).ok_or_else(|| {
-        format!(
-            "Message body (len={}) missing Confluent wire prefix [0x00, schema_id_be32]. \
-             Subject '{}' requires schema-encoded messages.",
-            body.len(),
-            expected_subject
-        )
-    })?;
-
-    let entry = broker
-        .schema_registry
-        .get_by_id(schema_id as u64)
-        .ok_or_else(|| format!("Schema ID {} not found in registry", schema_id))?;
-
-    if entry.subject != expected_subject {
-        return Err(format!(
-            "Schema ID {} belongs to subject '{}', but queue expects subject '{}'",
-            schema_id, entry.subject, expected_subject
-        ));
-    }
-
-    crate::schema::validate::validate_message(&entry.compiled, payload).map_err(|e| e.to_string())
-}
-
 // ─── Basic.Publish ────────────────────────────────────
 
 pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
@@ -196,72 +159,12 @@ pub async fn handle_publish(
     for queue_name in &target_queues {
         if let Some(queue_ref) = broker.queues.get(queue_name.as_str())
             && let Some(ref schema) = queue_ref.schema
-        {
-            let has_proto = crate::schema::validate::is_protobuf_content(&properties.content_type);
-            if !has_proto {
-                let got = properties.content_type.clone();
-                warn!(
-                    conn_id,
-                    queue = queue_name.as_str(),
-                    "schema validation failed: message content_type '{:?}' does not indicate Protobuf encoding on a schema-enforced queue",
-                    got
-                );
-                crate::metrics::record_schema_validation_failed(queue_name);
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &format!("PRECONDITION_FAILED - message content_type '{:?}' is invalid for schema queue '{}'. Must contain 'protobuf'.", got, queue_name),
-                    CLASS_BASIC,
-                    METHOD_BASIC_PUBLISH,
-                )
-                .await;
-
-                if let Some(tag) = confirm_tag {
-                    send_confirm_nack(channel, tag, writer).await;
-                }
-                return;
-            }
-
-            if let Err(err) = crate::schema::validate::validate_message(schema, body) {
-                warn!(
-                    conn_id,
-                    queue = queue_name.as_str(),
-                    "schema validation failed: {}",
-                    err
-                );
-                crate::metrics::record_schema_validation_failed(queue_name);
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &format!(
-                        "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
-                        queue_name, err
-                    ),
-                    CLASS_BASIC,
-                    METHOD_BASIC_PUBLISH,
-                )
-                .await;
-
-                if let Some(tag) = confirm_tag {
-                    send_confirm_nack(channel, tag, writer).await;
-                }
-                return;
-            }
-        }
-
-        // Registry-based validation: queue declares x-schema-subject, messages must
-        // carry a Confluent wire prefix [0x00, schema_id_be32, payload...].
-        if let Some(queue_ref) = broker.queues.get(queue_name.as_str())
-            && let Some(ref subject) = queue_ref.schema_subject
-            && let Err(err) = validate_registry_schema(broker, subject, body)
+            && let Err(err) = crate::schema::validate::validate_message(schema, body)
         {
             warn!(
                 conn_id,
                 queue = queue_name.as_str(),
-                subject = subject.as_str(),
-                "registry schema validation failed: {}",
+                "schema validation failed: {}",
                 err
             );
             crate::metrics::record_schema_validation_failed(queue_name);
@@ -270,7 +173,7 @@ pub async fn handle_publish(
                 channel,
                 PRECONDITION_FAILED,
                 &format!(
-                    "PRECONDITION_FAILED - registry schema validation failed for queue '{}': {}",
+                    "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
                     queue_name, err
                 ),
                 CLASS_BASIC,
@@ -480,6 +383,9 @@ pub async fn handle_consume(
     let exclusive = flags & 0x04 != 0;
     let no_wait = flags & 0x08 != 0;
 
+    // AMQP 0-9-1 basic.consume includes an arguments field-table after flags.
+    let arguments = read_field_table(&mut r).unwrap_or_default();
+
     let consumer_tag = if consumer_tag_arg.is_empty() {
         None
     } else {
@@ -514,6 +420,72 @@ pub async fn handle_consume(
         )
         .await;
         return;
+    }
+
+    // Consumer schema compatibility: if the consumer sends its own proto
+    // definition, verify every consumer field exists in the queue's schema.
+    if let Some(FieldValue::LongString(raw_schema)) = arguments.get("x-consumer-schema") {
+        let message_name = match arguments.get("x-consumer-schema-message") {
+            Some(FieldValue::LongString(v)) => String::from_utf8_lossy(v).to_string(),
+            _ => {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    "PRECONDITION_FAILED - x-consumer-schema-message required with x-consumer-schema",
+                    CLASS_BASIC,
+                    METHOD_BASIC_CONSUME,
+                )
+                .await;
+                return;
+            }
+        };
+
+        let consumer_compiled = match crate::schema::compile_proto(raw_schema, &message_name) {
+            Ok(c) => c,
+            Err(e) => {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!(
+                        "PRECONDITION_FAILED - consumer schema compilation failed: {}",
+                        e
+                    ),
+                    CLASS_BASIC,
+                    METHOD_BASIC_CONSUME,
+                )
+                .await;
+                return;
+            }
+        };
+
+        // Check subset against queue schema (if queue has one)
+        if let Some(queue_ref) = broker.queues.get(&queue_name)
+            && let Some(ref queue_schema) = queue_ref.schema
+            && let Err(err) =
+                crate::schema::validate::check_consumer_subset(queue_schema, &consumer_compiled)
+        {
+            warn!(
+                conn_id,
+                queue = queue_name.as_str(),
+                "consumer schema not a subset of queue schema: {}",
+                err
+            );
+            send_channel_error(
+                writer,
+                channel,
+                PRECONDITION_FAILED,
+                &format!(
+                    "PRECONDITION_FAILED - consumer schema incompatible with queue '{}': {}",
+                    queue_name, err
+                ),
+                CLASS_BASIC,
+                METHOD_BASIC_CONSUME,
+            )
+            .await;
+            return;
+        }
     }
 
     let assigned_tag = match broker.queues.get_mut(&queue_name) {

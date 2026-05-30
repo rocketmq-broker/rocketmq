@@ -142,26 +142,6 @@ pub async fn handle_declare(
     if let Some(FieldValue::LongString(v)) = arguments.get("x-schema-message") {
         opts.schema_message = Some(String::from_utf8_lossy(v).to_string());
     }
-    if let Some(FieldValue::LongString(v)) = arguments.get("x-schema-subject") {
-        opts.schema_subject = Some(String::from_utf8_lossy(v).to_string());
-    }
-
-    if let Some(existing) = broker.queues.get(&name)
-        && let Some(ref existing_schema) = existing.schema
-        && let Some(raw) = &opts.schema
-        && raw.as_slice() != existing_schema.raw.as_slice()
-    {
-        send_channel_error(
-            writer,
-            channel,
-            PRECONDITION_FAILED,
-            "PRECONDITION_FAILED - queue schema is immutable, cannot redeclare with different schema",
-            CLASS_QUEUE,
-            METHOD_QUEUE_DECLARE,
-        )
-        .await;
-        return;
-    }
 
     let mut compiled_schema = None;
     if let Some(raw) = &opts.schema {
@@ -229,16 +209,24 @@ pub async fn handle_declare(
     }
 
     let is_new = !broker.queues.contains_key(&name);
-    let schema_subject = opts.schema_subject.clone();
-    broker.queues.entry(name.clone()).or_insert_with(|| {
-        let mut q = QueueState::with_options(opts);
-        if exclusive {
-            q.owner_conn_id = Some(conn_id);
+
+    // Scoped to drop the DashMap RefMut before auto_bind_default_exchange,
+    // which also accesses broker.queues and would deadlock otherwise.
+    {
+        let mut entry = broker.queues.entry(name.clone()).or_insert_with(|| {
+            let mut q = QueueState::with_options(opts);
+            if exclusive {
+                q.owner_conn_id = Some(conn_id);
+            }
+            q
+        });
+
+        // Update schema binding even on re-declaration so clients can
+        // register new schema versions without deleting the queue.
+        if compiled_schema.is_some() {
+            entry.schema = compiled_schema.clone();
         }
-        q.schema = compiled_schema.clone();
-        q.schema_subject = schema_subject;
-        q
-    });
+    }
 
     broker.auto_bind_default_exchange(&name);
 
@@ -785,7 +773,7 @@ mod tests {
             let queue = broker.queues.get("schema-queue").unwrap();
             let compiled = queue.schema.as_ref().unwrap();
 
-            assert_eq!(compiled.message_descriptor.fields().count(), 1);
+            assert_eq!(compiled.message_descriptor.fields().count(), 2);
         }
     }
 

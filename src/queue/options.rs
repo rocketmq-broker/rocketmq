@@ -44,9 +44,6 @@ pub struct QueueOptions {
     pub schema: Option<Vec<u8>>,
     pub schema_type: Option<String>,
     pub schema_message: Option<String>,
-    /// When set, messages are validated against the named registry subject
-    /// using the Confluent wire format (5-byte prefix with schema ID).
-    pub schema_subject: Option<String>,
 }
 
 impl QueueOptions {
@@ -84,7 +81,7 @@ impl QueueOptions {
                     "x-schema" => opts.schema = Some(v.as_bytes().to_vec()),
                     "x-schema-type" => opts.schema_type = Some(v.to_string()),
                     "x-schema-message" => opts.schema_message = Some(v.to_string()),
-                    "x-schema-subject" => opts.schema_subject = Some(v.to_string()),
+
                     _ => {}
                 }
             }

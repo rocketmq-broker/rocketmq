@@ -152,7 +152,6 @@ pub struct BrokerState {
     pub delay_queue: DelayQueue,
     pub vhosts: DashMap<String, VHost>,
     pub auth: AuthBackend,
-    pub schema_registry: crate::schema::registry::SchemaRegistry,
     cluster: OnceLock<Arc<crate::cluster::ClusterCoordinator>>,
     /// Epoch ms when the broker started.
     started_at_ms: u64,
@@ -191,7 +190,6 @@ impl BrokerState {
                 map
             },
             auth,
-            schema_registry: crate::schema::registry::SchemaRegistry::new(),
             cluster: OnceLock::new(),
             started_at_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

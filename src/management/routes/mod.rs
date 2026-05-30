@@ -9,7 +9,7 @@ pub mod metrics;
 pub mod misc;
 pub mod nodes;
 pub mod queues;
-pub mod schemas;
+
 pub mod users;
 pub mod vhosts;
 pub use bindings::*;

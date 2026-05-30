@@ -38,6 +38,27 @@ pub enum SchemaValidationError {
         /// The content-type that was found on the message properties.
         got: Option<String>,
     },
+
+    /// JSON payload is missing fields defined in the proto schema.
+    MissingFields {
+        /// Names of fields that are present in the schema but absent from the JSON.
+        fields: Vec<String>,
+    },
+
+    /// Payload is not valid JSON.
+    InvalidJson(String),
+
+    /// Consumer schema has fields not defined in the queue's schema.
+    ConsumerExtraFields {
+        /// Field names present in consumer but missing from queue schema.
+        fields: Vec<String>,
+    },
+
+    /// JSON field values have types incompatible with the proto schema.
+    TypeMismatch {
+        /// Per-field type error descriptions.
+        errors: Vec<String>,
+    },
 }
 
 impl std::fmt::Display for SchemaValidationError {
@@ -54,6 +75,20 @@ impl std::fmt::Display for SchemaValidationError {
                 "Message properties have invalid content_type: '{:?}'. Must contain 'protobuf'.",
                 got
             ),
+            Self::MissingFields { fields } => write!(
+                f,
+                "JSON payload missing required schema fields: [{}]",
+                fields.join(", ")
+            ),
+            Self::InvalidJson(err) => write!(f, "Payload is not valid JSON: {}", err),
+            Self::ConsumerExtraFields { fields } => write!(
+                f,
+                "Consumer schema has fields not in queue schema: [{}]",
+                fields.join(", ")
+            ),
+            Self::TypeMismatch { errors } => {
+                write!(f, "JSON field type mismatches: [{}]", errors.join("; "))
+            }
         }
     }
 }
@@ -73,9 +108,144 @@ pub fn is_protobuf_content(content_type: &Option<String>) -> bool {
 
 /// Validates that the raw payload matches the schema.
 ///
-/// Decodes the payload into a dynamic message to ensure all fields match the cached descriptor,
-/// and checks that the entire byte slice is fully consumed.
+/// Auto-detects JSON vs protobuf payloads:
+/// - JSON (starts with `{`): checks all schema fields are present in the object
+/// - Protobuf binary: decodes and checks for unknown/trailing bytes
 pub fn validate_message(schema: &CompiledSchema, body: &[u8]) -> Result<(), SchemaValidationError> {
+    if body.first() == Some(&b'{') {
+        return validate_json_fields(schema, body);
+    }
+    validate_protobuf_fields(schema, body)
+}
+
+/// Checks that a consumer's schema is a subset of the queue's schema.
+///
+/// The consumer may omit fields (reading a subset is safe), but every
+/// field in the consumer's schema must exist in the queue's schema with
+/// a compatible type. This prevents consumers from expecting data the
+/// queue doesn't provide.
+///
+/// ```ignore
+/// check_consumer_subset(&queue_schema, &consumer_schema)?;
+/// ```
+pub fn check_consumer_subset(
+    queue_schema: &CompiledSchema,
+    consumer_schema: &CompiledSchema,
+) -> Result<(), SchemaValidationError> {
+    let queue_fields: std::collections::HashMap<String, u32> = queue_schema
+        .message_descriptor
+        .fields()
+        .map(|f| (f.name().to_string(), f.number()))
+        .collect();
+
+    let extra: Vec<String> = consumer_schema
+        .message_descriptor
+        .fields()
+        .filter(|f| !queue_fields.contains_key(f.name()))
+        .map(|f| f.name().to_string())
+        .collect();
+
+    if !extra.is_empty() {
+        return Err(SchemaValidationError::ConsumerExtraFields { fields: extra });
+    }
+
+    Ok(())
+}
+
+/// Validates a JSON payload contains all fields defined in the proto schema
+/// and that each field's JSON type is compatible with its proto type.
+fn validate_json_fields(schema: &CompiledSchema, body: &[u8]) -> Result<(), SchemaValidationError> {
+    let text =
+        std::str::from_utf8(body).map_err(|e| SchemaValidationError::InvalidJson(e.to_string()))?;
+
+    let parsed: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| SchemaValidationError::InvalidJson(e.to_string()))?;
+
+    let obj = parsed.as_object().ok_or_else(|| {
+        SchemaValidationError::InvalidJson("expected a JSON object, got other type".into())
+    })?;
+
+    let missing: Vec<String> = schema
+        .message_descriptor
+        .fields()
+        .filter(|f| !obj.contains_key(f.name()))
+        .map(|f| f.name().to_string())
+        .collect();
+
+    if !missing.is_empty() {
+        return Err(SchemaValidationError::MissingFields { fields: missing });
+    }
+
+    // Type-check each field value against its proto kind.
+    let type_errors: Vec<String> = schema
+        .message_descriptor
+        .fields()
+        .filter_map(|f| {
+            let val = match obj.get(f.name()) {
+                Some(v) => v,
+                None => return None, // already caught by missing check
+            };
+            let mismatch = match f.kind() {
+                prost_reflect::Kind::String => !val.is_string(),
+                prost_reflect::Kind::Bool => !val.is_boolean(),
+                prost_reflect::Kind::Bytes => !val.is_string(),
+                // All numeric proto types must map to JSON number
+                prost_reflect::Kind::Int32
+                | prost_reflect::Kind::Int64
+                | prost_reflect::Kind::Uint32
+                | prost_reflect::Kind::Uint64
+                | prost_reflect::Kind::Sint32
+                | prost_reflect::Kind::Sint64
+                | prost_reflect::Kind::Fixed32
+                | prost_reflect::Kind::Fixed64
+                | prost_reflect::Kind::Sfixed32
+                | prost_reflect::Kind::Sfixed64
+                | prost_reflect::Kind::Float
+                | prost_reflect::Kind::Double => !val.is_number(),
+                // Enums accept both number and string in JSON
+                prost_reflect::Kind::Enum(_) => !val.is_number() && !val.is_string(),
+                // Nested messages must be JSON objects
+                prost_reflect::Kind::Message(_) => !val.is_object(),
+            };
+            if mismatch {
+                Some(format!(
+                    "{}: expected {:?}, got {}",
+                    f.name(),
+                    f.kind(),
+                    json_type_name(val)
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if !type_errors.is_empty() {
+        return Err(SchemaValidationError::TypeMismatch {
+            errors: type_errors,
+        });
+    }
+
+    Ok(())
+}
+
+/// Returns a human-readable name for a JSON value's type.
+fn json_type_name(val: &serde_json::Value) -> &'static str {
+    match val {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
+/// Validates a protobuf binary payload against the schema descriptor.
+fn validate_protobuf_fields(
+    schema: &CompiledSchema,
+    body: &[u8],
+) -> Result<(), SchemaValidationError> {
     let mut buf = body;
     let mut msg = DynamicMessage::decode(schema.message_descriptor.clone(), &mut buf)
         .map_err(|e| SchemaValidationError::DecodeFailed(e.to_string()))?;
@@ -169,5 +339,134 @@ mod tests {
             }
             _ => panic!("Expected TrailingBytes error"),
         }
+    }
+
+    #[test]
+    fn json_with_all_fields_passes() {
+        let compiled = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let body = br#"{"name":"Alice","age":30}"#;
+        assert!(validate_message(&compiled, body).is_ok());
+    }
+
+    #[test]
+    fn json_missing_field_returns_error() {
+        let compiled = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        // Missing "age" field
+        let body = br#"{"name":"Alice"}"#;
+        let err = validate_message(&compiled, body).unwrap_err();
+        match err {
+            SchemaValidationError::MissingFields { fields } => {
+                assert_eq!(fields, vec!["age"]);
+            }
+            other => panic!("Expected MissingFields, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn json_missing_all_fields_lists_them() {
+        let compiled = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let body = br#"{}"#;
+        let err = validate_message(&compiled, body).unwrap_err();
+        match err {
+            SchemaValidationError::MissingFields { fields } => {
+                assert!(fields.contains(&"name".to_string()));
+                assert!(fields.contains(&"age".to_string()));
+            }
+            other => panic!("Expected MissingFields, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn json_wrong_type_rejected() {
+        let compiled = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        // age is int32 but gets a string value
+        let body = br#"{"name":"Alice","age":"not-a-number"}"#;
+        let err = validate_message(&compiled, body).unwrap_err();
+        match err {
+            SchemaValidationError::TypeMismatch { errors } => {
+                assert_eq!(errors.len(), 1);
+                assert!(errors[0].contains("age"));
+                assert!(errors[0].contains("string"));
+            }
+            other => panic!("Expected TypeMismatch, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn json_number_for_string_field_rejected() {
+        let compiled = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        // name is string but gets a number
+        let body = br#"{"name":42,"age":30}"#;
+        let err = validate_message(&compiled, body).unwrap_err();
+        match err {
+            SchemaValidationError::TypeMismatch { errors } => {
+                assert!(errors[0].contains("name"));
+            }
+            other => panic!("Expected TypeMismatch, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn json_correct_types_pass() {
+        let compiled = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let body = br#"{"name":"Alice","age":30}"#;
+        assert!(validate_message(&compiled, body).is_ok());
+    }
+
+    const SUBSET_PROTO: &str = r#"
+        syntax = "proto3";
+        package mypackage;
+
+        message UserSubset {
+            string name = 1;
+        }
+    "#;
+
+    const SUPERSET_PROTO: &str = r#"
+        syntax = "proto3";
+        package mypackage;
+
+        message UserSuperset {
+            string name = 1;
+            int32 age = 2;
+            string email = 3;
+        }
+    "#;
+
+    #[test]
+    fn consumer_subset_passes() {
+        let queue = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let consumer = compile_proto(SUBSET_PROTO.as_bytes(), "mypackage.UserSubset").unwrap();
+        assert!(check_consumer_subset(&queue, &consumer).is_ok());
+    }
+
+    #[test]
+    fn consumer_exact_match_passes() {
+        let queue = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let consumer = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        assert!(check_consumer_subset(&queue, &consumer).is_ok());
+    }
+
+    #[test]
+    fn consumer_superset_rejected() {
+        let queue = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let consumer = compile_proto(SUPERSET_PROTO.as_bytes(), "mypackage.UserSuperset").unwrap();
+        let err = check_consumer_subset(&queue, &consumer).unwrap_err();
+        match err {
+            SchemaValidationError::ConsumerExtraFields { fields } => {
+                assert_eq!(fields, vec!["email"]);
+            }
+            other => panic!("Expected ConsumerExtraFields, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn consumer_extra_fields_display() {
+        let err = SchemaValidationError::ConsumerExtraFields {
+            fields: vec!["email".to_string(), "phone".to_string()],
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("email"));
+        assert!(msg.contains("phone"));
     }
 }
