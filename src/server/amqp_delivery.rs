@@ -76,27 +76,13 @@ async fn deliver_queue(
     queue: &mut crate::queue::state::QueueState,
     consumers: &[(String, u64, u16)],
 ) {
-    let n_consumers = consumers.len();
     let mut delivered = 0usize;
-    // Tracks consecutive consumers skipped due to prefetch limits.
-    // Breaks when we've cycled through all consumers without delivering,
-    // preventing a busy-spin that would starve the Tokio runtime.
-    let mut skipped = 0usize;
 
     while !queue.messages.is_empty() {
-        let idx = queue.next_listener % n_consumers;
-        queue.next_listener += 1;
-
+        let Some(idx) = next_ready_consumer(broker, queue, consumers) else {
+            break;
+        };
         let (ref consumer_tag, conn_id, channel) = consumers[idx];
-
-        if !has_prefetch_capacity(broker, conn_id, channel) {
-            skipped += 1;
-            if skipped >= n_consumers {
-                break;
-            }
-            continue;
-        }
-        skipped = 0;
 
         let q_msg = match queue.messages.pop_front() {
             Some(m) => m,
@@ -139,6 +125,25 @@ async fn deliver_queue(
             break;
         }
     }
+}
+
+/// Finds the next consumer with available prefetch capacity, advancing
+/// the round-robin pointer. Returns `None` when every consumer is saturated.
+fn next_ready_consumer(
+    broker: &Broker,
+    queue: &mut crate::queue::state::QueueState,
+    consumers: &[(String, u64, u16)],
+) -> Option<usize> {
+    let n = consumers.len();
+    for _ in 0..n {
+        let idx = queue.next_listener % n;
+        queue.next_listener += 1;
+        let (_, conn_id, channel) = &consumers[idx];
+        if has_prefetch_capacity(broker, *conn_id, *channel) {
+            return Some(idx);
+        }
+    }
+    None
 }
 
 /// Checks if a consumer's channel has room under its prefetch limit.
