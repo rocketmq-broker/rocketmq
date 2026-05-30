@@ -67,6 +67,7 @@ pub struct BrokerConfig {
     pub wal_compact_threshold: u64,
 
     // Cluster
+    pub cluster_enabled: bool,
     pub node_id: u64,
     pub cluster_addr: String,
     pub cluster_seeds: Vec<String>,
@@ -147,6 +148,12 @@ impl BrokerConfig {
             ),
 
             // ── Cluster ──────────────────────────────────────────
+            cluster_enabled: resolve_bool(
+                "ROCKETMQ_CLUSTER_ENABLED",
+                &file_values,
+                "cluster_enabled",
+                false,
+            ),
             node_id: resolve_u64("ROCKETMQ_NODE_ID", &file_values, "node_id", 1),
             cluster_addr: resolve_string(
                 "ROCKETMQ_CLUSTER_ADDR",
@@ -364,6 +371,21 @@ fn resolve_u16(
     default
 }
 
+fn resolve_bool(
+    env_key: &str,
+    file_values: &HashMap<String, String>,
+    conf_key: &str,
+    default: bool,
+) -> bool {
+    if let Ok(v) = std::env::var(env_key) {
+        return matches!(v.as_str(), "true" | "1" | "yes");
+    }
+    if let Some(v) = file_values.get(conf_key) {
+        return matches!(v.as_str(), "true" | "1" | "yes");
+    }
+    default
+}
+
 // ─── Public accessor functions (backwards-compatible API) ─────
 //
 // These replace the old `pub const` values and `pub fn` getters.
@@ -401,6 +423,10 @@ pub fn get_tls_key_path() -> String {
 
 pub fn get_node_id() -> u64 {
     config().node_id
+}
+
+pub fn get_cluster_enabled() -> bool {
+    config().cluster_enabled
 }
 
 pub fn get_cluster_addr() -> String {
