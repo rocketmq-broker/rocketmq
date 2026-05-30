@@ -69,30 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     storage::recover(&broker)?;
 
-    if get_cluster_enabled() {
-        let node_id = get_node_id();
-        let cluster_addr = get_cluster_addr();
-        let seed_nodes = get_cluster_seeds();
-
-        info!(
-            node_id,
-            cluster_addr,
-            ?seed_nodes,
-            "initializing cluster management"
-        );
-
-        let cluster_manager = Arc::new(cluster::ClusterCoordinator::new(
-            node_id,
-            cluster_addr.clone(),
-        ));
-        broker.set_cluster(cluster_manager.clone());
-
-        cluster::start_cluster_listener(broker.clone(), cluster_manager.clone(), cluster_addr)
-            .await?;
-        cluster::start_peer_connector(broker.clone(), cluster_manager.clone(), seed_nodes).await;
-    } else {
-        info!("running in single-node mode (cluster_enabled=false)");
-    }
+    cluster::init_if_enabled(&broker).await?;
 
     server::tasks::spawn_all(broker.clone());
 

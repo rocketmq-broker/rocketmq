@@ -31,6 +31,42 @@ pub use manager::*;
 pub use network::*;
 pub use protocol::*;
 
+use std::sync::Arc;
+use tracing::info;
+
+use crate::state::Broker;
+
+/// Initialises clustering when enabled in config, otherwise logs single-node mode.
+///
+/// ```ignore
+/// cluster::init_if_enabled(&broker).await?;
+/// ```
+pub async fn init_if_enabled(broker: &Broker) -> Result<(), Box<dyn std::error::Error>> {
+    if !crate::config::get_cluster_enabled() {
+        info!("running in single-node mode (cluster_enabled=false)");
+        return Ok(());
+    }
+
+    let node_id = crate::config::get_node_id();
+    let cluster_addr = crate::config::get_cluster_addr();
+    let seed_nodes = crate::config::get_cluster_seeds();
+
+    info!(
+        node_id,
+        cluster_addr,
+        ?seed_nodes,
+        "initializing cluster management"
+    );
+
+    let coordinator = Arc::new(ClusterCoordinator::new(node_id, cluster_addr.clone()));
+    broker.set_cluster(coordinator.clone());
+
+    start_cluster_listener(broker.clone(), coordinator.clone(), cluster_addr).await?;
+    start_peer_connector(broker.clone(), coordinator, seed_nodes).await;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
