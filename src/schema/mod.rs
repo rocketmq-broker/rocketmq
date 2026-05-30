@@ -17,7 +17,9 @@
 // File: mod.rs
 // Description: Core schema registry, compilation pipeline, and validation entrypoints.
 
+pub mod registry;
 pub mod validate;
+pub mod wire;
 
 use prost::Message;
 use prost_reflect::{DescriptorPool, MessageDescriptor};
@@ -116,6 +118,7 @@ pub fn compile_proto(
         .map_err(|e| SchemaCompileError::InvalidProto(e.to_string()))?;
 
     let schema_id = alloc_schema_id();
+    // TODO: use os tmp folder
     let temp_filename = format!("target/temp_schema_{}.proto", schema_id);
     let temp_path = std::path::Path::new(&temp_filename);
 
