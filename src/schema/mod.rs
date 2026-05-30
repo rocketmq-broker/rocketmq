@@ -118,22 +118,18 @@ pub fn compile_proto(
         .map_err(|e| SchemaCompileError::InvalidProto(e.to_string()))?;
 
     let schema_id = alloc_schema_id();
-    // TODO: use os tmp folder
-    let temp_filename = format!("target/temp_schema_{}.proto", schema_id);
-    let temp_path = std::path::Path::new(&temp_filename);
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("rocketmq_schema_{}.proto", schema_id));
 
-    if let Some(parent) = temp_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    std::fs::write(temp_path, proto_str).map_err(|e| {
+    std::fs::write(&temp_path, proto_str).map_err(|e| {
         SchemaCompileError::CompilationFailed(format!(
-            "Failed to write temporary proto file: {}",
+            "Failed to write temporary proto file to '{}': {}",
+            temp_path.display(),
             e
         ))
     })?;
 
-    let file_descriptor_set_res = protox::compile([temp_path], ["target", "."]);
+    let file_descriptor_set_res = protox::compile([&temp_path], [temp_dir.as_path(), ".".as_ref()]);
 
     let _ = std::fs::remove_file(temp_path);
 
