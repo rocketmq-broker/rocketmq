@@ -243,6 +243,38 @@ pub async fn serve(broker: Broker) -> Result<(), Box<dyn std::error::Error>> {
             put(stub_no_content).delete(stub_no_content),
         )
         .route("/api/connections/{name}/sessions", get(stub_empty_array))
+        // ─── Schema Registry ─────────────────────────────
+        .route("/api/schemas", get(routes::schemas::list_schemas))
+        .route(
+            "/api/schemas/ids/{id}",
+            get(routes::schemas::get_schema_by_id),
+        )
+        .route("/api/schemas/subjects", get(routes::schemas::list_subjects))
+        .route(
+            "/api/schemas/subjects/{subject}/versions",
+            get(routes::schemas::list_subject_versions).post(routes::schemas::register_schema),
+        )
+        .route(
+            "/api/schemas/subjects/{subject}/versions/{version}",
+            get(routes::schemas::get_subject_version)
+                .delete(routes::schemas::delete_subject_version),
+        )
+        .route(
+            "/api/schemas/subjects/{subject}",
+            delete(routes::schemas::delete_subject),
+        )
+        .route(
+            "/api/schemas/subjects/{subject}/compatibility",
+            post(routes::schemas::check_compatibility),
+        )
+        .route(
+            "/api/schemas/config",
+            get(routes::schemas::get_global_config).put(routes::schemas::set_global_config),
+        )
+        .route(
+            "/api/schemas/config/{subject}",
+            get(routes::schemas::get_subject_config).put(routes::schemas::set_subject_config),
+        )
         .route("/api/metrics", get(prometheus_metrics))
         .layer(axum::middleware::from_fn_with_state(
             broker.clone(),
