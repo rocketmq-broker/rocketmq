@@ -64,118 +64,145 @@ async fn deliver_round(broker: &Broker) {
             continue;
         }
 
-        let n_consumers = consumers.len();
-        let mut delivered = 0usize;
+        deliver_queue(broker, queue_name, queue, &consumers).await;
+    }
+}
 
-        while !queue.messages.is_empty() {
-            let idx = queue.next_listener % n_consumers;
-            queue.next_listener += 1;
+/// Delivers messages from a single queue to its consumers in round-robin order.
+/// Caps at 100 deliveries per pass to avoid starving other queues.
+async fn deliver_queue(
+    broker: &Broker,
+    queue_name: &str,
+    queue: &mut crate::queue::state::QueueState,
+    consumers: &[(String, u64, u16)],
+) {
+    let n_consumers = consumers.len();
+    let mut delivered = 0usize;
 
-            let (ref consumer_tag, conn_id, channel) = consumers[idx];
+    while !queue.messages.is_empty() {
+        let idx = queue.next_listener % n_consumers;
+        queue.next_listener += 1;
 
-            let prefetch_ok = broker.conn_state.get(&conn_id).is_none_or(|cs| {
-                cs.channels
-                    .get(&channel)
-                    .is_none_or(|ch| ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count)
-            });
+        let (ref consumer_tag, conn_id, channel) = consumers[idx];
 
-            if !prefetch_ok {
-                if delivered == 0 {
-                    break;
-                }
-                continue;
-            }
-
-            let q_msg = match queue.messages.pop_front() {
-                Some(m) => m,
-                None => break,
-            };
-            let msg = match q_msg.resolve(broker.wal()) {
-                Ok(m) => m,
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to resolve message payload from segments");
-                    continue;
-                }
-            };
-
-            let delivery_tag = msg.id;
-
-            let properties = if msg.headers.is_empty() {
-                BasicProperties::default()
-            } else {
-                let mut cursor = std::io::Cursor::new(&msg.headers);
-                BasicProperties::decode(&mut cursor).unwrap_or_default()
-            };
-
-            let deliver_args = build_deliver_args(
-                consumer_tag,
-                delivery_tag,
-                msg.redelivered,
-                &msg.exchange,
-                &msg.routing_key,
-            );
-            let method_frame =
-                encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_DELIVER, &deliver_args);
-            let header_frame =
-                encode_content_header(channel, CLASS_BASIC, msg.body.len() as u64, &properties);
-
-            let mut combined =
-                Vec::with_capacity(method_frame.len() + header_frame.len() + msg.body.len() + 16);
-            combined.extend_from_slice(&method_frame);
-            combined.extend_from_slice(&header_frame);
-            if !msg.body.is_empty() {
-                let body_frame = encode_body_frame(channel, &msg.body);
-                combined.extend_from_slice(&body_frame);
-            }
-
-            queue.inflight.insert(delivery_tag, msg);
-            queue.last_activity = Instant::now();
-
-            if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-                && let Some(ch) = cs.channels.get_mut(&channel)
-            {
-                ch.unacked_count += 1;
-            }
-
-            if let Some(handle) = broker.connections.get(&conn_id) {
-                if handle.amqp_tx.try_send(combined).is_err() {
-                    if let Some(msg) = queue.inflight.remove(&delivery_tag) {
-                        queue
-                            .messages
-                            .push_front(crate::queue::message::QueueMessage::Full(msg));
-                    }
-                    warn!(conn_id, delivery_tag, "delivery channel full, requeued");
-                    break;
-                }
-                delivered += 1;
-                queue.stat_delivered += 1;
-                crate::metrics::record_delivered(queue_name);
-                debug!(
-                    conn_id,
-                    channel,
-                    delivery_tag,
-                    consumer_tag = consumer_tag.as_str(),
-                    queue = queue_name.as_str(),
-                    "delivered via AMQP"
-                );
-            } else {
-                if let Some(msg) = queue.inflight.remove(&delivery_tag) {
-                    queue
-                        .messages
-                        .push_front(crate::queue::message::QueueMessage::Full(msg));
-                }
-                warn!(
-                    conn_id,
-                    consumer_tag = consumer_tag.as_str(),
-                    "dead consumer, requeued"
-                );
-                continue;
-            }
-
-            if delivered >= 100 {
+        if !has_prefetch_capacity(broker, conn_id, channel) {
+            if delivered == 0 {
                 break;
             }
+            continue;
         }
+
+        let q_msg = match queue.messages.pop_front() {
+            Some(m) => m,
+            None => break,
+        };
+        let msg = match q_msg.resolve(broker.wal()) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to resolve message payload from segments");
+                continue;
+            }
+        };
+
+        let delivery_tag = msg.id;
+        let frames = encode_delivery_frames(channel, consumer_tag, &msg);
+
+        queue.inflight.insert(delivery_tag, msg);
+        queue.last_activity = Instant::now();
+        increment_unacked(broker, conn_id, channel);
+
+        if !try_send_delivery(broker, conn_id, &frames) {
+            requeue_inflight(queue, delivery_tag);
+            warn!(conn_id, delivery_tag, "delivery channel full, requeued");
+            break;
+        }
+
+        delivered += 1;
+        queue.stat_delivered += 1;
+        crate::metrics::record_delivered(queue_name);
+        debug!(
+            conn_id,
+            channel,
+            delivery_tag,
+            consumer_tag = consumer_tag.as_str(),
+            queue = queue_name,
+            "delivered via AMQP"
+        );
+
+        if delivered >= 100 {
+            break;
+        }
+    }
+}
+
+/// Checks if a consumer's channel has room under its prefetch limit.
+fn has_prefetch_capacity(broker: &Broker, conn_id: u64, channel: u16) -> bool {
+    broker.conn_state.get(&conn_id).is_none_or(|cs| {
+        cs.channels
+            .get(&channel)
+            .is_none_or(|ch| ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count)
+    })
+}
+
+/// Encodes the full Basic.Deliver frame set (method + header + body).
+fn encode_delivery_frames(
+    channel: u16,
+    consumer_tag: &str,
+    msg: &crate::queue::Message,
+) -> Vec<u8> {
+    let properties = if msg.headers.is_empty() {
+        BasicProperties::default()
+    } else {
+        let mut cursor = std::io::Cursor::new(&msg.headers);
+        BasicProperties::decode(&mut cursor).unwrap_or_default()
+    };
+
+    let deliver_args = build_deliver_args(
+        consumer_tag,
+        msg.id,
+        msg.redelivered,
+        &msg.exchange,
+        &msg.routing_key,
+    );
+    let method_frame =
+        encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_DELIVER, &deliver_args);
+    let header_frame =
+        encode_content_header(channel, CLASS_BASIC, msg.body.len() as u64, &properties);
+
+    let mut combined =
+        Vec::with_capacity(method_frame.len() + header_frame.len() + msg.body.len() + 16);
+    combined.extend_from_slice(&method_frame);
+    combined.extend_from_slice(&header_frame);
+    if !msg.body.is_empty() {
+        let body_frame = encode_body_frame(channel, &msg.body);
+        combined.extend_from_slice(&body_frame);
+    }
+    combined
+}
+
+/// Bumps the unacked counter on the consumer's channel state.
+fn increment_unacked(broker: &Broker, conn_id: u64, channel: u16) {
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
+        && let Some(ch) = cs.channels.get_mut(&channel)
+    {
+        ch.unacked_count += 1;
+    }
+}
+
+/// Attempts to send frames to the connection. Returns false if the channel is full.
+fn try_send_delivery(broker: &Broker, conn_id: u64, frames: &[u8]) -> bool {
+    let Some(handle) = broker.connections.get(&conn_id) else {
+        return false;
+    };
+    handle.amqp_tx.try_send(frames.to_vec()).is_ok()
+}
+
+/// Moves a message from inflight back to the front of the queue.
+fn requeue_inflight(queue: &mut crate::queue::state::QueueState, delivery_tag: u64) {
+    if let Some(msg) = queue.inflight.remove(&delivery_tag) {
+        queue
+            .messages
+            .push_front(crate::queue::message::QueueMessage::Full(msg));
     }
 }
 

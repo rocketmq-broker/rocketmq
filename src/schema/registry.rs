@@ -379,26 +379,22 @@ fn check_backward(
     new: &MessageDescriptor,
 ) -> Result<(), SchemaRegistryError> {
     for old_field in old.fields() {
-        let new_field = new.get_field(old_field.number());
-        match new_field {
-            Some(nf) => {
-                if old_field.kind() != nf.kind() {
-                    return Err(SchemaRegistryError::IncompatibleSchema(format!(
-                        "Field '{}' (number {}) changed type from {:?} to {:?}",
-                        old_field.name(),
-                        old_field.number(),
-                        old_field.kind(),
-                        nf.kind(),
-                    )));
-                }
-            }
-            None => {
-                return Err(SchemaRegistryError::IncompatibleSchema(format!(
-                    "Field '{}' (number {}) was removed",
-                    old_field.name(),
-                    old_field.number(),
-                )));
-            }
+        let Some(new_field) = new.get_field(old_field.number()) else {
+            return Err(SchemaRegistryError::IncompatibleSchema(format!(
+                "Field '{}' (number {}) was removed",
+                old_field.name(),
+                old_field.number(),
+            )));
+        };
+
+        if old_field.kind() != new_field.kind() {
+            return Err(SchemaRegistryError::IncompatibleSchema(format!(
+                "Field '{}' (number {}) changed type from {:?} to {:?}",
+                old_field.name(),
+                old_field.number(),
+                old_field.kind(),
+                new_field.kind(),
+            )));
         }
     }
     Ok(())

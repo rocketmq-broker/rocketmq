@@ -11,7 +11,6 @@ use crate::state::Broker;
 // ─── Overview & Nodes ──────────────────────────────────
 
 /// Provides an overview of the broker status, object counts, and message rates.
-/// Provides an overview of the broker status, object counts, and message rates.
 pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
     let queue_count = broker.queues.len();
     let connection_count = broker.connections.len();
@@ -186,16 +185,9 @@ pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
 }
 
 /// Lists all nodes in the cluster with memory, disk, and socket statistics.
-/// Lists all nodes in the cluster with memory, disk, and socket statistics.
 pub async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
     let connection_count = broker.connections.len();
-    let start_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
     let local_node_id = crate::config::get_node_id();
-
-    let mut nodes = Vec::new();
 
     let apps = vec![serde_json::json!({
         "name": "rabbit",
@@ -203,129 +195,120 @@ pub async fn list_nodes(State(broker): State<Broker>) -> Json<Vec<NodeInfo>> {
         "description": "RabbitMQ compatibility layer"
     })];
 
+    let mut nodes = Vec::new();
+
     if let Some(cluster_mgr) = broker.cluster() {
         let members = cluster_mgr.members.read().await;
         for (&node_id, member) in members.iter() {
             let is_self = node_id == local_node_id;
-            let name = format!("rocketmq-node-{}@localhost", node_id);
-
-            nodes.push(NodeInfo {
-                name,
-                running: member.is_active,
-                node_type: "disc".into(),
-                mem_used: if is_self {
-                    get_process_memory()
-                } else {
-                    125 * 1024 * 1024
-                },
-                mem_limit: 4 * 1024 * 1024 * 1024,
-                mem_alarm: false,
-                disk_free: if is_self {
-                    get_disk_free()
-                } else {
-                    120 * 1024 * 1024 * 1024
-                },
-                disk_free_limit: 50 * 1024 * 1024,
-                disk_free_alarm: false,
-                fd_used: if is_self {
-                    connection_count as u64 + 10
-                } else {
-                    10
-                },
-                fd_total: 65536,
-                sockets_used: if is_self { connection_count as u64 } else { 0 },
-                sockets_total: 65536,
-                uptime: if is_self {
-                    start_time.saturating_sub(broker.start_time_ms())
-                } else {
-                    start_time.saturating_sub(member.last_seen)
-                },
-                processors: num_cpus(),
-                os_pid: if is_self {
-                    std::process::id().to_string()
-                } else {
-                    "-".into()
-                },
-                applications: apps.clone(),
-                proc_used: 10,
-                proc_total: 1048576,
-                rates_mode: "basic".into(),
-                config_files: vec![],
-                enabled_plugins: vec!["rabbitmq_management".to_string()],
-                mem_calculation_strategy: "rss".into(),
-                being_drained: false,
-                db_dir: "data/mnesia".into(),
-                log_files: vec!["data/log/rocketmq.log".into()],
-                log_file: "data/log/rocketmq.log".into(),
-                cluster_links: vec![],
-                net_ticktime: 60,
-                run_queue: 1,
-                metrics_gc_queue_length: serde_json::json!({}),
-                ra_open_file_metrics: serde_json::json!({}),
-                exchange_types: vec![
-                    serde_json::json!({"name": "direct", "description": "Direct exchange", "enabled": true}),
-                    serde_json::json!({"name": "fanout", "description": "Fanout exchange", "enabled": true}),
-                    serde_json::json!({"name": "topic", "description": "Topic exchange", "enabled": true}),
-                    serde_json::json!({"name": "headers", "description": "Headers exchange", "enabled": true}),
-                ],
-                auth_mechanisms: vec![
-                    serde_json::json!({"name": "PLAIN", "description": "SASL PLAIN authentication", "enabled": true}),
-                    serde_json::json!({"name": "AMQPLAIN", "description": "AMQPLAIN authentication", "enabled": true}),
-                ],
-            });
+            nodes.push(build_node_info(
+                node_id,
+                &broker,
+                connection_count,
+                is_self,
+                member.is_active,
+                member.last_seen,
+                &apps,
+            ));
         }
     }
 
     if nodes.is_empty() {
-        nodes.push(NodeInfo {
-            name: format!("rocketmq-node-{}@localhost", local_node_id),
-            running: true,
-            node_type: "disc".into(),
-            mem_used: get_process_memory(),
-            mem_limit: 4 * 1024 * 1024 * 1024,
-            mem_alarm: false,
-            disk_free: get_disk_free(),
-            disk_free_limit: 50 * 1024 * 1024,
-            disk_free_alarm: false,
-            fd_used: connection_count as u64 + 10,
-            fd_total: 65536,
-            sockets_used: connection_count as u64,
-            sockets_total: 65536,
-            uptime: start_time.saturating_sub(broker.start_time_ms()),
-            processors: num_cpus(),
-            os_pid: std::process::id().to_string(),
-            applications: apps.clone(),
-            proc_used: 10,
-            proc_total: 1048576,
-            rates_mode: "basic".into(),
-            config_files: vec![],
-            enabled_plugins: vec!["rabbitmq_management".to_string()],
-            mem_calculation_strategy: "rss".into(),
-            being_drained: false,
-            db_dir: "data/mnesia".into(),
-            log_files: vec!["data/log/rocketmq.log".into()],
-            log_file: "data/log/rocketmq.log".into(),
-            cluster_links: vec![],
-            net_ticktime: 60,
-            run_queue: 1,
-            metrics_gc_queue_length: serde_json::json!({}),
-            ra_open_file_metrics: serde_json::json!({}),
-            exchange_types: vec![
-                serde_json::json!({"name": "direct", "description": "Direct exchange", "enabled": true}),
-                serde_json::json!({"name": "fanout", "description": "Fanout exchange", "enabled": true}),
-                serde_json::json!({"name": "topic", "description": "Topic exchange", "enabled": true}),
-                serde_json::json!({"name": "headers", "description": "Headers exchange", "enabled": true}),
-            ],
-            auth_mechanisms: vec![
-                serde_json::json!({"name": "PLAIN", "description": "SASL PLAIN authentication", "enabled": true}),
-                serde_json::json!({"name": "AMQPLAIN", "description": "AMQPLAIN authentication", "enabled": true}),
-            ],
-        });
+        nodes.push(build_node_info(
+            local_node_id,
+            &broker,
+            connection_count,
+            true,
+            true,
+            0,
+            &apps,
+        ));
     }
 
     nodes.sort_by(|a, b| a.name.cmp(&b.name));
-
     Json(nodes)
+}
+
+/// Constructs a NodeInfo for a single node.
+/// When `is_self` is true, metrics come from the local process; otherwise, stubs.
+fn build_node_info(
+    node_id: u64,
+    broker: &Broker,
+    connection_count: usize,
+    is_self: bool,
+    running: bool,
+    last_seen: u64,
+    apps: &[serde_json::Value],
+) -> NodeInfo {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let (mem_used, disk_free, fd_used, sockets_used, uptime, os_pid) = if is_self {
+        (
+            get_process_memory(),
+            get_disk_free(),
+            connection_count as u64 + 10,
+            connection_count as u64,
+            now_ms.saturating_sub(broker.start_time_ms()),
+            std::process::id().to_string(),
+        )
+    } else {
+        (
+            125 * 1024 * 1024,
+            120 * 1024 * 1024 * 1024,
+            10,
+            0,
+            now_ms.saturating_sub(last_seen),
+            "-".into(),
+        )
+    };
+
+    NodeInfo {
+        name: format!("rocketmq-node-{}@localhost", node_id),
+        running,
+        node_type: "disc".into(),
+        mem_used,
+        mem_limit: 4 * 1024 * 1024 * 1024,
+        mem_alarm: false,
+        disk_free,
+        disk_free_limit: 50 * 1024 * 1024,
+        disk_free_alarm: false,
+        fd_used,
+        fd_total: 65536,
+        sockets_used,
+        sockets_total: 65536,
+        uptime,
+        processors: num_cpus(),
+        os_pid,
+        applications: apps.to_vec(),
+        proc_used: 10,
+        proc_total: 1048576,
+        rates_mode: "basic".into(),
+        config_files: vec![],
+        enabled_plugins: vec!["rabbitmq_management".to_string()],
+        mem_calculation_strategy: "rss".into(),
+        being_drained: false,
+        db_dir: "data/mnesia".into(),
+        log_files: vec!["data/log/rocketmq.log".into()],
+        log_file: "data/log/rocketmq.log".into(),
+        cluster_links: vec![],
+        net_ticktime: 60,
+        run_queue: 1,
+        metrics_gc_queue_length: serde_json::json!({}),
+        ra_open_file_metrics: serde_json::json!({}),
+        exchange_types: vec![
+            serde_json::json!({"name": "direct", "description": "Direct exchange", "enabled": true}),
+            serde_json::json!({"name": "fanout", "description": "Fanout exchange", "enabled": true}),
+            serde_json::json!({"name": "topic", "description": "Topic exchange", "enabled": true}),
+            serde_json::json!({"name": "headers", "description": "Headers exchange", "enabled": true}),
+        ],
+        auth_mechanisms: vec![
+            serde_json::json!({"name": "PLAIN", "description": "SASL PLAIN authentication", "enabled": true}),
+            serde_json::json!({"name": "AMQPLAIN", "description": "AMQPLAIN authentication", "enabled": true}),
+        ],
+    }
 }
 
 pub async fn get_node(
