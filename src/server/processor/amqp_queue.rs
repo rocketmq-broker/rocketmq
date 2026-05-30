@@ -142,6 +142,9 @@ pub async fn handle_declare(
     if let Some(FieldValue::LongString(v)) = arguments.get("x-schema-message") {
         opts.schema_message = Some(String::from_utf8_lossy(v).to_string());
     }
+    if let Some(FieldValue::LongString(v)) = arguments.get("x-schema-subject") {
+        opts.schema_subject = Some(String::from_utf8_lossy(v).to_string());
+    }
 
     if let Some(existing) = broker.queues.get(&name)
         && let Some(ref existing_schema) = existing.schema
@@ -226,12 +229,14 @@ pub async fn handle_declare(
     }
 
     let is_new = !broker.queues.contains_key(&name);
+    let schema_subject = opts.schema_subject.clone();
     broker.queues.entry(name.clone()).or_insert_with(|| {
         let mut q = QueueState::with_options(opts);
         if exclusive {
             q.owner_conn_id = Some(conn_id);
         }
         q.schema = compiled_schema.clone();
+        q.schema_subject = schema_subject;
         q
     });
 

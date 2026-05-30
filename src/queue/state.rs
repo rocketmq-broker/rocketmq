@@ -139,6 +139,8 @@ pub struct QueueState {
     pub stat_delivered: u64,
     pub stat_acked: u64,
     pub schema: Option<Arc<CompiledSchema>>,
+    /// Registry subject name for wire-format schema validation.
+    pub schema_subject: Option<String>,
 }
 
 impl QueueState {
@@ -168,6 +170,7 @@ impl QueueState {
             stat_delivered: 0,
             stat_acked: 0,
             schema: None,
+            schema_subject: None,
         }
     }
 
