@@ -78,6 +78,10 @@ async fn deliver_queue(
 ) {
     let n_consumers = consumers.len();
     let mut delivered = 0usize;
+    // Tracks consecutive consumers skipped due to prefetch limits.
+    // Breaks when we've cycled through all consumers without delivering,
+    // preventing a busy-spin that would starve the Tokio runtime.
+    let mut skipped = 0usize;
 
     while !queue.messages.is_empty() {
         let idx = queue.next_listener % n_consumers;
@@ -86,11 +90,13 @@ async fn deliver_queue(
         let (ref consumer_tag, conn_id, channel) = consumers[idx];
 
         if !has_prefetch_capacity(broker, conn_id, channel) {
-            if delivered == 0 {
+            skipped += 1;
+            if skipped >= n_consumers {
                 break;
             }
             continue;
         }
+        skipped = 0;
 
         let q_msg = match queue.messages.pop_front() {
             Some(m) => m,
