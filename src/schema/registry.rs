@@ -149,7 +149,10 @@ impl SchemaRegistry {
 
         let compat = self.effective_compat(subject);
         if compat != CompatibilityLevel::None {
-            self.check_compat(subject, &compiled.message_descriptor, compat)?;
+            if let Err(e) = self.check_compat(subject, &compiled.message_descriptor, compat) {
+                crate::metrics::record_schema_compat_failure(subject);
+                return Err(e);
+            }
         }
 
         let id = alloc_id();
@@ -172,6 +175,7 @@ impl SchemaRegistry {
             .or_default()
             .push(entry);
 
+        crate::metrics::record_schema_registered(subject);
         Ok(id)
     }
 
@@ -207,6 +211,7 @@ impl SchemaRegistry {
     // ─── Lookups ──────────────────────────────────────
 
     pub fn get_by_id(&self, id: u64) -> Option<SchemaEntry> {
+        crate::metrics::record_schema_lookup();
         self.by_id.get(&id).map(|e| e.value().clone())
     }
 

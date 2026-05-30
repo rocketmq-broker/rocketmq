@@ -28,6 +28,9 @@ static QUEUES_DECLARED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_CREATED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_DELETED: OnceLock<Counter<u64>> = OnceLock::new();
 static SCHEMA_FAILURES: OnceLock<Counter<u64>> = OnceLock::new();
+static SCHEMAS_REGISTERED: OnceLock<Counter<u64>> = OnceLock::new();
+static SCHEMA_LOOKUPS: OnceLock<Counter<u64>> = OnceLock::new();
+static SCHEMA_COMPAT_FAILURES: OnceLock<Counter<u64>> = OnceLock::new();
 
 // ─── Lazy Accessors ──────────────────────────────────
 
@@ -139,6 +142,33 @@ fn schema_failures() -> &'static Counter<u64> {
     })
 }
 
+fn schemas_registered() -> &'static Counter<u64> {
+    SCHEMAS_REGISTERED.get_or_init(|| {
+        global::meter(METER_NAME)
+            .u64_counter("schema_registry_registered")
+            .with_description("Total schemas registered in the registry")
+            .build()
+    })
+}
+
+fn schema_lookups() -> &'static Counter<u64> {
+    SCHEMA_LOOKUPS.get_or_init(|| {
+        global::meter(METER_NAME)
+            .u64_counter("schema_registry_lookups")
+            .with_description("Total schema lookups by ID")
+            .build()
+    })
+}
+
+fn schema_compat_failures() -> &'static Counter<u64> {
+    SCHEMA_COMPAT_FAILURES.get_or_init(|| {
+        global::meter(METER_NAME)
+            .u64_counter("schema_registry_compatibility_failures")
+            .with_description("Schema registrations rejected by compatibility checks")
+            .build()
+    })
+}
+
 /// Force-initializes every counter so Prometheus shows them at zero.
 pub fn register_all() {
     msgs_published();
@@ -153,6 +183,9 @@ pub fn register_all() {
     queues_created();
     queues_deleted();
     schema_failures();
+    schemas_registered();
+    schema_lookups();
+    schema_compat_failures();
 }
 
 // ─── Public Recording API ────────────────────────────
@@ -215,6 +248,21 @@ pub fn record_queue_deleted() {
 #[inline]
 pub fn record_schema_validation_failed(queue: &str) {
     schema_failures().add(1, &[KeyValue::new("queue", queue.to_string())]);
+}
+
+#[inline]
+pub fn record_schema_registered(subject: &str) {
+    schemas_registered().add(1, &[KeyValue::new("subject", subject.to_string())]);
+}
+
+#[inline]
+pub fn record_schema_lookup() {
+    schema_lookups().add(1, &[]);
+}
+
+#[inline]
+pub fn record_schema_compat_failure(subject: &str) {
+    schema_compat_failures().add(1, &[KeyValue::new("subject", subject.to_string())]);
 }
 
 // ─── Counter Value Reader ────────────────────────────
