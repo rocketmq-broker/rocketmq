@@ -6,4 +6,5 @@ rabbitmq-server/data/tls/
 rabbitmq-server/
 logs/
 tsconfig.tsbuildinfo
-client/
+client/node_modules/
+client/bun.lock
