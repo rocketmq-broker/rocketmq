@@ -138,6 +138,65 @@ pub async fn process_tx_commit(
                 return;
             }
         }
+
+        // Registry-based validation for transactional publishes.
+        if let PendingOp::Publish {
+            routing_key, body, ..
+        } = op
+            && let Some(queue_ref) = broker.queues.get(routing_key.as_str())
+            && let Some(ref subject) = queue_ref.schema_subject
+        {
+            if let Some((schema_id, payload)) = crate::schema::wire::decode_prefix(body) {
+                let valid = broker
+                    .schema_registry
+                    .get_by_id(schema_id as u64)
+                    .filter(|e| e.subject == *subject)
+                    .map(|e| crate::schema::validate::validate_message(&e.compiled, payload));
+
+                match valid {
+                    Some(Ok(())) => {}
+                    Some(Err(err)) => {
+                        warn!(
+                            conn_id,
+                            queue = routing_key.as_str(),
+                            "tx registry schema validation failed: {}",
+                            err
+                        );
+                        send_channel_error(
+                            writer,
+                            channel,
+                            PRECONDITION_FAILED,
+                            &format!(
+                                "PRECONDITION_FAILED - tx registry schema validation failed: {}",
+                                err
+                            ),
+                            CLASS_TX,
+                            METHOD_TX_COMMIT,
+                        )
+                        .await;
+                        return;
+                    }
+                    None => {
+                        send_channel_error(writer, channel, PRECONDITION_FAILED, &format!("PRECONDITION_FAILED - schema ID {} not found or wrong subject '{}'", schema_id, subject), CLASS_TX, METHOD_TX_COMMIT).await;
+                        return;
+                    }
+                }
+            } else {
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &format!(
+                        "PRECONDITION_FAILED - missing wire prefix for registry queue '{}'",
+                        routing_key
+                    ),
+                    CLASS_TX,
+                    METHOD_TX_COMMIT,
+                )
+                .await;
+                return;
+            }
+        }
     }
 
     for op in &ops {
