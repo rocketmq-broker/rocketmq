@@ -36,19 +36,14 @@ pub fn advance_id_counter(min_next: u64) {
 /// - `FORWARD` — previous schema can read data written by the new version
 /// - `FULL` — both backward and forward
 /// - `NONE` — no compatibility check
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum CompatibilityLevel {
     None,
+    #[default]
     Backward,
     Forward,
     Full,
-}
-
-impl Default for CompatibilityLevel {
-    fn default() -> Self {
-        Self::Backward
-    }
 }
 
 // ─── Schema Entry ─────────────────────────────────────
@@ -117,6 +112,12 @@ pub struct SchemaRegistry {
     subject_compat: DashMap<String, CompatibilityLevel>,
 }
 
+impl Default for SchemaRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SchemaRegistry {
     pub fn new() -> Self {
         Self {
@@ -148,11 +149,11 @@ impl SchemaRegistry {
             .map_err(SchemaRegistryError::CompileError)?;
 
         let compat = self.effective_compat(subject);
-        if compat != CompatibilityLevel::None {
-            if let Err(e) = self.check_compat(subject, &compiled.message_descriptor, compat) {
-                crate::metrics::record_schema_compat_failure(subject);
-                return Err(e);
-            }
+        if compat != CompatibilityLevel::None
+            && let Err(e) = self.check_compat(subject, &compiled.message_descriptor, compat)
+        {
+            crate::metrics::record_schema_compat_failure(subject);
+            return Err(e);
         }
 
         let id = alloc_id();
@@ -277,14 +278,14 @@ impl SchemaRegistry {
 
     /// Soft-deletes a specific version.
     pub fn delete_version(&self, subject: &str, version: u32) -> bool {
-        if let Some(mut versions) = self.by_subject.get_mut(subject) {
-            if let Some(entry) = versions.iter_mut().find(|v| v.version == version) {
-                entry.deleted = true;
-                if let Some(mut by_id) = self.by_id.get_mut(&entry.id) {
-                    by_id.deleted = true;
-                }
-                return true;
+        if let Some(mut versions) = self.by_subject.get_mut(subject)
+            && let Some(entry) = versions.iter_mut().find(|v| v.version == version)
+        {
+            entry.deleted = true;
+            if let Some(mut by_id) = self.by_id.get_mut(&entry.id) {
+                by_id.deleted = true;
             }
+            return true;
         }
         false
     }

@@ -255,34 +255,33 @@ pub async fn handle_publish(
         // carry a Confluent wire prefix [0x00, schema_id_be32, payload...].
         if let Some(queue_ref) = broker.queues.get(queue_name.as_str())
             && let Some(ref subject) = queue_ref.schema_subject
+            && let Err(err) = validate_registry_schema(broker, subject, body)
         {
-            if let Err(err) = validate_registry_schema(broker, subject, body) {
-                warn!(
-                    conn_id,
-                    queue = queue_name.as_str(),
-                    subject = subject.as_str(),
-                    "registry schema validation failed: {}",
-                    err
-                );
-                crate::metrics::record_schema_validation_failed(queue_name);
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &format!(
-                        "PRECONDITION_FAILED - registry schema validation failed for queue '{}': {}",
-                        queue_name, err
-                    ),
-                    CLASS_BASIC,
-                    METHOD_BASIC_PUBLISH,
-                )
-                .await;
+            warn!(
+                conn_id,
+                queue = queue_name.as_str(),
+                subject = subject.as_str(),
+                "registry schema validation failed: {}",
+                err
+            );
+            crate::metrics::record_schema_validation_failed(queue_name);
+            send_channel_error(
+                writer,
+                channel,
+                PRECONDITION_FAILED,
+                &format!(
+                    "PRECONDITION_FAILED - registry schema validation failed for queue '{}': {}",
+                    queue_name, err
+                ),
+                CLASS_BASIC,
+                METHOD_BASIC_PUBLISH,
+            )
+            .await;
 
-                if let Some(tag) = confirm_tag {
-                    send_confirm_nack(channel, tag, writer).await;
-                }
-                return;
+            if let Some(tag) = confirm_tag {
+                send_confirm_nack(channel, tag, writer).await;
             }
+            return;
         }
     }
 
