@@ -287,21 +287,22 @@ pub struct CounterSnapshot {
 /// registry. Returns zeros if the registry hasn't been initialized.
 pub fn read_all() -> CounterSnapshot {
     let families = super::get_registry().gather();
+    // OTel Prometheus exporter appends "_total" to counter names.
     CounterSnapshot {
-        messages_published: read_counter_value(&families, "amqp_messages_published"),
-        messages_delivered: read_counter_value(&families, "amqp_messages_delivered"),
-        messages_acked: read_counter_value(&families, "amqp_messages_acked"),
-        messages_nacked: read_counter_value(&families, "amqp_messages_nacked"),
-        connections_opened: read_counter_value(&families, "amqp_connections_opened"),
-        connections_closed: read_counter_value(&families, "amqp_connections_closed"),
-        channels_opened: read_counter_value(&families, "amqp_channels_opened"),
-        channels_closed: read_counter_value(&families, "amqp_channels_closed"),
-        queues_declared: read_counter_value(&families, "amqp_queues_declared"),
-        queues_created: read_counter_value(&families, "amqp_queues_created"),
-        queues_deleted: read_counter_value(&families, "amqp_queues_deleted"),
+        messages_published: read_counter_value(&families, "amqp_messages_published_total"),
+        messages_delivered: read_counter_value(&families, "amqp_messages_delivered_total"),
+        messages_acked: read_counter_value(&families, "amqp_messages_acked_total"),
+        messages_nacked: read_counter_value(&families, "amqp_messages_nacked_total"),
+        connections_opened: read_counter_value(&families, "amqp_connections_opened_total"),
+        connections_closed: read_counter_value(&families, "amqp_connections_closed_total"),
+        channels_opened: read_counter_value(&families, "amqp_channels_opened_total"),
+        channels_closed: read_counter_value(&families, "amqp_channels_closed_total"),
+        queues_declared: read_counter_value(&families, "amqp_queues_declared_total"),
+        queues_created: read_counter_value(&families, "amqp_queues_created_total"),
+        queues_deleted: read_counter_value(&families, "amqp_queues_deleted_total"),
         schema_validation_failures: read_counter_value(
             &families,
-            "amqp_schema_validation_failures",
+            "amqp_schema_validation_failures_total",
         ),
     }
 }
