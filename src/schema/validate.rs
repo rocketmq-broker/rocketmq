@@ -59,6 +59,12 @@ pub enum SchemaValidationError {
         /// Per-field type error descriptions.
         errors: Vec<String>,
     },
+
+    /// Re-declaration schema is structurally different from the existing one.
+    SchemaConflict {
+        /// Human-readable description of the differences found.
+        differences: Vec<String>,
+    },
 }
 
 impl std::fmt::Display for SchemaValidationError {
@@ -88,6 +94,9 @@ impl std::fmt::Display for SchemaValidationError {
             ),
             Self::TypeMismatch { errors } => {
                 write!(f, "JSON field type mismatches: [{}]", errors.join("; "))
+            }
+            Self::SchemaConflict { differences } => {
+                write!(f, "Schema conflict: [{}]", differences.join("; "))
             }
         }
     }
@@ -147,6 +156,79 @@ pub fn check_consumer_subset(
 
     if !extra.is_empty() {
         return Err(SchemaValidationError::ConsumerExtraFields { fields: extra });
+    }
+
+    Ok(())
+}
+
+/// Checks that a new schema is structurally identical to an existing one.
+///
+/// Two schemas conflict when they differ in field count, field names,
+/// field numbers, or field types. This prevents silent schema evolution
+/// on re-declaration — callers must either delete the queue first or
+/// pass `x-schema-override` to force the update.
+///
+/// ```ignore
+/// check_schema_conflict(&existing_schema, &new_schema)?;
+/// ```
+pub fn check_schema_conflict(
+    existing: &CompiledSchema,
+    incoming: &CompiledSchema,
+) -> Result<(), SchemaValidationError> {
+    let existing_fields: Vec<_> = existing.message_descriptor.fields().collect();
+    let incoming_fields: Vec<_> = incoming.message_descriptor.fields().collect();
+
+    let mut differences = Vec::new();
+
+    let existing_by_name: std::collections::HashMap<String, _> = existing_fields
+        .iter()
+        .map(|f| (f.name().to_string(), f))
+        .collect();
+
+    let incoming_by_name: std::collections::HashMap<String, _> = incoming_fields
+        .iter()
+        .map(|f| (f.name().to_string(), f))
+        .collect();
+
+    for f in &incoming_fields {
+        if !existing_by_name.contains_key(f.name()) {
+            differences.push(format!("new field '{}' not in existing schema", f.name()));
+        }
+    }
+
+    for f in &existing_fields {
+        if !incoming_by_name.contains_key(f.name()) {
+            differences.push(format!(
+                "existing field '{}' not in incoming schema",
+                f.name()
+            ));
+        }
+    }
+
+    // Check type/number mismatches for shared fields
+    for f in &incoming_fields {
+        if let Some(existing_f) = existing_by_name.get(f.name()) {
+            if existing_f.number() != f.number() {
+                differences.push(format!(
+                    "field '{}': number {} vs {}",
+                    f.name(),
+                    existing_f.number(),
+                    f.number()
+                ));
+            }
+            if existing_f.kind() != f.kind() {
+                differences.push(format!(
+                    "field '{}': type {:?} vs {:?}",
+                    f.name(),
+                    existing_f.kind(),
+                    f.kind()
+                ));
+            }
+        }
+    }
+
+    if !differences.is_empty() {
+        return Err(SchemaValidationError::SchemaConflict { differences });
     }
 
     Ok(())
@@ -468,5 +550,66 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("email"));
         assert!(msg.contains("phone"));
+    }
+
+    #[test]
+    fn identical_schemas_no_conflict() {
+        let a = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let b = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        assert!(check_schema_conflict(&a, &b).is_ok());
+    }
+
+    #[test]
+    fn added_field_triggers_conflict() {
+        let original = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let extended = compile_proto(
+            b"syntax = \"proto3\"; package mypackage; message UserCreated { string name = 1; int32 age = 2; bool active = 3; }",
+            "mypackage.UserCreated",
+        ).unwrap();
+        let err = check_schema_conflict(&original, &extended).unwrap_err();
+        match err {
+            SchemaValidationError::SchemaConflict { differences } => {
+                assert!(differences.iter().any(|d| d.contains("active")));
+            }
+            other => panic!("Expected SchemaConflict, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn removed_field_triggers_conflict() {
+        let original = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        let reduced = compile_proto(
+            b"syntax = \"proto3\"; package mypackage; message UserCreated { string name = 1; }",
+            "mypackage.UserCreated",
+        )
+        .unwrap();
+        let err = check_schema_conflict(&original, &reduced).unwrap_err();
+        match err {
+            SchemaValidationError::SchemaConflict { differences } => {
+                assert!(differences.iter().any(|d| d.contains("age")));
+            }
+            other => panic!("Expected SchemaConflict, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn type_change_triggers_conflict() {
+        let original = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        // age changed from int32 to string
+        let changed = compile_proto(
+            b"syntax = \"proto3\"; package mypackage; message UserCreated { string name = 1; string age = 2; }",
+            "mypackage.UserCreated",
+        ).unwrap();
+        let err = check_schema_conflict(&original, &changed).unwrap_err();
+        match err {
+            SchemaValidationError::SchemaConflict { differences } => {
+                assert!(
+                    differences
+                        .iter()
+                        .any(|d| d.contains("age") && d.contains("type"))
+                );
+            }
+            other => panic!("Expected SchemaConflict, got: {}", other),
+        }
     }
 }

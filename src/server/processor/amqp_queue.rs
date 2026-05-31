@@ -143,6 +143,8 @@ pub async fn handle_declare(
         opts.schema_message = Some(String::from_utf8_lossy(v).to_string());
     }
 
+    let schema_override = arguments.contains_key("x-schema-override");
+
     let mut compiled_schema = None;
     if let Some(raw) = &opts.schema {
         let _schema_type = match &opts.schema_type {
@@ -221,9 +223,36 @@ pub async fn handle_declare(
             q
         });
 
-        // Update schema binding even on re-declaration so clients can
-        // register new schema versions without deleting the queue.
-        if compiled_schema.is_some() {
+        // Reject conflicting schema re-declarations unless x-schema-override is set.
+        if let Some(ref new_schema) = compiled_schema {
+            if let Some(ref existing_schema) = entry.schema
+                && !schema_override
+                && let Err(e) =
+                    crate::schema::validate::check_schema_conflict(existing_schema, new_schema)
+            {
+                tracing::warn!(
+                    conn_id,
+                    channel,
+                    queue = name.as_str(),
+                    error = %e,
+                    "schema conflict on re-declaration"
+                );
+                let reply_text = format!(
+                    "PRECONDITION_FAILED - schema conflict for queue '{}': {}. \
+                             Use x-schema-override to force update.",
+                    name, e
+                );
+                send_channel_error(
+                    writer,
+                    channel,
+                    406,
+                    &reply_text,
+                    CLASS_QUEUE,
+                    METHOD_QUEUE_DECLARE,
+                )
+                .await;
+                return;
+            }
             entry.schema = compiled_schema.clone();
         }
     }
@@ -770,9 +799,25 @@ mod tests {
         handle_declare(1, 1, &diff_args, &mut writer, &broker).await;
 
         {
+            // Schema conflict rejected — original schema preserved (1 field)
             let queue = broker.queues.get("schema-queue").unwrap();
             let compiled = queue.schema.as_ref().unwrap();
+            assert_eq!(compiled.message_descriptor.fields().count(), 1);
+        }
 
+        // Re-declare with x-schema-override — should succeed and update
+        diff_arguments.insert("x-schema-override".to_string(), FieldValue::Boolean(true));
+        let mut override_args = Vec::new();
+        write_short(&mut override_args, 0).unwrap();
+        write_shortstr(&mut override_args, "schema-queue").unwrap();
+        write_octet(&mut override_args, 0).unwrap();
+        write_field_table(&mut override_args, &diff_arguments).unwrap();
+
+        handle_declare(1, 1, &override_args, &mut writer, &broker).await;
+
+        {
+            let queue = broker.queues.get("schema-queue").unwrap();
+            let compiled = queue.schema.as_ref().unwrap();
             assert_eq!(compiled.message_descriptor.fields().count(), 2);
         }
     }
