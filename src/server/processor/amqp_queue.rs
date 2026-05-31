@@ -144,6 +144,7 @@ pub async fn handle_declare(
     }
 
     let schema_override = arguments.contains_key("x-schema-override");
+    let schema_delete = arguments.contains_key("x-schema-delete");
 
     let mut compiled_schema = None;
     if let Some(raw) = &opts.schema {
@@ -223,8 +224,19 @@ pub async fn handle_declare(
             q
         });
 
-        // Reject conflicting schema re-declarations unless x-schema-override is set.
-        if let Some(ref new_schema) = compiled_schema {
+        // x-schema-delete removes the schema binding from the queue.
+        if schema_delete {
+            if entry.schema.is_some() {
+                tracing::info!(
+                    conn_id,
+                    channel,
+                    queue = name.as_str(),
+                    "schema removed via x-schema-delete"
+                );
+                entry.schema = None;
+            }
+        } else if let Some(ref new_schema) = compiled_schema {
+            // Reject conflicting schema re-declarations unless x-schema-override is set.
             if let Some(ref existing_schema) = entry.schema
                 && !schema_override
                 && let Err(e) =
