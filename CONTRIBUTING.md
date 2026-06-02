@@ -19,7 +19,7 @@
 
 ## Code Standards
 
-- No `unwrap()` in production paths. Tests are fine.
+- No `unwrap()` outside of tests.
 - Functions: 4–20 lines. Split longer ones.
 - Files: under 500 lines. Split by responsibility.
 - Comments explain **why**, not what. Skip obvious ones.

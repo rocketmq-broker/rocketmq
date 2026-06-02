@@ -2,11 +2,11 @@
 
 An AMQP 0-9-1 message broker written from scratch in Rust. Wire-compatible with RabbitMQ — any standard AMQP client (`amqplib`, `pika`, `lapin`, etc.) works out of the box.
 
-~21k lines of Rust across 66 source files, backed by 657 tests.
-
 ## Why
 
-Most AMQP brokers are either legacy Java/Erlang codebases or thin wrappers around existing libraries. RocketMQ is a ground-up implementation focused on correctness, low resource usage, and a single static binary with zero runtime dependencies.
+Most AMQP brokers are either legacy Java/Erlang codebases or thin wrappers around existing libraries. RocketMQ is a ground-up implementation focused on correctness, type safety, and a single static binary with zero runtime dependencies.
+
+Every message payload can be validated against a Protobuf schema before it reaches a consumer. Schemas are declared per-queue and enforced at publish time — malformed data is rejected at the broker, not discovered downstream.
 
 ## Features
 
@@ -15,7 +15,7 @@ Most AMQP brokers are either legacy Java/Erlang codebases or thin wrappers aroun
 | **Exchanges** | Direct, Fanout, Topic (`*` / `#` wildcards), Headers |
 | **Queues** | Durable, exclusive, priority levels, per-message and per-queue TTL |
 | **Delivery** | Publisher confirms, consumer prefetch (QoS), full `Tx` commit/rollback |
-| **Schema validation** | Protobuf schemas attached to queues via `x-schema-subject`, validated at publish time |
+| **Type safety** | Protobuf schemas attached to queues via `x-schema-subject`, validated at publish time |
 | **Storage** | Segmented WAL with CRC32 integrity, crash recovery, compaction |
 | **Security** | TLS via `tokio-rustls`, bcrypt user authentication, per-vhost permissions |
 | **Clustering** | Multi-node Raft-based replication with automatic peer discovery |
@@ -57,34 +57,12 @@ Environment variables or `rocketmq.conf`:
 ## Testing
 
 ```bash
-# unit + integration tests (657 tests, ~4s)
 cargo test
-
-# lint
 cargo clippy --all-targets --all-features
-
-# format check
 cargo fmt --check
 ```
 
 All CI checks (format, clippy with `-Dwarnings`, full test suite) must pass before merge. See the [CI workflow](.github/workflows/ci.yml) for details.
-
-## Project Structure
-
-```
-src/
-├── auth/          # user credentials, bcrypt, vhost permissions
-├── cluster/       # raft consensus, peer networking
-├── core/          # AMQP frame codec, protocol constants
-├── management/    # HTTP API routes (RabbitMQ-compatible)
-├── metrics/       # OpenTelemetry + Prometheus counters
-├── queue/         # queue state, priority heap, delay queue, TTL
-├── routing/       # exchange types and binding logic
-├── schema/        # protobuf schema registry and validation
-├── server/        # TCP acceptor, AMQP processors, TLS
-├── state/         # broker state, vhosts, channel/connection tracking
-└── storage/       # segmented WAL, crash recovery, compaction
-```
 
 ## License
 
