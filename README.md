@@ -22,12 +22,40 @@ RocketMQ is a ground-up implementation of the AMQP 0-9-1 protocol focused on per
 
 ## Quickstart
 
-```bash
-# build and run
-cargo run --release
+### Build from source
 
-# or via docker
-docker compose up --build
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/rocketmq-broker/rocketmq.git
+   cd rocketmq
+   ```
+
+2. Run the broker:
+   ```bash
+   cargo run --release
+   ```
+
+### Run with Docker Compose
+
+Alternatively, use this `docker-compose.yml` to run RocketMQ from the Docker Hub image:
+
+```yaml
+version: '3.8'
+
+services:
+  rocketmq:
+    image: dockerusername/dockerhunrepo:latest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - ROCKETMQ_DEFAULT_USER=guest
+      - ROCKETMQ_DEFAULT_PASS=guest
+    volumes:
+      - rocketmq-data:/data
+
+volumes:
+  rocketmq-data:
 ```
 
 Default ports:
