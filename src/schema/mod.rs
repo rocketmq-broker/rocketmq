@@ -17,6 +17,7 @@
 // File: mod.rs
 // Description: Core schema registry, compilation pipeline, and validation entrypoints.
 
+pub mod error;
 pub mod validate;
 
 use prost::Message;

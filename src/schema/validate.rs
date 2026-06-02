@@ -21,6 +21,8 @@ use crate::schema::CompiledSchema;
 use prost::Message;
 use prost_reflect::DynamicMessage;
 
+use super::error::proto_kind_name;
+
 /// Represents validation errors for messages checked against a schema.
 #[derive(Debug)]
 pub enum SchemaValidationError {
@@ -56,8 +58,8 @@ pub enum SchemaValidationError {
 
     /// JSON field values have types incompatible with the proto schema.
     TypeMismatch {
-        /// Per-field type error descriptions.
-        errors: Vec<String>,
+        /// Structured per-field type mismatch details.
+        errors: Vec<FieldTypeMismatch>,
     },
 
     /// Re-declaration schema is structurally different from the existing one.
@@ -93,7 +95,18 @@ impl std::fmt::Display for SchemaValidationError {
                 fields.join(", ")
             ),
             Self::TypeMismatch { errors } => {
-                write!(f, "JSON field type mismatches: [{}]", errors.join("; "))
+                let descs: Vec<String> = errors
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "field '{}': expected {}, got {}",
+                            e.field_name,
+                            proto_kind_name(&e.queue_kind),
+                            proto_kind_name(&e.got_kind)
+                        )
+                    })
+                    .collect();
+                write!(f, "Type mismatches: [{}]", descs.join("; "))
             }
             Self::SchemaConflict { differences } => {
                 write!(f, "Schema conflict: [{}]", differences.join("; "))
@@ -103,6 +116,20 @@ impl std::fmt::Display for SchemaValidationError {
 }
 
 impl std::error::Error for SchemaValidationError {}
+
+/// Structured type mismatch detail for a single field.
+///
+/// Stores the protobuf `Kind` values so the error module can map
+/// them to TypeScript-friendly names (e.g. `Double` → `"number"`).
+#[derive(Debug, Clone)]
+pub struct FieldTypeMismatch {
+    /// Name of the mismatched field.
+    pub field_name: String,
+    /// The proto kind in the queue's schema.
+    pub queue_kind: prost_reflect::Kind,
+    /// The proto kind in the consumer/publisher's payload.
+    pub got_kind: prost_reflect::Kind,
+}
 
 /// Helper to determine if a given content type string indicates a Protobuf encoded payload.
 ///
@@ -141,21 +168,39 @@ pub fn check_consumer_subset(
     queue_schema: &CompiledSchema,
     consumer_schema: &CompiledSchema,
 ) -> Result<(), SchemaValidationError> {
-    let queue_fields: std::collections::HashMap<String, u32> = queue_schema
+    let queue_fields: std::collections::HashMap<String, _> = queue_schema
         .message_descriptor
         .fields()
-        .map(|f| (f.name().to_string(), f.number()))
+        .map(|f| (f.name().to_string(), f))
         .collect();
 
-    let extra: Vec<String> = consumer_schema
-        .message_descriptor
-        .fields()
-        .filter(|f| !queue_fields.contains_key(f.name()))
-        .map(|f| f.name().to_string())
-        .collect();
+    let mut extra: Vec<String> = Vec::new();
+    let mut type_mismatches: Vec<FieldTypeMismatch> = Vec::new();
+
+    for consumer_field in consumer_schema.message_descriptor.fields() {
+        let name = consumer_field.name().to_string();
+        match queue_fields.get(&name) {
+            None => extra.push(name),
+            Some(queue_field) => {
+                if queue_field.kind() != consumer_field.kind() {
+                    type_mismatches.push(FieldTypeMismatch {
+                        field_name: name,
+                        queue_kind: queue_field.kind(),
+                        got_kind: consumer_field.kind(),
+                    });
+                }
+            }
+        }
+    }
 
     if !extra.is_empty() {
         return Err(SchemaValidationError::ConsumerExtraFields { fields: extra });
+    }
+
+    if !type_mismatches.is_empty() {
+        return Err(SchemaValidationError::TypeMismatch {
+            errors: type_mismatches,
+        });
     }
 
     Ok(())
@@ -259,7 +304,7 @@ fn validate_json_fields(schema: &CompiledSchema, body: &[u8]) -> Result<(), Sche
     }
 
     // Type-check each field value against its proto kind.
-    let type_errors: Vec<String> = schema
+    let type_errors: Vec<FieldTypeMismatch> = schema
         .message_descriptor
         .fields()
         .filter_map(|f| {
@@ -290,12 +335,13 @@ fn validate_json_fields(schema: &CompiledSchema, body: &[u8]) -> Result<(), Sche
                 prost_reflect::Kind::Message(_) => !val.is_object(),
             };
             if mismatch {
-                Some(format!(
-                    "{}: expected {:?}, got {}",
-                    f.name(),
-                    f.kind(),
-                    json_type_name(val)
-                ))
+                Some(FieldTypeMismatch {
+                    field_name: f.name().to_string(),
+                    queue_kind: f.kind(),
+                    // WHY json_val_to_kind: the JSON payload doesn't have a proto Kind,
+                    // so we infer the closest match from the JSON value type.
+                    got_kind: json_val_to_kind(val),
+                })
             } else {
                 None
             }
@@ -320,6 +366,21 @@ fn json_type_name(val: &serde_json::Value) -> &'static str {
         serde_json::Value::String(_) => "string",
         serde_json::Value::Array(_) => "array",
         serde_json::Value::Object(_) => "object",
+    }
+}
+
+/// Maps a JSON value to the closest proto `Kind` for error reporting.
+///
+/// WHY: `FieldTypeMismatch` stores two `Kind` values — one from the schema
+/// and one from the payload. For JSON payloads we don't have a proto Kind,
+/// so we infer the closest match from the JSON value's runtime type.
+fn json_val_to_kind(val: &serde_json::Value) -> prost_reflect::Kind {
+    match val {
+        serde_json::Value::Bool(_) => prost_reflect::Kind::Bool,
+        serde_json::Value::Number(_) => prost_reflect::Kind::Double,
+        serde_json::Value::String(_) => prost_reflect::Kind::String,
+        // null, array, object — default to String since there's no clean mapping
+        _ => prost_reflect::Kind::String,
     }
 }
 
@@ -467,8 +528,9 @@ mod tests {
         match err {
             SchemaValidationError::TypeMismatch { errors } => {
                 assert_eq!(errors.len(), 1);
-                assert!(errors[0].contains("age"));
-                assert!(errors[0].contains("string"));
+                assert_eq!(errors[0].field_name, "age");
+                assert_eq!(errors[0].queue_kind, prost_reflect::Kind::Int32);
+                assert_eq!(errors[0].got_kind, prost_reflect::Kind::String);
             }
             other => panic!("Expected TypeMismatch, got: {}", other),
         }
@@ -482,7 +544,9 @@ mod tests {
         let err = validate_message(&compiled, body).unwrap_err();
         match err {
             SchemaValidationError::TypeMismatch { errors } => {
-                assert!(errors[0].contains("name"));
+                assert_eq!(errors[0].field_name, "name");
+                assert_eq!(errors[0].queue_kind, prost_reflect::Kind::String);
+                assert_eq!(errors[0].got_kind, prost_reflect::Kind::Double);
             }
             other => panic!("Expected TypeMismatch, got: {}", other),
         }
@@ -550,6 +614,32 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("email"));
         assert!(msg.contains("phone"));
+    }
+
+    #[test]
+    fn consumer_type_mismatch_rejected() {
+        // Queue has: name=string, age=int32
+        let queue = compile_proto(SIMPLE_PROTO.as_bytes(), "mypackage.UserCreated").unwrap();
+        // Consumer has: name=int32 (wrong type), age=int32
+        let consumer_proto = r#"
+            syntax = "proto3";
+            package mypackage;
+            message UserWrongType {
+                int32 name = 1;
+                int32 age = 2;
+            }
+        "#;
+        let consumer = compile_proto(consumer_proto.as_bytes(), "mypackage.UserWrongType").unwrap();
+        let err = check_consumer_subset(&queue, &consumer).unwrap_err();
+        match err {
+            SchemaValidationError::TypeMismatch { errors } => {
+                assert_eq!(errors.len(), 1);
+                assert_eq!(errors[0].field_name, "name");
+                assert_eq!(errors[0].queue_kind, prost_reflect::Kind::String);
+                assert_eq!(errors[0].got_kind, prost_reflect::Kind::Int32);
+            }
+            other => panic!("Expected TypeMismatch, got: {}", other),
+        }
     }
 
     #[test]
