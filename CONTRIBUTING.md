@@ -1,107 +1,45 @@
-# Contributing
+# Contributing to RocketMQ
 
-## Branch Strategy
+Thank you for your interest in contributing to RocketMQ! We aim to keep our codebase clean, idiomatic, and highly performant.
 
-This project follows a simplified Gitflow model with three branch tiers:
+---
 
-**`master`** — production-ready code. Only receives merges from `release/*` branches
-or critical hotfixes. Every commit on master is tagged and published.
+## 🛠️ Development Workflow
 
-**`develop`** — integration branch. All feature work merges here first. CI runs
-on every push and PR. This is the default branch for day-to-day work.
+To contribute to this project:
 
-**`feature/*`**, **`fix/*`**, **`refactor/*`** — short-lived branches forked from
-`develop`. Merged back into `develop` via pull request once CI passes.
-
-**`release/*`** — cut from `develop` when preparing a new version. Only bugfixes
-go into a release branch. Once stable, merge into both `master` and `develop`,
-tag with the version number.
-
-**`hotfix/*`** — forked from `master` for urgent production fixes. Merged back
-into both `master` and `develop`.
-
-```
-master ──────●──────────────●──────── (tagged releases)
-             ↑              ↑
-         release/0.1    release/0.2
-             ↑              ↑
-develop ─●──●──●──●──●──●──●──●──── (integration)
-          ↑     ↑     ↑
-      feat/x  fix/y  refactor/z
-```
-
-## Workflow
-
-1. Fork and clone the repo
-2. Create a branch from `develop`:
+1. **Fork & Clone** the repository.
+2. **Create a Branch** for your work:
+   ```bash
+   git checkout -b feature/amazing-feature
    ```
-   git checkout develop
-   git checkout -b feature/my-change
-   ```
-3. Make your changes
-4. Run the checks locally before pushing:
-   ```
+3. **Write Code and Tests** — every new feature or bug fix must have accompanying tests.
+4. **Format and Lint** — run the standard Rust toolchain checks locally:
+   ```bash
    cargo fmt --all -- --check
-   cargo clippy --all-targets --all-features
-   cargo test --all-features
+   # Ensure warnings are treated as errors
+   RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --all-features
    ```
-5. Push and open a PR against `develop`
-6. CI must pass before merge
+5. **Run Tests**:
+   ```bash
+   cargo test
+   ```
+6. **Submit a Pull Request** against the `develop` branch.
 
-## Commit Messages
+---
 
-Use conventional commit prefixes:
+## 📝 Coding Standards
 
-- `feat:` — new functionality
-- `fix:` — bug fixes
-- `refactor:` — code restructuring without behavior change
-- `docs:` — documentation only
-- `test:` — adding or updating tests
-- `chore:` — tooling, CI, dependencies
-- `perf:` — performance improvements
+- **Idiomatic Rust** — Follow Rust API Guidelines.
+- **Safety First** — Avoid using `unwrap()` or `expect()` in production code. Prefer explicit error handling.
+- **Keep it Clean** — Ensure `cargo fmt` and `cargo clippy` pass without warnings.
+- **Tested Code** — We enforce code coverage; all core changes require tests.
 
-Include scope when it helps: `fix(auth):`, `feat(cluster):`, `refactor(config):`.
+---
 
-Keep the subject line under 72 characters. Use the body for context on *why*,
-not *what* (the diff shows what).
+## 🏷️ Release & Tagging Process
 
-## Releases
-
-Releases are automated. When a `release/*` branch is merged into `master`:
-
-1. Tag the merge commit: `git tag v0.2.0`
-2. Push the tag: `git push origin v0.2.0`
-3. GitHub Actions builds, tests, pushes the Docker image to Docker Hub,
-   and creates a GitHub Release with a changelog.
-
-## Code Style
-
-- `cargo fmt` is enforced — CI rejects unformatted code
-- `cargo clippy` warnings are treated as errors (`RUSTFLAGS=-Dwarnings`)
-- All public functions need doc comments
-- No `unwrap()` in production code paths (tests are fine)
-- Preserve existing comments and license headers when editing files
-
-## Running Locally
-
-Single node:
-```
-cargo run
-```
-
-Three-node cluster:
-```
-./run.sh
-```
-
-Docker cluster:
-```
-docker compose up --build
-```
-
-Integration tests (requires a running broker):
-```
-pip install pika
-cargo run &
-python3 tests/amqp_integration.py
-```
+Releases are automated via GitHub Actions:
+1. Merge stable code from `develop` into `master`.
+2. Tag the commit with `v<major>.<minor>.<patch>` (e.g. `v0.1.0`).
+3. Push the tag (`git push origin v0.1.0`). The CI/CD pipeline will test the code, package binaries, build the Docker image, and publish a GitHub Release.
