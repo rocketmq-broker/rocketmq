@@ -73,7 +73,6 @@ RUN touch src/main.rs && \
         cp target/"$TARGET_TRIPLE"/release/rocketmq target/release/rocketmq; \
     fi && \
     mkdir -p data
-
 # Runner stage
 FROM debian:bookworm-slim
 
@@ -87,6 +86,9 @@ COPY --from=builder /usr/src/rocketmq/src/management/www /app/src/management/www
 
 # Copy empty data directory created in builder
 COPY --from=builder /usr/src/rocketmq/data /app/data
+
+# Bind to all interfaces so Docker port forwarding works
+ENV ROCKETMQ_BIND_HOST=0.0.0.0
 
 # Default ports: AMQP 5672, AMQPS 5671, Mgmt 15672, Cluster 5680
 EXPOSE 5672 5671 15672 5680
