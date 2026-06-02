@@ -6,7 +6,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_NAME: ${{ secrets.DOCKER_REPOSITORY }}
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_REPOSITORY }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
