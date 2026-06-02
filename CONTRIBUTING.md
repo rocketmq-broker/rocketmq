@@ -7,7 +7,7 @@
 
 ## Workflow
 
-1. Fork the repo and create a branch from `develop`.
+1. Fork the repo and create a branch from `master`.
 2. Write code and tests. Every new function gets a test; bug fixes get a regression test.
 3. Run the checks:
    ```bash
@@ -15,7 +15,7 @@
    RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --all-features
    cargo test
    ```
-4. Open a PR against `develop`. CI must be green before merge.
+4. Open a PR against `master`. CI must be green before merge.
 
 ## Code Standards
 
