@@ -4,9 +4,7 @@ An AMQP 0-9-1 message broker written from scratch in Rust. Wire-compatible with 
 
 ## Why
 
-Most AMQP brokers are either legacy Java/Erlang codebases or thin wrappers around existing libraries. RocketMQ is a ground-up implementation focused on correctness, type safety, and a single static binary with zero runtime dependencies.
-
-Every message payload can be validated against a Protobuf schema before it reaches a consumer. Schemas are declared per-queue and enforced at publish time — malformed data is rejected at the broker, not discovered downstream.
+RocketMQ is a ground-up implementation of the AMQP 0-9-1 protocol focused on performance, correctness, and reliability. It offers built-in type-checking by validating published message payloads against Protobuf schemas before they reach consumers. Schemas are declared per-queue and enforced at publish time, ensuring malformed data is rejected at the broker level and never propagates downstream.
 
 ## Features
 
