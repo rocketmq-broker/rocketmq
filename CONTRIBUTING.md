@@ -15,9 +15,11 @@
    RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --all-features
    cargo test
    ```
-4. Open a PR against `master`. CI must be green before merge.
+4. Open a PR against `master`. CI must be green before merge. See the [pull requests](docs/pull-requests.md) guide.
 
 ## Code Standards
+
+See the full [code standards](docs/code-standards.md) guide.
 
 - No `unwrap()` outside of tests.
 - Functions: 4–20 lines. Split longer ones.
@@ -27,6 +29,8 @@
 - Inject dependencies via parameters, not globals.
 
 ## Commit Messages
+
+See the [commit conventions](docs/commits.md) guide.
 
 Use conventional prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 
