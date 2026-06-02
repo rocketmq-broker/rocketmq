@@ -7,3 +7,4 @@ rabbitmq-server/
 logs/
 tsconfig.tsbuildinfo
 client/
+*.pdf
