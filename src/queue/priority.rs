@@ -28,6 +28,12 @@ pub struct PriorityQueue {
     buckets: BTreeMap<u8, VecDeque<QueueMessage>>,
 }
 
+impl Default for PriorityQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PriorityQueue {
     /// Creates a new instance with default values.
     pub fn new() -> Self {

@@ -98,9 +98,9 @@ pub struct Exchange {
 
 impl Exchange {
     /// Creates a new instance with the given name, kind, durable.
-    pub fn new(name: String, kind: ExchangeType, durable: bool) -> Self {
+    pub fn new(name: impl Into<String>, kind: ExchangeType, durable: bool) -> Self {
         Self {
-            name,
+            name: name.into(),
             kind,
             durable,
             auto_delete: false,
@@ -220,19 +220,19 @@ pub fn create_default_exchanges() -> HashMap<String, Exchange> {
     );
     exchanges.insert(
         "amq.direct".into(),
-        Exchange::new("amq.direct".into(), ExchangeType::Direct, true),
+        Exchange::new("amq.direct", ExchangeType::Direct, true),
     );
     exchanges.insert(
         "amq.fanout".into(),
-        Exchange::new("amq.fanout".into(), ExchangeType::Fanout, true),
+        Exchange::new("amq.fanout", ExchangeType::Fanout, true),
     );
     exchanges.insert(
         "amq.topic".into(),
-        Exchange::new("amq.topic".into(), ExchangeType::Topic, true),
+        Exchange::new("amq.topic", ExchangeType::Topic, true),
     );
     exchanges.insert(
         "amq.headers".into(),
-        Exchange::new("amq.headers".into(), ExchangeType::Headers, true),
+        Exchange::new("amq.headers", ExchangeType::Headers, true),
     );
 
     exchanges
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn direct_routing() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
+        let mut ex = Exchange::new("test", ExchangeType::Direct, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
             routing_key: "orders".into(),
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn fanout_routing() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Fanout, false);
+        let mut ex = Exchange::new("test", ExchangeType::Fanout, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
             routing_key: String::new(),
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn topic_routing() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Topic, false);
+        let mut ex = Exchange::new("test", ExchangeType::Topic, false);
         ex.add_binding(Binding {
             queue_name: "all_logs".into(),
             routing_key: "logs.#".into(),
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn headers_routing() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Headers, false);
+        let mut ex = Exchange::new("test", ExchangeType::Headers, false);
         let mut required = HashMap::new();
         required.insert("format".into(), "pdf".into());
         required.insert("type".into(), "report".into());
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn no_duplicate_bindings() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
+        let mut ex = Exchange::new("test", ExchangeType::Direct, false);
         let binding = Binding {
             queue_name: "q1".into(),
             routing_key: "key".into(),
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn remove_binding_by_queue_and_key() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
+        let mut ex = Exchange::new("test", ExchangeType::Direct, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
             routing_key: "a".into(),
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn remove_nonexistent_binding_is_noop() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
+        let mut ex = Exchange::new("test", ExchangeType::Direct, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
             routing_key: "a".into(),
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn headers_any_routing() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Headers, false);
+        let mut ex = Exchange::new("test", ExchangeType::Headers, false);
         let mut required = HashMap::new();
         required.insert("color".into(), "red".into());
         required.insert("size".into(), "large".into());
@@ -488,14 +488,14 @@ mod tests {
 
     #[test]
     fn exchange_no_bindings_routes_nothing() {
-        let ex = Exchange::new("empty".into(), ExchangeType::Direct, false);
+        let ex = Exchange::new("empty", ExchangeType::Direct, false);
         let empty = HashMap::new();
         assert!(ex.route("anything", &empty).is_empty());
     }
 
     #[test]
     fn fanout_ignores_routing_key() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Fanout, false);
+        let mut ex = Exchange::new("test", ExchangeType::Fanout, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
             routing_key: "specific".into(),
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn direct_multiple_queues_same_key() {
-        let mut ex = Exchange::new("test".into(), ExchangeType::Direct, false);
+        let mut ex = Exchange::new("test", ExchangeType::Direct, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
             routing_key: "events".into(),

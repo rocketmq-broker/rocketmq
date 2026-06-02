@@ -45,6 +45,12 @@ pub struct DelayQueue {
     next_id: std::sync::atomic::AtomicU64,
 }
 
+impl Default for DelayQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DelayQueue {
     /// Creates a new instance with default values.
     pub fn new() -> Self {
