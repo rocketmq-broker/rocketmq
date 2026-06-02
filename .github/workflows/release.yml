@@ -88,6 +88,11 @@ jobs:
           name: rocketmq-linux-amd64
           path: dist/
 
+      - name: Package source code
+        run: |
+          git archive --format=tar.gz -o dist/rocketmq-${{ github.ref_name }}.tar.gz HEAD
+          git archive --format=zip -o dist/rocketmq-${{ github.ref_name }}.zip HEAD
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -101,5 +106,8 @@ jobs:
             ```
             docker pull ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
             ```
-          files: dist/rocketmq
+          files: |
+            dist/rocketmq
+            dist/rocketmq-${{ github.ref_name }}.tar.gz
+            dist/rocketmq-${{ github.ref_name }}.zip
           generate_release_notes: false
