@@ -299,14 +299,14 @@ fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
     let queue = reader.read_string_u16()?;
     let routing_key = reader.read_string_u16()?;
 
-    if let Ok(mut exchanges) = broker.exchanges.try_write()
-        && let Some(ex) = exchanges.get_mut(&exchange)
-    {
-        ex.add_binding(Binding {
-            queue_name: queue,
-            routing_key,
-            headers_match: None,
-        });
+    if let Ok(mut exchanges) = broker.exchanges.try_write() {
+        if let Some(ex) = exchanges.get_mut(&exchange) {
+            ex.add_binding(Binding {
+                queue_name: queue,
+                routing_key,
+                headers_match: None,
+            });
+        }
     }
     Ok(())
 }

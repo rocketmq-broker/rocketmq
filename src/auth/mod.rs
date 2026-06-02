@@ -45,6 +45,12 @@ pub struct AuthBackend {
     permissions: DashMap<(String, String), Permission>,
 }
 
+impl Default for AuthBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuthBackend {
     /// Creates a new instance with default values.
     pub fn new() -> Self {

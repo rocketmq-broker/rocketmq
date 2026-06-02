@@ -114,6 +114,12 @@ pub struct ConnectionState {
     pub username: String,
 }
 
+impl Default for ConnectionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionState {
     /// Creates a new instance with default values.
     pub fn new() -> Self {
@@ -273,15 +279,18 @@ impl BrokerState {
     /// queue (AMQP requires every queue to be reachable via its own name
     /// as the routing key on the default exchange).
     pub fn auto_bind_default_exchange(&self, queue_name: &str) {
-        if let Ok(mut exchanges) = self.exchanges.try_write()
-            && let Some(default_ex) = exchanges.get_mut("")
-        {
-            default_ex.add_binding(Binding {
-                queue_name: queue_name.to_string(),
-                routing_key: queue_name.to_string(),
-                headers_match: None,
-            });
-        }
+        let Ok(mut exchanges) = self.exchanges.try_write() else {
+            return;
+        };
+        let Some(default_ex) = exchanges.get_mut("") else {
+            return;
+        };
+
+        default_ex.add_binding(Binding {
+            queue_name: queue_name.to_string(),
+            routing_key: queue_name.to_string(),
+            headers_match: None,
+        });
     }
 
     /// Allocates a globally unique, monotonically increasing delivery tag.

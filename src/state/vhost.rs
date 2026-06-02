@@ -39,17 +39,17 @@ pub struct VHost {
 
 impl VHost {
     /// Creates a new instance with the given name.
-    pub fn new(name: String) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
-            name,
+            name: name.into(),
             exchanges: RwLock::new(create_default_exchanges()),
             queues: DashMap::new(),
         }
     }
 
-    pub fn empty(name: String) -> Self {
+    pub fn empty(name: impl Into<String>) -> Self {
         Self {
-            name,
+            name: name.into(),
             exchanges: RwLock::new(HashMap::new()),
             queues: DashMap::new(),
         }

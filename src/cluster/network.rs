@@ -254,14 +254,14 @@ async fn process_connection(
                     durable,
                 } => {
                     let mut exchanges = broker.exchanges.write().await;
-                    if !exchanges.contains_key(&name)
-                        && let Some(k) = crate::routing::exchange::ExchangeType::from_str(&kind)
-                    {
-                        exchanges.insert(
-                            name.clone(),
-                            crate::routing::exchange::Exchange::new(name.clone(), k, durable),
-                        );
-                        info!("Cluster synchronized declaration of exchange '{}'", name);
+                    if !exchanges.contains_key(&name) {
+                        if let Some(k) = crate::routing::exchange::ExchangeType::from_str(&kind) {
+                            exchanges.insert(
+                                name.clone(),
+                                crate::routing::exchange::Exchange::new(name.clone(), k, durable),
+                            );
+                            info!("Cluster synchronized declaration of exchange '{}'", name);
+                        }
                     }
                 }
                 ClusterFrame::BindQueue {

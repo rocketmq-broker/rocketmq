@@ -231,18 +231,20 @@ pub async fn whoami(
     State(broker): State<Broker>,
     headers: axum::http::HeaderMap,
 ) -> Json<serde_json::Value> {
-    if let Some(auth_header) = headers.get(axum::http::header::AUTHORIZATION)
-        && let Ok(auth_str) = auth_header.to_str()
-        && let Some(encoded) = auth_str.strip_prefix("Basic ")
-        && let Some(decoded_bytes) = decode_base64(encoded)
-        && let Ok(decoded_str) = String::from_utf8(decoded_bytes)
-        && let Some((username, _password)) = decoded_str.split_once(':')
-    {
+    let username_opt = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Basic "))
+        .and_then(decode_base64)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|s| s.split_once(':').map(|(u, _)| u.to_string()));
+
+    if let Some(username) = username_opt {
         let user_tags: Vec<String> = broker
             .auth
             .list_users()
             .into_iter()
-            .find(|(u, _)| u == username)
+            .find(|(u, _)| u == &username)
             .map(|(_, t)| {
                 t.iter()
                     .map(|tag| format!("{:?}", tag).to_lowercase())

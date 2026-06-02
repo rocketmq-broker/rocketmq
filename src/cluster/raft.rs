@@ -66,7 +66,7 @@ pub struct RaftQueueState {
 
 impl RaftQueueState {
     /// Creates a new instance with the given queue_name.
-    pub fn new(queue_name: String) -> Self {
+    pub fn new(queue_name: impl Into<String>) -> Self {
         let initial_log = vec![LogEntry {
             index: 0,
             term: 0,
@@ -74,7 +74,7 @@ impl RaftQueueState {
         }];
 
         Self {
-            queue_name,
+            queue_name: queue_name.into(),
             current_term: 0,
             voted_for: None,
             log: initial_log,

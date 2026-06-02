@@ -17,7 +17,11 @@
 // File: main.rs
 // Description: Main entry point for the RocketMQ AMQP broker application.
 
-#![allow(clippy::too_many_arguments, clippy::field_reassign_with_default)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::field_reassign_with_default,
+    clippy::collapsible_if
+)]
 
 #[allow(dead_code)]
 mod auth;

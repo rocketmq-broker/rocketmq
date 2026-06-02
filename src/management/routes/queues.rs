@@ -232,19 +232,19 @@ pub async fn get_messages(
             let requeue = req.ack_mode == "ack_requeue_true";
 
             for _ in 0..count {
-                if let Some(q_msg) = queue.messages.pop_front()
-                    && let Ok(msg) = q_msg.resolve(broker.wal())
-                {
-                    result.push(MessagePayload {
-                        payload: String::from_utf8_lossy(&msg.body).to_string(),
-                        payload_bytes: msg.body.len(),
-                        routing_key: String::new(),
-                        exchange: String::new(),
-                        message_count: queue.messages.len(),
-                    });
-                    if requeue {
-                        let requeue_msg = crate::queue::message::QueueMessage::Full(msg);
-                        queue.messages.push_back(requeue_msg);
+                if let Some(q_msg) = queue.messages.pop_front() {
+                    if let Ok(msg) = q_msg.resolve(broker.wal()) {
+                        result.push(MessagePayload {
+                            payload: String::from_utf8_lossy(&msg.body).to_string(),
+                            payload_bytes: msg.body.len(),
+                            routing_key: String::new(),
+                            exchange: String::new(),
+                            message_count: queue.messages.len(),
+                        });
+                        if requeue {
+                            let requeue_msg = crate::queue::message::QueueMessage::Full(msg);
+                            queue.messages.push_back(requeue_msg);
+                        }
                     }
                 }
             }

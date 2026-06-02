@@ -137,10 +137,10 @@ impl ClusterCoordinator {
             let count = entry.value().fetch_add(1, Ordering::SeqCst) + 1;
             let active_nodes = self.peers.len() as u64 + 1;
             let quorum = (active_nodes / 2) + 1;
-            if count >= quorum
-                && let Some((_, tx)) = self.pending_replications.remove(&msg_id)
-            {
-                let _ = tx.send(true);
+            if count >= quorum {
+                if let Some((_, tx)) = self.pending_replications.remove(&msg_id) {
+                    let _ = tx.send(true);
+                }
             }
         }
     }
