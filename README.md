@@ -40,8 +40,6 @@ RocketMQ is a ground-up implementation of the AMQP 0-9-1 protocol focused on per
 Alternatively, use this `docker-compose.yml` to run RocketMQ from the Docker Hub image:
 
 ```yaml
-version: '3.8'
-
 services:
   rocketmq:
     image: rocketbroker/rocketmq:latest

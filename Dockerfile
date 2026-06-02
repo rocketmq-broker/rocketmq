@@ -1,5 +1,6 @@
 # Multi-stage Dockerfile for Rust broker using native cross-compilation
-FROM --platform=$BUILDPLATFORM rust:1.95-slim AS builder
+# Builder and runtime both use bookworm to ensure glibc compatibility.
+FROM --platform=$BUILDPLATFORM rust:1.95-slim-bookworm AS builder
 
 # Re-declare build platforms/targets
 ARG BUILDARCH
