@@ -81,13 +81,7 @@ pub async fn handle_declare(
     }
 
     if passive {
-        if let Some(q) = broker.queues.get(&name) {
-            let (msg_count, consumer_count) =
-                (q.messages.len() as u32, q.consumer_tags.len() as u32);
-            if !no_wait {
-                send_declare_ok(channel, &name, msg_count, consumer_count, writer).await;
-            }
-        } else {
+        let Some(q) = broker.queues.get(&name) else {
             send_channel_error(
                 writer,
                 channel,
@@ -97,14 +91,21 @@ pub async fn handle_declare(
                 METHOD_QUEUE_DECLARE,
             )
             .await;
+            return;
+        };
+
+        let (msg_count, consumer_count) = (q.messages.len() as u32, q.consumer_tags.len() as u32);
+        if !no_wait {
+            send_declare_ok(channel, &name, msg_count, consumer_count, writer).await;
         }
         return;
     }
 
-    if let Some(existing) = broker.queues.get(&name)
-        && existing.options.exclusive
-        && existing.owner_conn_id != Some(conn_id)
-    {
+    let locked = broker
+        .queues
+        .get(&name)
+        .is_some_and(|q| q.options.exclusive && q.owner_conn_id != Some(conn_id));
+    if locked {
         send_channel_error(
             writer,
             channel,
@@ -150,12 +151,18 @@ pub async fn handle_declare(
     if let Some(raw) = &opts.schema {
         let _schema_type = match &opts.schema_type {
             Some(t) if t == "protobuf" => t.clone(),
-            Some(t) => {
+            Some(_) => {
+                let err = crate::schema::error::BrokerError {
+                    code: crate::schema::error::ErrorCode::SchemaUnsupportedType,
+                    queue: name.clone(),
+                    fields: vec![],
+                    truncated: false,
+                };
                 send_channel_error(
                     writer,
                     channel,
                     PRECONDITION_FAILED,
-                    &format!("PRECONDITION_FAILED - unsupported schema type '{}'. Only 'protobuf' is supported.", t),
+                    &err.to_reply_text(),
                     CLASS_QUEUE,
                     METHOD_QUEUE_DECLARE,
                 )
@@ -163,11 +170,17 @@ pub async fn handle_declare(
                 return;
             }
             None => {
+                let err = crate::schema::error::BrokerError {
+                    code: crate::schema::error::ErrorCode::MissingArgument,
+                    queue: name.clone(),
+                    fields: vec![],
+                    truncated: false,
+                };
                 send_channel_error(
                     writer,
                     channel,
                     PRECONDITION_FAILED,
-                    "PRECONDITION_FAILED - x-schema-type is required when declaring a schema queue",
+                    &err.to_reply_text(),
                     CLASS_QUEUE,
                     METHOD_QUEUE_DECLARE,
                 )
@@ -179,11 +192,17 @@ pub async fn handle_declare(
         let message_name = match &opts.schema_message {
             Some(m) => m.clone(),
             None => {
+                let err = crate::schema::error::BrokerError {
+                    code: crate::schema::error::ErrorCode::MissingArgument,
+                    queue: name.clone(),
+                    fields: vec![],
+                    truncated: false,
+                };
                 send_channel_error(
                     writer,
                     channel,
                     PRECONDITION_FAILED,
-                    "PRECONDITION_FAILED - x-schema-message is required when declaring a schema queue",
+                    &err.to_reply_text(),
                     CLASS_QUEUE,
                     METHOD_QUEUE_DECLARE,
                 )
@@ -196,12 +215,18 @@ pub async fn handle_declare(
             Ok(compiled) => {
                 compiled_schema = Some(std::sync::Arc::new(compiled));
             }
-            Err(e) => {
+            Err(_) => {
+                let err = crate::schema::error::BrokerError {
+                    code: crate::schema::error::ErrorCode::SchemaCompileFailed,
+                    queue: name.clone(),
+                    fields: vec![],
+                    truncated: false,
+                };
                 send_channel_error(
                     writer,
                     channel,
                     PRECONDITION_FAILED,
-                    &format!("PRECONDITION_FAILED - schema compilation failed: {}", e),
+                    &err.to_reply_text(),
                     CLASS_QUEUE,
                     METHOD_QUEUE_DECLARE,
                 )
@@ -237,11 +262,14 @@ pub async fn handle_declare(
             }
         } else if let Some(ref new_schema) = compiled_schema {
             // Reject conflicting schema re-declarations unless x-schema-override is set.
-            if let Some(ref existing_schema) = entry.schema
-                && !schema_override
-                && let Err(e) =
-                    crate::schema::validate::check_schema_conflict(existing_schema, new_schema)
-            {
+            let schema_conflict = if !schema_override {
+                entry.schema.as_ref().and_then(|ex| {
+                    crate::schema::validate::check_schema_conflict(ex, new_schema).err()
+                })
+            } else {
+                None
+            };
+            if let Some(e) = schema_conflict {
                 tracing::warn!(
                     conn_id,
                     channel,
@@ -249,16 +277,12 @@ pub async fn handle_declare(
                     error = %e,
                     "schema conflict on re-declaration"
                 );
-                let reply_text = format!(
-                    "PRECONDITION_FAILED - schema conflict for queue '{}': {}. \
-                             Use x-schema-override to force update.",
-                    name, e
-                );
+                let broker_err = crate::schema::error::to_broker_error(&name, &e);
                 send_channel_error(
                     writer,
                     channel,
                     406,
-                    &reply_text,
+                    &broker_err.to_reply_text(),
                     CLASS_QUEUE,
                     METHOD_QUEUE_DECLARE,
                 )
@@ -271,18 +295,20 @@ pub async fn handle_declare(
 
     broker.auto_bind_default_exchange(&name);
 
-    if is_new && let Some(c) = broker.cluster() {
-        let c = c.clone();
-        let name_clone = name.clone();
-        tokio::spawn(async move {
-            c.broadcast(crate::cluster::ClusterFrame::DeclareQueue {
-                name: name_clone,
-                durable,
-                exclusive,
-                auto_delete,
-            })
-            .await;
-        });
+    if is_new {
+        if let Some(c) = broker.cluster() {
+            let c = c.clone();
+            let name_clone = name.clone();
+            tokio::spawn(async move {
+                c.broadcast(crate::cluster::ClusterFrame::DeclareQueue {
+                    name: name_clone,
+                    durable,
+                    exclusive,
+                    auto_delete,
+                })
+                .await;
+            });
+        }
     }
 
     if durable && is_new {
@@ -490,28 +516,7 @@ pub async fn handle_bind(
 
     {
         let mut exchanges = broker.exchanges.write().await;
-        if let Some(ex) = exchanges.get_mut(&exchange) {
-            ex.add_binding(Binding {
-                queue_name: queue.clone(),
-                routing_key: routing_key.clone(),
-                headers_match: None,
-            });
-
-            if let Some(c) = broker.cluster() {
-                let c = c.clone();
-                let exchange_clone = exchange.clone();
-                let queue_clone = queue.clone();
-                let routing_key_clone = routing_key.clone();
-                tokio::spawn(async move {
-                    c.broadcast(crate::cluster::ClusterFrame::BindQueue {
-                        exchange: exchange_clone,
-                        queue: queue_clone,
-                        routing_key: routing_key_clone,
-                    })
-                    .await;
-                });
-            }
-        } else {
+        let Some(ex) = exchanges.get_mut(&exchange) else {
             send_channel_error(
                 writer,
                 channel,
@@ -522,6 +527,27 @@ pub async fn handle_bind(
             )
             .await;
             return;
+        };
+
+        ex.add_binding(Binding {
+            queue_name: queue.clone(),
+            routing_key: routing_key.clone(),
+            headers_match: None,
+        });
+
+        if let Some(c) = broker.cluster() {
+            let c = c.clone();
+            let exchange_clone = exchange.clone();
+            let queue_clone = queue.clone();
+            let routing_key_clone = routing_key.clone();
+            tokio::spawn(async move {
+                c.broadcast(crate::cluster::ClusterFrame::BindQueue {
+                    exchange: exchange_clone,
+                    queue: queue_clone,
+                    routing_key: routing_key_clone,
+                })
+                .await;
+            });
         }
     }
 
@@ -573,9 +599,7 @@ pub async fn handle_unbind(
 
     {
         let mut exchanges = broker.exchanges.write().await;
-        if let Some(ex) = exchanges.get_mut(&exchange) {
-            ex.remove_binding(&queue, &routing_key);
-        } else {
+        let Some(ex) = exchanges.get_mut(&exchange) else {
             send_channel_error(
                 writer,
                 channel,
@@ -586,7 +610,8 @@ pub async fn handle_unbind(
             )
             .await;
             return;
-        }
+        };
+        ex.remove_binding(&queue, &routing_key);
     }
 
     info!(

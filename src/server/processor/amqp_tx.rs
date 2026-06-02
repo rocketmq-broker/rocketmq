@@ -82,30 +82,33 @@ pub async fn process_tx_commit(
         if let PendingOp::Publish {
             routing_key, body, ..
         } = op
-            && let Some(queue_ref) = broker.queues.get(routing_key.as_str())
-            && let Some(ref schema) = queue_ref.schema
-            && let Err(err) = crate::schema::validate::validate_message(schema, body)
         {
-            warn!(
-                conn_id,
-                queue = routing_key.as_str(),
-                "transactional schema validation failed: {}",
-                err
-            );
-            crate::metrics::record_schema_validation_failed(routing_key);
-            send_channel_error(
-                writer,
-                channel,
-                PRECONDITION_FAILED,
-                &format!(
-                    "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
-                    routing_key, err
-                ),
-                CLASS_TX,
-                METHOD_TX_COMMIT,
-            )
-            .await;
-            return;
+            let schema_err = broker
+                .queues
+                .get(routing_key.as_str())
+                .and_then(|q| q.schema.clone())
+                .and_then(|s| crate::schema::validate::validate_message(&s, body).err());
+
+            if let Some(err) = schema_err {
+                warn!(
+                    conn_id,
+                    queue = routing_key.as_str(),
+                    "transactional schema validation failed: {}",
+                    err
+                );
+                crate::metrics::record_schema_validation_failed(routing_key);
+                let broker_err = crate::schema::error::to_broker_error(routing_key, &err);
+                send_channel_error(
+                    writer,
+                    channel,
+                    PRECONDITION_FAILED,
+                    &broker_err.to_reply_text(),
+                    CLASS_TX,
+                    METHOD_TX_COMMIT,
+                )
+                .await;
+                return;
+            }
         }
     }
 
@@ -199,11 +202,11 @@ pub async fn handle_confirm_select(
 ) {
     let no_wait = args.first().copied().unwrap_or(0) & 0x01 != 0;
 
-    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = cs.channels.get_mut(&channel)
-    {
-        ch.confirm_mode = true;
-        ch.next_delivery_tag = 1;
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel) {
+            ch.confirm_mode = true;
+            ch.next_delivery_tag = 1;
+        }
     }
 
     info!(conn_id, channel, "confirm mode enabled");
@@ -328,12 +331,12 @@ mod tests {
         while offset < n {
             if let Ok((decoded, consumed)) = decode_frame(&buf[offset..n]) {
                 offset += consumed;
-                if decoded.frame_type == FRAME_METHOD
-                    && let Ok(m) = decode_method(&decoded.payload)
-                    && m.class_id == CLASS_CHANNEL
-                    && m.method_id == 40
-                {
-                    got_channel_error = true;
+                if decoded.frame_type == FRAME_METHOD {
+                    if let Ok(m) = decode_method(&decoded.payload) {
+                        if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
+                            got_channel_error = true;
+                        }
+                    }
                 }
             } else {
                 break;

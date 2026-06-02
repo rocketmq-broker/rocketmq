@@ -157,10 +157,13 @@ pub async fn handle_publish(
     }
 
     for queue_name in &target_queues {
-        if let Some(queue_ref) = broker.queues.get(queue_name.as_str())
-            && let Some(ref schema) = queue_ref.schema
-            && let Err(err) = crate::schema::validate::validate_message(schema, body)
-        {
+        let schema_err = broker
+            .queues
+            .get(queue_name.as_str())
+            .and_then(|q| q.schema.clone())
+            .and_then(|s| crate::schema::validate::validate_message(&s, body).err());
+
+        if let Some(err) = schema_err {
             warn!(
                 conn_id,
                 queue = queue_name.as_str(),
@@ -168,14 +171,12 @@ pub async fn handle_publish(
                 err
             );
             crate::metrics::record_schema_validation_failed(queue_name);
+            let broker_err = crate::schema::error::to_broker_error(queue_name, &err);
             send_channel_error(
                 writer,
                 channel,
                 PRECONDITION_FAILED,
-                &format!(
-                    "PRECONDITION_FAILED - schema validation failed for queue '{}': {}",
-                    queue_name, err
-                ),
+                &broker_err.to_reply_text(),
                 CLASS_BASIC,
                 METHOD_BASIC_PUBLISH,
             )
@@ -277,15 +278,15 @@ pub async fn handle_publish(
         queue.stat_published += 1;
         crate::metrics::record_published(queue_name);
 
-        if confirm_tag.is_none()
-            && let Some(c) = broker.cluster()
-        {
-            let c = c.clone();
-            let q_name = queue_name.clone();
-            let body_vec = body.to_vec();
-            tokio::spawn(async move {
-                let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
-            });
+        if confirm_tag.is_none() {
+            if let Some(c) = broker.cluster() {
+                let c = c.clone();
+                let q_name = queue_name.clone();
+                let body_vec = body.to_vec();
+                tokio::spawn(async move {
+                    let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
+                });
+            }
         }
     }
 
@@ -406,10 +407,11 @@ pub async fn handle_consume(
         return;
     }
 
-    if exclusive
-        && let Some(q) = broker.queues.get(&queue_name)
-        && !q.consumer_tags.is_empty()
-    {
+    let has_consumers = broker
+        .queues
+        .get(&queue_name)
+        .is_some_and(|q| !q.consumer_tags.is_empty());
+    if exclusive && has_consumers {
         send_channel_error(
             writer,
             channel,
@@ -443,15 +445,18 @@ pub async fn handle_consume(
 
         let consumer_compiled = match crate::schema::compile_proto(raw_schema, &message_name) {
             Ok(c) => c,
-            Err(e) => {
+            Err(_) => {
+                let compile_err = crate::schema::error::BrokerError {
+                    code: crate::schema::error::ErrorCode::SchemaCompileFailed,
+                    queue: queue_name.clone(),
+                    fields: vec![],
+                    truncated: false,
+                };
                 send_channel_error(
                     writer,
                     channel,
                     PRECONDITION_FAILED,
-                    &format!(
-                        "PRECONDITION_FAILED - consumer schema compilation failed: {}",
-                        e
-                    ),
+                    &compile_err.to_reply_text(),
                     CLASS_BASIC,
                     METHOD_BASIC_CONSUME,
                 )
@@ -460,26 +465,27 @@ pub async fn handle_consume(
             }
         };
 
-        // Check subset against queue schema (if queue has one)
-        if let Some(queue_ref) = broker.queues.get(&queue_name)
-            && let Some(ref queue_schema) = queue_ref.schema
-            && let Err(err) =
-                crate::schema::validate::check_consumer_subset(queue_schema, &consumer_compiled)
-        {
+        let consumer_subset_err = broker
+            .queues
+            .get(&queue_name)
+            .and_then(|q| q.schema.clone())
+            .and_then(|s| {
+                crate::schema::validate::check_consumer_subset(&s, &consumer_compiled).err()
+            });
+
+        if let Some(err) = consumer_subset_err {
             warn!(
                 conn_id,
                 queue = queue_name.as_str(),
                 "consumer schema not a subset of queue schema: {}",
                 err
             );
+            let broker_err = crate::schema::error::to_broker_error(&queue_name, &err);
             send_channel_error(
                 writer,
                 channel,
                 PRECONDITION_FAILED,
-                &format!(
-                    "PRECONDITION_FAILED - consumer schema incompatible with queue '{}': {}",
-                    queue_name, err
-                ),
+                &broker_err.to_reply_text(),
                 CLASS_BASIC,
                 METHOD_BASIC_CONSUME,
             )
@@ -563,11 +569,12 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
     let flags = read_octet(&mut r).unwrap_or(0);
     let _multiple = flags & 0x01 != 0;
 
-    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = cs.channels.get_mut(&channel)
-        && ch.unacked_count > 0
-    {
-        ch.unacked_count -= 1;
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel) {
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
+        }
     }
 
     for mut entry in broker.queues.iter_mut() {
@@ -601,11 +608,12 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
     let flags = read_octet(&mut r).unwrap_or(0);
     let requeue = flags & 0x01 != 0;
 
-    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = cs.channels.get_mut(&channel)
-        && ch.unacked_count > 0
-    {
-        ch.unacked_count -= 1;
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel) {
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
+        }
     }
 
     for mut entry in broker.queues.iter_mut() {
@@ -636,11 +644,12 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
     let _multiple = flags & 0x01 != 0;
     let requeue = flags & 0x02 != 0;
 
-    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = cs.channels.get_mut(&channel)
-        && ch.unacked_count > 0
-    {
-        ch.unacked_count -= 1;
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel) {
+            if ch.unacked_count > 0 {
+                ch.unacked_count -= 1;
+            }
+        }
     }
 
     for mut entry in broker.queues.iter_mut() {
@@ -741,8 +750,10 @@ pub async fn handle_get(
             }
             let _ = writer.flush().await;
 
-            if !no_ack && let Some(mut q) = broker.queues.get_mut(&queue_name) {
-                q.inflight.insert(delivery_tag, msg);
+            if !no_ack {
+                if let Some(mut q) = broker.queues.get_mut(&queue_name) {
+                    q.inflight.insert(delivery_tag, msg);
+                }
             }
         }
         None => {
@@ -1177,14 +1188,14 @@ mod tests {
         while offset < n {
             if let Ok((decoded, consumed)) = decode_frame(&buf[offset..n]) {
                 offset += consumed;
-                if decoded.frame_type == FRAME_METHOD
-                    && let Ok(m) = decode_method(&decoded.payload)
-                {
-                    if m.class_id == CLASS_BASIC && m.method_id == METHOD_BASIC_NACK {
-                        got_nack = true;
-                    }
-                    if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
-                        got_channel_error = true;
+                if decoded.frame_type == FRAME_METHOD {
+                    if let Ok(m) = decode_method(&decoded.payload) {
+                        if m.class_id == CLASS_BASIC && m.method_id == METHOD_BASIC_NACK {
+                            got_nack = true;
+                        }
+                        if m.class_id == CLASS_CHANNEL && m.method_id == 40 {
+                            got_channel_error = true;
+                        }
                     }
                 }
             } else {

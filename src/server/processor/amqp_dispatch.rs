@@ -28,7 +28,7 @@ use tracing::{info, warn};
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
 use crate::core::types::*;
-use crate::state::{Broker, ChannelState, ConnectionState};
+use crate::state::{Broker, ChannelState};
 
 pub async fn dispatch_method(
     conn_id: u64,
@@ -216,7 +216,7 @@ async fn handle_channel_open(
     broker
         .conn_state
         .entry(conn_id)
-        .or_insert_with(ConnectionState::new)
+        .or_default()
         .channels
         .entry(channel)
         .or_insert_with(|| ChannelState::new(channel));
@@ -265,10 +265,10 @@ async fn handle_channel_flow(
 ) {
     let active = args.first().copied().unwrap_or(1) != 0;
 
-    if let Some(mut conn_state) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = conn_state.channels.get_mut(&channel)
-    {
-        ch.flow_active = active;
+    if let Some(mut conn_state) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = conn_state.channels.get_mut(&channel) {
+            ch.flow_active = active;
+        }
     }
 
     info!(conn_id, channel, active, "channel flow");

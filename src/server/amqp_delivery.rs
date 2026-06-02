@@ -193,10 +193,10 @@ fn encode_delivery_frames(
 
 /// Bumps the unacked counter on the consumer's channel state.
 fn increment_unacked(broker: &Broker, conn_id: u64, channel: u16) {
-    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id)
-        && let Some(ch) = cs.channels.get_mut(&channel)
-    {
-        ch.unacked_count += 1;
+    if let Some(mut cs) = broker.conn_state.get_mut(&conn_id) {
+        if let Some(ch) = cs.channels.get_mut(&channel) {
+            ch.unacked_count += 1;
+        }
     }
 }
 

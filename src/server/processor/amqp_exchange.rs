@@ -115,18 +115,20 @@ pub async fn handle_declare(
             .entry(name.clone())
             .or_insert_with(|| Exchange::new(name.clone(), kind, durable));
 
-        if is_new && let Some(c) = broker.cluster() {
-            let c = c.clone();
-            let name_clone = name.clone();
-            let kind_clone = kind_str.clone();
-            tokio::spawn(async move {
-                c.broadcast(crate::cluster::ClusterFrame::DeclareExchange {
-                    name: name_clone,
-                    kind: kind_clone,
-                    durable,
-                })
-                .await;
-            });
+        if is_new {
+            if let Some(c) = broker.cluster() {
+                let c = c.clone();
+                let name_clone = name.clone();
+                let kind_clone = kind_str.clone();
+                tokio::spawn(async move {
+                    c.broadcast(crate::cluster::ClusterFrame::DeclareExchange {
+                        name: name_clone,
+                        kind: kind_clone,
+                        durable,
+                    })
+                    .await;
+                });
+            }
         }
 
         if durable && is_new {
@@ -204,15 +206,12 @@ pub async fn handle_bind(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_wait = flags & 0x01 != 0;
 
-    {
-        let mut exchanges = broker.exchanges.write().await;
-        if let Some(ex) = exchanges.get_mut(&source) {
-            ex.add_binding(Binding {
-                queue_name: destination.clone(),
-                routing_key: routing_key.clone(),
-                headers_match: None,
-            });
-        }
+    if let Some(ex) = broker.exchanges.write().await.get_mut(&source) {
+        ex.add_binding(Binding {
+            queue_name: destination.clone(),
+            routing_key: routing_key.clone(),
+            headers_match: None,
+        });
     }
 
     info!(
@@ -241,11 +240,8 @@ pub async fn handle_unbind(
     let source = read_shortstr(&mut r).unwrap_or_default();
     let routing_key = read_shortstr(&mut r).unwrap_or_default();
 
-    {
-        let mut exchanges = broker.exchanges.write().await;
-        if let Some(ex) = exchanges.get_mut(&source) {
-            ex.remove_binding(&destination, &routing_key);
-        }
+    if let Some(ex) = broker.exchanges.write().await.get_mut(&source) {
+        ex.remove_binding(&destination, &routing_key);
     }
 
     info!(
