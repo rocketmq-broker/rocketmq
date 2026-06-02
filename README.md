@@ -4,7 +4,7 @@ An AMQP 0-9-1 message broker written from scratch in Rust. Wire-compatible with 
 
 ## Why
 
-RocketMQ is a ground-up implementation of the AMQP 0-9-1 protocol focused on performance, correctness, and reliability. It offers built-in type-checking by validating published message payloads against Protobuf schemas before they reach consumers. Schemas are declared per-queue and enforced at publish time, ensuring malformed data is rejected at the broker level and never propagates downstream.
+RocketMQ is a ground-up implementation of the AMQP 0-9-1 protocol focused on performance, correctness, and reliability. It offers built-in type-checking by validating published message payloads against defined schemas before they reach consumers. This validation is language-agnostic (using Protobuf under the hood), ensuring schema enforcement at publish time so malformed data is rejected at the broker level and never propagates downstream.
 
 ## Features
 
@@ -13,7 +13,7 @@ RocketMQ is a ground-up implementation of the AMQP 0-9-1 protocol focused on per
 | **Exchanges** | Direct, Fanout, Topic (`*` / `#` wildcards), Headers |
 | **Queues** | Durable, exclusive, priority levels, per-message and per-queue TTL |
 | **Delivery** | Publisher confirms, consumer prefetch (QoS), full `Tx` commit/rollback |
-| **Type safety** | Protobuf schemas attached to queues via `x-schema-subject`, validated at publish time |
+| **Type safety** | Language-agnostic schema validation (Protobuf) enforced at publish time |
 | **Storage** | Segmented WAL with CRC32 integrity, crash recovery, compaction |
 | **Security** | TLS via `tokio-rustls`, bcrypt user authentication, per-vhost permissions |
 | **Clustering** | Multi-node Raft-based replication with automatic peer discovery |
