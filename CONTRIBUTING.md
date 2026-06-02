@@ -31,7 +31,7 @@ Include scope when useful: `feat(queue):`, `fix(auth):`.
 
 ## Releases
 
-Automated via GitHub Actions. Tag `master` with `v<semver>` and push:
+Automated via GitHub Actions. Tag `master` with `v<semver>` (see the [semantic versioning](docs/semver.md) guide) and push:
 
 ```bash
 git tag v0.2.0
