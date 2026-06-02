@@ -88,7 +88,6 @@ cargo clippy --all-targets --all-features
 cargo fmt --check
 ```
 
-All CI checks (format, clippy with `-Dwarnings`, full test suite) must pass before merge. See the [CI workflow](.github/workflows/ci.yml) for details.
 
 ## License
 
