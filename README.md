@@ -1,70 +1,91 @@
 # RocketMQ
 
-A lightweight, high-performance message broker written from scratch in Rust, implementing the **AMQP 0-9-1** protocol. RocketMQ is fully wire-compatible with RabbitMQ, allowing existing AMQP clients (such as `amqplib`, `pika`, etc.) to connect seamlessly.
+An AMQP 0-9-1 message broker written from scratch in Rust. Wire-compatible with RabbitMQ — any standard AMQP client (`amqplib`, `pika`, `lapin`, etc.) works out of the box.
 
----
+~21k lines of Rust across 66 source files, backed by 657 tests.
 
-## ⚡ Features
+## Why
 
-- **AMQP 0-9-1 Compliance** — Direct, Fanout, Topic (wildcard `*` and `#`), and Headers exchanges.
-- **Robust Queue Engine** — Supports durability, exclusivity, message TTL, and priority levels.
-- **Guaranteed Delivery** — Publisher confirms, QoS prefetch limits, and full transactions (`Tx` blocks).
-- **Resilient Storage** — Segmented Write-Ahead Log (WAL) with CRC32 integrity checks for crash recovery.
-- **Secure by Default** — Built-in TLS support via `tokio-rustls`.
-- **Management UI** — Native RabbitMQ Management Dashboard compatibility.
-- **Observability** — OpenTelemetry integration with a Prometheus exporter for metrics.
+Most AMQP brokers are either legacy Java/Erlang codebases or thin wrappers around existing libraries. RocketMQ is a ground-up implementation focused on correctness, low resource usage, and a single static binary with zero runtime dependencies.
 
----
+## Features
 
-## 🚀 Getting Started
+| Area | Details |
+|------|---------|
+| **Exchanges** | Direct, Fanout, Topic (`*` / `#` wildcards), Headers |
+| **Queues** | Durable, exclusive, priority levels, per-message and per-queue TTL |
+| **Delivery** | Publisher confirms, consumer prefetch (QoS), full `Tx` commit/rollback |
+| **Schema validation** | Protobuf schemas attached to queues via `x-schema-subject`, validated at publish time |
+| **Storage** | Segmented WAL with CRC32 integrity, crash recovery, compaction |
+| **Security** | TLS via `tokio-rustls`, bcrypt user authentication, per-vhost permissions |
+| **Clustering** | Multi-node Raft-based replication with automatic peer discovery |
+| **Management** | RabbitMQ-compatible HTTP API and dashboard on port `15672` |
+| **Observability** | OpenTelemetry metrics with Prometheus exporter |
 
-### Prerequisites
-
-Ensure you have the Rust toolchain installed (Rust 2024 edition).
-
-### 1. Build and Run
+## Quickstart
 
 ```bash
-# Build and run the broker in release mode
+# build and run
 cargo run --release
+
+# or via docker
+docker compose up --build
 ```
 
-### 2. Default Ports
+Default ports:
 
-* **AMQP (Plain)**: `127.0.0.1:5672`
-* **AMQPS (TLS)**: `127.0.0.1:5671`
-* **Management UI**: `127.0.0.1:15672` (default: `guest` / `guest`)
+| Port | Protocol |
+|------|----------|
+| `5672` | AMQP |
+| `5671` | AMQPS (TLS) |
+| `15672` | Management HTTP (credentials: `guest` / `guest`) |
 
----
+## Configuration
 
-## ⚙️ Configuration
+Environment variables or `rocketmq.conf`:
 
-RocketMQ can be configured via environment variables or a `rocketmq.conf` file:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ROCKETMQ_BIND_HOST` | `127.0.0.1` | Bind address |
+| `ROCKETMQ_AMQP_PORT` | `5672` | AMQP port |
+| `ROCKETMQ_AMQPS_PORT` | `5671` | AMQPS port |
+| `ROCKETMQ_MGMT_PORT` | `15672` | Management UI port |
+| `ROCKETMQ_DATA_DIR` | `data` | WAL and user database path |
+| `ROCKETMQ_CLUSTER_ENABLED` | `false` | Enable clustering |
+| `ROCKETMQ_CLUSTER_SEEDS` | — | Comma-separated peer addresses |
 
-| Variable | Config Key | Default | Description |
-|----------|------------|---------|-------------|
-| `ROCKETMQ_NODE_ID` | `node_id` | `1` | Node identifier |
-| `ROCKETMQ_BIND_HOST` | `bind_host` | `127.0.0.1` | Network bind address |
-| `ROCKETMQ_AMQP_PORT` | `amqp_port` | `5672` | AMQP port |
-| `ROCKETMQ_AMQPS_PORT` | `amqps_port` | `5671` | AMQPS port |
-| `ROCKETMQ_MGMT_PORT` | `mgmt_port` | `15672` | Management UI port |
-| `ROCKETMQ_DATA_DIR` | `data_dir` | `data` | WAL and user database directory |
-| `ROCKETMQ_CLUSTER_ENABLED` | `cluster_enabled` | `false` | Enable cluster mode |
-| `ROCKETMQ_CLUSTER_ADDR` | `cluster_addr` | `127.0.0.1:5680` | Cluster listen address |
-| `ROCKETMQ_CLUSTER_SEEDS` | `cluster_seeds` | (empty) | Comma-separated peer addresses |
-
----
-
-## 🧪 Testing
-
-Run the full suite of unit and integration tests:
+## Testing
 
 ```bash
+# unit + integration tests (657 tests, ~4s)
 cargo test
+
+# lint
+cargo clippy --all-targets --all-features
+
+# format check
+cargo fmt --check
 ```
 
----
+All CI checks (format, clippy with `-Dwarnings`, full test suite) must pass before merge. See the [CI workflow](.github/workflows/ci.yml) for details.
 
-## 📄 License
+## Project Structure
 
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+```
+src/
+├── auth/          # user credentials, bcrypt, vhost permissions
+├── cluster/       # raft consensus, peer networking
+├── core/          # AMQP frame codec, protocol constants
+├── management/    # HTTP API routes (RabbitMQ-compatible)
+├── metrics/       # OpenTelemetry + Prometheus counters
+├── queue/         # queue state, priority heap, delay queue, TTL
+├── routing/       # exchange types and binding logic
+├── schema/        # protobuf schema registry and validation
+├── server/        # TCP acceptor, AMQP processors, TLS
+├── state/         # broker state, vhosts, channel/connection tracking
+└── storage/       # segmented WAL, crash recovery, compaction
+```
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

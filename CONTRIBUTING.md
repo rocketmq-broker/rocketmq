@@ -1,45 +1,44 @@
-# Contributing to RocketMQ
+# Contributing
 
-Thank you for your interest in contributing to RocketMQ! We aim to keep our codebase clean, idiomatic, and highly performant.
+## Prerequisites
 
----
+- Rust stable (2024 edition)
+- `cargo fmt`, `cargo clippy` installed via `rustup component add`
 
-## 🛠️ Development Workflow
+## Workflow
 
-To contribute to this project:
-
-1. **Fork & Clone** the repository.
-2. **Create a Branch** for your work:
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
-3. **Write Code and Tests** — every new feature or bug fix must have accompanying tests.
-4. **Format and Lint** — run the standard Rust toolchain checks locally:
+1. Fork the repo and create a branch from `develop`.
+2. Write code and tests. Every new function gets a test; bug fixes get a regression test.
+3. Run the checks:
    ```bash
    cargo fmt --all -- --check
-   # Ensure warnings are treated as errors
    RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --all-features
-   ```
-5. **Run Tests**:
-   ```bash
    cargo test
    ```
-6. **Submit a Pull Request** against the `develop` branch.
+4. Open a PR against `develop`. CI must be green before merge.
 
----
+## Code Standards
 
-## 📝 Coding Standards
+- No `unwrap()` in production paths. Tests are fine.
+- Functions: 4–20 lines. Split longer ones.
+- Files: under 500 lines. Split by responsibility.
+- Comments explain **why**, not what. Skip obvious ones.
+- Public functions need a doc comment with intent and one usage example.
+- Inject dependencies via parameters, not globals.
 
-- **Idiomatic Rust** — Follow Rust API Guidelines.
-- **Safety First** — Avoid using `unwrap()` or `expect()` in production code. Prefer explicit error handling.
-- **Keep it Clean** — Ensure `cargo fmt` and `cargo clippy` pass without warnings.
-- **Tested Code** — We enforce code coverage; all core changes require tests.
+## Commit Messages
 
----
+Use conventional prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 
-## 🏷️ Release & Tagging Process
+Include scope when useful: `feat(queue):`, `fix(auth):`.
 
-Releases are automated via GitHub Actions:
-1. Merge stable code from `develop` into `master`.
-2. Tag the commit with `v<major>.<minor>.<patch>` (e.g. `v0.1.0`).
-3. Push the tag (`git push origin v0.1.0`). The CI/CD pipeline will test the code, package binaries, build the Docker image, and publish a GitHub Release.
+## Releases
+
+Automated via GitHub Actions. Tag `master` with `v<semver>` and push:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+CI runs the full test suite, builds the binary, pushes the Docker image, and publishes a GitHub Release with source archives.
