@@ -44,7 +44,7 @@ version: '3.8'
 
 services:
   rocketmq:
-    image: dockerusername/dockerhunrepo:latest
+    image: rocketbroker/rocketmq:latest
     ports:
       - "5672:5672"
       - "15672:15672"
