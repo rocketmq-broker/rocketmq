@@ -73,12 +73,22 @@ pub struct ContentHeader {
 
 // ─── Frame Encoding ───────────────────────────────────
 
+/// Writes the 7-byte AMQP frame header (type + channel + size) directly
+/// into a pre-allocated buffer using a single memcpy. Avoids per-field
+/// extend_from_slice overhead on the hot path.
+#[inline(always)]
+fn write_frame_header(buf: &mut Vec<u8>, frame_type: u8, channel: u16, payload_size: u32) {
+    let ch = channel.to_be_bytes();
+    let sz = payload_size.to_be_bytes();
+    buf.extend_from_slice(&[frame_type, ch[0], ch[1], sz[0], sz[1], sz[2], sz[3]]);
+}
+
+#[inline]
 pub fn encode_method_frame(channel: u16, class_id: u16, method_id: u16, args: &[u8]) -> Vec<u8> {
     let payload_size = 4 + args.len();
-    let mut buf = Vec::with_capacity(8 + payload_size);
-    buf.push(FRAME_METHOD);
-    buf.extend_from_slice(&channel.to_be_bytes());
-    buf.extend_from_slice(&(payload_size as u32).to_be_bytes());
+    let total = 8 + payload_size;
+    let mut buf = Vec::with_capacity(total);
+    write_frame_header(&mut buf, FRAME_METHOD, channel, payload_size as u32);
     buf.extend_from_slice(&class_id.to_be_bytes());
     buf.extend_from_slice(&method_id.to_be_bytes());
     buf.extend_from_slice(args);
@@ -86,44 +96,60 @@ pub fn encode_method_frame(channel: u16, class_id: u16, method_id: u16, args: &[
     buf
 }
 
+/// OPT-9: Encodes properties directly into the frame buffer.
+/// Previous impl allocated an intermediate `prop_buf` Vec then copied.
+#[inline]
 pub fn encode_content_header(
     channel: u16,
     class_id: u16,
     body_size: u64,
     properties: &BasicProperties,
 ) -> Vec<u8> {
-    let mut prop_buf = Vec::new();
-    properties.encode(&mut prop_buf).expect("properties encode");
-
-    let payload_size = 2 + 2 + 8 + prop_buf.len();
-    let mut buf = Vec::with_capacity(8 + payload_size);
-    buf.push(FRAME_HEADER);
-    buf.extend_from_slice(&channel.to_be_bytes());
-    buf.extend_from_slice(&(payload_size as u32).to_be_bytes());
+    // First pass: encode props into the buffer at the right offset.
+    // We reserve a generous estimate, then backpatch the size field.
+    let mut buf = Vec::with_capacity(128);
+    write_frame_header(&mut buf, FRAME_HEADER, channel, 0); // size placeholder
     buf.extend_from_slice(&class_id.to_be_bytes());
     buf.extend_from_slice(&0u16.to_be_bytes());
     buf.extend_from_slice(&body_size.to_be_bytes());
-    buf.extend_from_slice(&prop_buf);
+    let prop_start = buf.len();
+    properties.encode(&mut buf).expect("properties encode");
+    // Backpatch the payload size in the frame header (bytes 3..7)
+    let payload_size = (buf.len() - 7) as u32;
+    buf[3..7].copy_from_slice(&payload_size.to_be_bytes());
+    let _ = prop_start; // suppress unused warning
     buf.push(FRAME_END);
     buf
 }
 
+#[inline]
 pub fn encode_body_frame(channel: u16, body: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(8 + body.len());
-    buf.push(FRAME_BODY);
-    buf.extend_from_slice(&channel.to_be_bytes());
-    buf.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    let total = 8 + body.len();
+    let mut buf = Vec::with_capacity(total);
+    write_frame_header(&mut buf, FRAME_BODY, channel, body.len() as u32);
     buf.extend_from_slice(body);
     buf.push(FRAME_END);
     buf
 }
 
+/// Static heartbeat frame — zero allocation on every heartbeat.
+static HEARTBEAT_FRAME: [u8; 8] = [FRAME_HEARTBEAT, 0, 0, 0, 0, 0, 0, FRAME_END];
+
+#[inline(always)]
+pub fn heartbeat_bytes() -> &'static [u8; 8] {
+    &HEARTBEAT_FRAME
+}
+
+/// Legacy API — returns a Vec copy for callers that need owned data.
+/// Prefer `heartbeat_bytes()` on hot paths.
+#[inline]
 pub fn encode_heartbeat() -> Vec<u8> {
-    vec![FRAME_HEARTBEAT, 0, 0, 0, 0, 0, 0, FRAME_END]
+    HEARTBEAT_FRAME.to_vec()
 }
 
 // ─── Frame Decoding ───────────────────────────────────
 
+#[inline]
 pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
     if data.len() < 8 {
         return Err(io::Error::new(
@@ -162,6 +188,7 @@ pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
     ))
 }
 
+#[inline]
 pub fn decode_method(payload: &[u8]) -> io::Result<MethodFrame> {
     if payload.len() < 4 {
         return Err(io::Error::new(
