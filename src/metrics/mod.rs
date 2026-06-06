@@ -12,6 +12,7 @@
 //! - `broker_gauges` — dynamic broker-state gauges (connections, queues)
 
 pub mod broker_gauges;
+pub mod cluster;
 pub mod counters;
 pub mod system;
 
@@ -62,6 +63,7 @@ pub fn init_meter_provider() -> SdkMeterProvider {
             // in the first `/api/metrics` scrape even at zero.
             counters::register_all();
             system::register_all();
+            cluster::register_all();
 
             provider
         })

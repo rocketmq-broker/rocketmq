@@ -71,6 +71,34 @@ pub struct BrokerConfig {
     pub node_id: u64,
     pub cluster_addr: String,
     pub cluster_seeds: Vec<String>,
+    /// Default number of replicas for quorum queues (including leader).
+    pub default_quorum_group_size: u32,
+    /// Milliseconds before a node is declared down after heartbeat loss.
+    pub cluster_failover_timeout_ms: u64,
+
+    // ── Sprint 5: Partition handling ──────────────────
+    /// Strategy: "pause-minority", "autoheal", or "ignore".
+    pub cluster_partition_handling: String,
+
+    // ── Sprint 6: Discovery ──────────────────────────
+    /// Discovery backend: "static", "dns", or "k8s".
+    pub cluster_discovery_backend: String,
+    /// DNS hostname for SRV-based peer discovery.
+    pub cluster_discovery_dns: String,
+    /// Kubernetes headless service name for pod discovery.
+    pub cluster_discovery_k8s_service: String,
+    /// Kubernetes namespace for pod discovery.
+    pub cluster_discovery_k8s_namespace: String,
+
+    // ── Sprint 8: Streams ────────────────────────────
+    /// Maximum size per stream segment in bytes before rolling.
+    pub stream_max_segment_bytes: u64,
+
+    // ── Sprint 9: Operational tooling ────────────────
+    /// Rack/zone label for replica placement awareness.
+    pub cluster_rack: String,
+    /// Cluster zone label for multi-AZ replica spreading.
+    pub cluster_zone: String,
 
     // Authentication
     pub default_user: String,
@@ -169,6 +197,64 @@ impl BrokerConfig {
                     .filter(|s| !s.is_empty())
                     .collect()
             },
+            default_quorum_group_size: resolve_u64(
+                "ROCKETMQ_DEFAULT_QUORUM_GROUP_SIZE",
+                &file_values,
+                "default_quorum_group_size",
+                3,
+            ) as u32,
+            cluster_failover_timeout_ms: resolve_u64(
+                "ROCKETMQ_CLUSTER_FAILOVER_TIMEOUT_MS",
+                &file_values,
+                "cluster_failover_timeout_ms",
+                15000,
+            ),
+
+            // ── Sprint 5: Partition handling ──────────────
+            cluster_partition_handling: resolve_string(
+                "ROCKETMQ_CLUSTER_PARTITION_HANDLING",
+                &file_values,
+                "cluster_partition_handling",
+                "pause-minority",
+            ),
+
+            // ── Sprint 6: Discovery ──────────────────────
+            cluster_discovery_backend: resolve_string(
+                "ROCKETMQ_CLUSTER_DISCOVERY_BACKEND",
+                &file_values,
+                "cluster_discovery_backend",
+                "static",
+            ),
+            cluster_discovery_dns: resolve_string(
+                "ROCKETMQ_CLUSTER_DISCOVERY_DNS",
+                &file_values,
+                "cluster_discovery_dns",
+                "",
+            ),
+            cluster_discovery_k8s_service: resolve_string(
+                "ROCKETMQ_CLUSTER_DISCOVERY_K8S_SERVICE",
+                &file_values,
+                "cluster_discovery_k8s_service",
+                "",
+            ),
+            cluster_discovery_k8s_namespace: resolve_string(
+                "ROCKETMQ_CLUSTER_DISCOVERY_K8S_NAMESPACE",
+                &file_values,
+                "cluster_discovery_k8s_namespace",
+                "default",
+            ),
+
+            // ── Sprint 8: Streams ────────────────────────
+            stream_max_segment_bytes: resolve_u64(
+                "ROCKETMQ_STREAM_MAX_SEGMENT_BYTES",
+                &file_values,
+                "stream_max_segment_bytes",
+                256 * 1024 * 1024, // 256 MiB
+            ),
+
+            // ── Sprint 9: Operational tooling ────────────
+            cluster_rack: resolve_string("ROCKETMQ_CLUSTER_RACK", &file_values, "cluster_rack", ""),
+            cluster_zone: resolve_string("ROCKETMQ_CLUSTER_ZONE", &file_values, "cluster_zone", ""),
 
             // ── Authentication ───────────────────────────────────
             default_user: resolve_string(
@@ -423,6 +509,46 @@ pub fn get_cluster_addr() -> String {
 
 pub fn get_cluster_seeds() -> Vec<String> {
     config().cluster_seeds.clone()
+}
+
+pub fn get_default_quorum_group_size() -> u32 {
+    config().default_quorum_group_size
+}
+
+pub fn get_cluster_failover_timeout_ms() -> u64 {
+    config().cluster_failover_timeout_ms
+}
+
+pub fn get_cluster_partition_handling() -> String {
+    config().cluster_partition_handling.clone()
+}
+
+pub fn get_cluster_discovery_backend() -> String {
+    config().cluster_discovery_backend.clone()
+}
+
+pub fn get_cluster_discovery_dns() -> String {
+    config().cluster_discovery_dns.clone()
+}
+
+pub fn get_cluster_discovery_k8s_service() -> String {
+    config().cluster_discovery_k8s_service.clone()
+}
+
+pub fn get_cluster_discovery_k8s_namespace() -> String {
+    config().cluster_discovery_k8s_namespace.clone()
+}
+
+pub fn get_stream_max_segment_bytes() -> u64 {
+    config().stream_max_segment_bytes
+}
+
+pub fn get_cluster_rack() -> String {
+    config().cluster_rack.clone()
+}
+
+pub fn get_cluster_zone() -> String {
+    config().cluster_zone.clone()
 }
 
 pub fn get_amqp_listen_addr() -> String {
