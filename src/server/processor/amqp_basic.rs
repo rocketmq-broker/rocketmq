@@ -40,6 +40,7 @@ use crate::state::Broker;
 
 // ─── Basic.Publish ────────────────────────────────────
 
+#[inline]
 pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
     let mut r = Cursor::new(args);
     let _ticket = read_short(&mut r).unwrap_or(0);
@@ -105,18 +106,9 @@ pub async fn handle_publish(
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_millis);
 
-    let exchanges = broker.exchanges.read().await;
-    let exchange = match exchanges.get(exchange_name) {
-        Some(ex) => ex,
-        None => {
-            warn!(conn_id, exchange = exchange_name, "exchange not found");
-
-            if let Some(tag) = confirm_tag {
-                send_confirm_ack(channel, tag, writer).await;
-            }
-            return;
-        }
-    };
+    // OPT-8: Scope the exchange read lock to routing only.
+    // The lock is dropped before we touch any queues, reducing contention
+    // between concurrent publishers on different exchanges.
     let msg_headers: HashMap<String, String> = properties
         .headers
         .as_ref()
@@ -126,7 +118,22 @@ pub async fn handle_publish(
                 .collect()
         })
         .unwrap_or_default();
-    let target_queues = exchange.route(routing_key, &msg_headers);
+
+    let target_queues = {
+        let exchanges = broker.exchanges.read().await;
+        let exchange = match exchanges.get(exchange_name) {
+            Some(ex) => ex,
+            None => {
+                warn!(conn_id, exchange = exchange_name, "exchange not found");
+                if let Some(tag) = confirm_tag {
+                    send_confirm_ack(channel, tag, writer).await;
+                }
+                return;
+            }
+        };
+        exchange.route(routing_key, &msg_headers)
+    };
+    // exchange RwLock guard dropped here — all queue ops below are lock-free
     debug!(conn_id, exchange = exchange_name, routing_key, targets = ?target_queues, "routed");
 
     if target_queues.is_empty() {
@@ -192,6 +199,11 @@ pub async fn handle_publish(
     let is_persistent = properties.delivery_mode == Some(2);
     let mut published_messages = Vec::new();
 
+    // OPT-3: Encode properties once before the queue loop.
+    // Previously encoded per-queue, causing N redundant heap allocs on fanout.
+    let mut prop_bytes = Vec::new();
+    properties.encode(&mut prop_bytes).unwrap_or_default();
+
     for queue_name in &target_queues {
         let msg_id = broker.alloc_msg_id();
         published_messages.push((queue_name.clone(), msg_id));
@@ -221,9 +233,6 @@ pub async fn handle_publish(
                 }
             }
         }
-
-        let mut prop_bytes = Vec::new();
-        properties.encode(&mut prop_bytes).unwrap_or_default();
 
         let mut disk_ref = None;
         if queue.options.durable && is_persistent {
@@ -256,7 +265,7 @@ pub async fn handle_publish(
         } else {
             crate::queue::message::QueueMessage::Full(Message {
                 id: msg_id,
-                headers: prop_bytes,
+                headers: prop_bytes.clone(),
                 body: body.to_vec(),
                 priority: effective_priority,
                 expiration,
@@ -510,6 +519,11 @@ pub async fn handle_consume(
         }
     };
 
+    // OPT-2: index consumer_tag → queue for O(1) cancel lookup
+    broker
+        .consumer_index
+        .insert(assigned_tag.clone(), queue_name.clone());
+
     info!(
         conn_id,
         channel,
@@ -540,9 +554,10 @@ pub async fn handle_cancel(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_wait = flags & 0x01 != 0;
 
-    for mut entry in broker.queues.iter_mut() {
-        if entry.value_mut().cancel_consumer(&consumer_tag) {
-            break;
+    // OPT-2: O(1) lookup via consumer_index instead of scanning all queues
+    if let Some((_, queue_name)) = broker.consumer_index.remove(&consumer_tag) {
+        if let Some(mut q) = broker.queues.get_mut(&queue_name) {
+            q.cancel_consumer(&consumer_tag);
         }
     }
 
@@ -577,24 +592,25 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
         }
     }
 
-    for mut entry in broker.queues.iter_mut() {
-        if entry.value_mut().inflight.remove(&delivery_tag).is_some() {
-            {
+    // OPT-1: O(1) lookup via delivery_index instead of scanning all queues
+    let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
+    if let Some(qn) = queue_name {
+        if let Some(mut entry) = broker.queues.get_mut(&qn) {
+            if entry.inflight.remove(&delivery_tag).is_some() {
                 let _ = broker.wal().log_ack(delivery_tag);
-            }
-            entry.value_mut().stat_acked += 1;
-            crate::metrics::record_acked();
-            info!(conn_id, delivery_tag, "acked");
+                entry.stat_acked += 1;
+                crate::metrics::record_acked();
+                info!(conn_id, delivery_tag, "acked");
 
-            if let Some(c) = broker.cluster() {
-                let c = c.clone();
-                let q_name = entry.key().clone();
-                tokio::spawn(async move {
-                    let _ = c.replicate_ack(&q_name, delivery_tag).await;
-                });
+                if let Some(c) = broker.cluster() {
+                    let c = c.clone();
+                    let q_name = qn;
+                    tokio::spawn(async move {
+                        let _ = c.replicate_ack(&q_name, delivery_tag).await;
+                    });
+                }
+                return;
             }
-
-            return;
         }
     }
     warn!(conn_id, delivery_tag, "ack for unknown delivery tag");
@@ -616,20 +632,23 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
         }
     }
 
-    for mut entry in broker.queues.iter_mut() {
-        if let Some(mut msg) = entry.value_mut().inflight.remove(&delivery_tag) {
-            if requeue {
-                msg.redelivered = true;
-                msg.delivery_count += 1;
-                entry
-                    .value_mut()
-                    .messages
-                    .push_front(crate::queue::message::QueueMessage::Full(msg));
-                info!(conn_id, delivery_tag, "rejected+requeued");
-            } else {
-                info!(conn_id, delivery_tag, "rejected+discarded");
+    // OPT-1: O(1) lookup via delivery_index
+    let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
+    if let Some(qn) = queue_name {
+        if let Some(mut entry) = broker.queues.get_mut(&qn) {
+            if let Some(mut msg) = entry.inflight.remove(&delivery_tag) {
+                if requeue {
+                    msg.redelivered = true;
+                    msg.delivery_count += 1;
+                    entry
+                        .messages
+                        .push_front(crate::queue::message::QueueMessage::Full(msg));
+                    info!(conn_id, delivery_tag, "rejected+requeued");
+                } else {
+                    info!(conn_id, delivery_tag, "rejected+discarded");
+                }
+                return;
             }
-            return;
         }
     }
     warn!(conn_id, delivery_tag, "reject for unknown delivery tag");
@@ -652,20 +671,23 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
         }
     }
 
-    for mut entry in broker.queues.iter_mut() {
-        if let Some(mut msg) = entry.value_mut().inflight.remove(&delivery_tag) {
-            if requeue {
-                msg.redelivered = true;
-                msg.delivery_count += 1;
-                entry
-                    .value_mut()
-                    .messages
-                    .push_front(crate::queue::message::QueueMessage::Full(msg));
-                info!(conn_id, delivery_tag, "nacked+requeued");
-            } else {
-                info!(conn_id, delivery_tag, "nacked+discarded");
+    // OPT-1: O(1) lookup via delivery_index
+    let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
+    if let Some(qn) = queue_name {
+        if let Some(mut entry) = broker.queues.get_mut(&qn) {
+            if let Some(mut msg) = entry.inflight.remove(&delivery_tag) {
+                if requeue {
+                    msg.redelivered = true;
+                    msg.delivery_count += 1;
+                    entry
+                        .messages
+                        .push_front(crate::queue::message::QueueMessage::Full(msg));
+                    info!(conn_id, delivery_tag, "nacked+requeued");
+                } else {
+                    info!(conn_id, delivery_tag, "nacked+discarded");
+                }
+                return;
             }
-            return;
         }
     }
     warn!(conn_id, delivery_tag, "nack for unknown delivery tag");
@@ -686,23 +708,22 @@ pub async fn handle_get(
     let flags = read_octet(&mut r).unwrap_or(0);
     let no_ack = flags & 0x01 != 0;
 
-    if !broker.queues.contains_key(&queue_name) {
-        send_channel_error(
-            writer,
-            channel,
-            NOT_FOUND,
-            "NOT_FOUND - no such queue",
-            CLASS_BASIC,
-            METHOD_BASIC_GET,
-        )
-        .await;
-        return;
-    }
-
-    let q_msg = broker
-        .queues
-        .get_mut(&queue_name)
-        .and_then(|mut q| q.value_mut().messages.pop_front());
+    // OPT-12: single get_mut instead of contains_key + get_mut (two DashMap probes, TOCTOU race)
+    let q_msg = match broker.queues.get_mut(&queue_name) {
+        Some(mut q) => q.value_mut().messages.pop_front(),
+        None => {
+            send_channel_error(
+                writer,
+                channel,
+                NOT_FOUND,
+                "NOT_FOUND - no such queue",
+                CLASS_BASIC,
+                METHOD_BASIC_GET,
+            )
+            .await;
+            return;
+        }
+    };
 
     match q_msg {
         Some(q_msg) => {
@@ -751,6 +772,10 @@ pub async fn handle_get(
             let _ = writer.flush().await;
 
             if !no_ack {
+                // OPT-1: Also index this delivery for O(1) ack lookup
+                broker
+                    .delivery_index
+                    .insert(delivery_tag, queue_name.clone());
                 if let Some(mut q) = broker.queues.get_mut(&queue_name) {
                     q.inflight.insert(delivery_tag, msg);
                 }
@@ -815,6 +840,7 @@ pub async fn handle_recover(
 
 // ─── Helpers ──────────────────────────────────────────
 
+#[inline]
 pub fn build_deliver_args(
     consumer_tag: &str,
     delivery_tag: u64,
