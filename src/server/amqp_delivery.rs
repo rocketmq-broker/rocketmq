@@ -100,11 +100,16 @@ async fn deliver_queue(
         let frames = encode_delivery_frames(channel, consumer_tag, &msg);
 
         queue.inflight.insert(delivery_tag, msg);
+        // OPT-1: index delivery_tag → queue for O(1) ack lookup
+        broker
+            .delivery_index
+            .insert(delivery_tag, queue_name.to_string());
         queue.last_activity = Instant::now();
         increment_unacked(broker, conn_id, channel);
 
         if !try_send_delivery(broker, conn_id, &frames) {
             requeue_inflight(queue, delivery_tag);
+            broker.delivery_index.remove(&delivery_tag);
             warn!(conn_id, delivery_tag, "delivery channel full, requeued");
             break;
         }
@@ -224,7 +229,10 @@ fn build_deliver_args(
     exchange: &str,
     routing_key: &str,
 ) -> Vec<u8> {
-    let mut args = Vec::new();
+    // OPT-5: pre-calculate capacity to avoid reallocations.
+    // Layout: shortstr(1+len) + longlong(8) + octet(1) + shortstr(1+len) + shortstr(1+len)
+    let cap = 1 + consumer_tag.len() + 8 + 1 + 1 + exchange.len() + 1 + routing_key.len();
+    let mut args = Vec::with_capacity(cap);
     write_shortstr(&mut args, consumer_tag).unwrap();
     write_longlong(&mut args, delivery_tag).unwrap();
     write_octet(&mut args, if redelivered { 1 } else { 0 }).unwrap();
