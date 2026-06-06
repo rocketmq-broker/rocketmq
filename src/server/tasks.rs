@@ -157,74 +157,83 @@ async fn wal_compact_task(broker: Broker) {
     loop {
         interval.tick().await;
 
-        let wal = broker.wal();
+        let wal = broker.wal().clone();
+        let threshold = crate::config::wal_compact_threshold();
 
-        let entries = match wal.read_all() {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        // Offload CPU-bound WAL compaction to the blocking thread pool
+        // to avoid stalling the tokio event loop.
+        let result = tokio::task::spawn_blocking(move || {
+            let entries = match wal.read_all() {
+                Ok(e) => e,
+                Err(_) => return None,
+            };
 
-        let entry_count = entries.len() as u64;
-        if entry_count < crate::config::wal_compact_threshold() {
-            continue;
-        }
-
-        let mut acked_ids: std::collections::HashSet<u64> = std::collections::HashSet::new();
-        for entry in &entries {
-            if entry.entry_type == EntryType::Ack && entry.data.len() >= 8 {
-                let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
-                acked_ids.insert(msg_id);
+            let entry_count = entries.len() as u64;
+            if entry_count < threshold {
+                return None;
             }
-        }
 
-        if acked_ids.is_empty() {
-            continue;
-        }
-
-        let mut kept = 0u64;
-        let mut removed = 0u64;
-        if let Err(e) = wal.truncate() {
-            debug!(error = %e, "WAL compaction truncate failed");
-            continue;
-        }
-
-        for entry in &entries {
-            match entry.entry_type {
-                EntryType::Enqueue => {
-                    let queue_len = u16::from_be_bytes([entry.data[0], entry.data[1]]) as usize;
-                    if entry.data.len() >= 2 + queue_len + 8 {
-                        let msg_id = u64::from_be_bytes(
-                            entry.data[2 + queue_len..2 + queue_len + 8]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        if acked_ids.contains(&msg_id) {
-                            removed += 1;
-                            continue;
-                        }
-                    }
-                    let _ = wal.append(entry.entry_type, &entry.data);
-                    kept += 1;
-                }
-                EntryType::Ack => {
-                    if entry.data.len() >= 8 {
-                        let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
-                        if acked_ids.contains(&msg_id) {
-                            removed += 1;
-                            continue;
-                        }
-                    }
-                    let _ = wal.append(entry.entry_type, &entry.data);
-                    kept += 1;
-                }
-                _ => {
-                    let _ = wal.append(entry.entry_type, &entry.data);
-                    kept += 1;
+            let mut acked_ids: std::collections::HashSet<u64> = std::collections::HashSet::new();
+            for entry in &entries {
+                if entry.entry_type == EntryType::Ack && entry.data.len() >= 8 {
+                    let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
+                    acked_ids.insert(msg_id);
                 }
             }
-        }
 
-        info!(before = entry_count, after = kept, removed, "WAL compacted");
+            if acked_ids.is_empty() {
+                return None;
+            }
+
+            let mut kept = 0u64;
+            let mut removed = 0u64;
+            if wal.truncate().is_err() {
+                return None;
+            }
+
+            for entry in &entries {
+                match entry.entry_type {
+                    EntryType::Enqueue => {
+                        let queue_len = u16::from_be_bytes([entry.data[0], entry.data[1]]) as usize;
+                        if entry.data.len() >= 2 + queue_len + 8 {
+                            let msg_id = u64::from_be_bytes(
+                                entry.data[2 + queue_len..2 + queue_len + 8]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                            if acked_ids.contains(&msg_id) {
+                                removed += 1;
+                                continue;
+                            }
+                        }
+                        let _ = wal.append(entry.entry_type, &entry.data);
+                        kept += 1;
+                    }
+                    EntryType::Ack => {
+                        if entry.data.len() >= 8 {
+                            let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
+                            if acked_ids.contains(&msg_id) {
+                                removed += 1;
+                                continue;
+                            }
+                        }
+                        let _ = wal.append(entry.entry_type, &entry.data);
+                        kept += 1;
+                    }
+                    _ => {
+                        let _ = wal.append(entry.entry_type, &entry.data);
+                        kept += 1;
+                    }
+                }
+            }
+
+            Some((entry_count, kept, removed))
+        })
+        .await;
+
+        if let Ok(Some((before, after, removed))) = result {
+            info!(before, after, removed, "WAL compacted");
+        }
     }
 }
 
