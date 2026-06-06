@@ -263,8 +263,8 @@ pub fn spawn_amqp_on_stream(
                         warn!(conn_id, "heartbeat timeout");
                         break;
                     }
-                    let hb = encode_heartbeat();
-                    if writer.write_all(&hb).await.is_err() { break; }
+                    // Zero-alloc: use static heartbeat frame slice
+                    if writer.write_all(crate::core::amqp_codec::heartbeat_bytes()).await.is_err() { break; }
                     if writer.flush().await.is_err() { break; }
                 }
 
