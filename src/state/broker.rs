@@ -161,6 +161,14 @@ pub struct BrokerState {
     cluster: OnceLock<Arc<crate::cluster::ClusterCoordinator>>,
     /// Epoch ms when the broker started.
     started_at_ms: u64,
+    /// OPT-1: O(1) delivery_tag → queue_name index.
+    /// Populated on delivery, removed on ack/reject/nack.
+    /// Eliminates the O(Q) full-queue scan in ack handlers.
+    pub delivery_index: DashMap<u64, String>,
+    /// OPT-2: O(1) consumer_tag → queue_name index.
+    /// Populated on consume, removed on cancel/disconnect.
+    /// Eliminates the O(Q) full-queue scan in cancel handler.
+    pub consumer_index: DashMap<String, String>,
 }
 
 impl BrokerState {
@@ -201,6 +209,8 @@ impl BrokerState {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
+            delivery_index: DashMap::new(),
+            consumer_index: DashMap::new(),
         }
     }
 
@@ -233,11 +243,13 @@ impl BrokerState {
     }
 
     /// Allocates a globally unique, monotonically increasing connection ID.
+    #[inline(always)]
     pub fn alloc_conn_id(&self) -> u64 {
         self.next_conn_id.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Allocates a globally unique, monotonically increasing message ID.
+    #[inline(always)]
     pub fn alloc_msg_id(&self) -> u64 {
         self.next_msg_id.fetch_add(1, Ordering::Relaxed)
     }
@@ -251,10 +263,27 @@ impl BrokerState {
             let (name, queue) = entry.pair_mut();
             queue.listeners.retain(|&(id, _)| id != conn_id);
 
+            // Clean up consumer_index for removed consumers
+            let removed_tags: Vec<String> = queue
+                .consumer_tags
+                .iter()
+                .filter(|(_, (cid, _))| *cid == conn_id)
+                .map(|(tag, _)| tag.clone())
+                .collect();
+            for tag in &removed_tags {
+                self.consumer_index.remove(tag);
+            }
+
             queue
                 .consumer_tags
                 .retain(|_tag, &mut (cid, _)| cid != conn_id);
             queue.consumer_count = queue.listeners.len();
+
+            // Clean up delivery_index for inflight messages owned by this connection
+            let inflight_tags: Vec<u64> = queue.inflight.keys().copied().collect();
+            for tag in &inflight_tags {
+                self.delivery_index.remove(tag);
+            }
 
             if queue.options.exclusive && queue.owner_conn_id == Some(conn_id) {
                 queues_to_remove.push(name.clone());
