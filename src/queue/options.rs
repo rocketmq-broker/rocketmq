@@ -19,12 +19,53 @@
 
 use std::time::Duration;
 
+/// Discriminator for the queue's replication strategy.
+///
+/// Drives how a queue stores and replicates messages.
+///
+/// ```ignore
+/// let qt = QueueType::from_amqp_arg(Some("quorum"));
+/// assert_eq!(qt, QueueType::Quorum);
+/// ```
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum QueueType {
+    /// Single-node queue — messages reside on the declaring node only.
+    #[default]
+    Classic,
+    /// Raft-replicated queue — writes require majority quorum.
+    Quorum,
+    /// Append-only log — messages are never removed on ACK.
+    Stream,
+}
+
+impl QueueType {
+    /// Parses the AMQP `x-queue-type` argument value.
+    ///
+    /// Returns `Classic` for `None` or unrecognised values, matching
+    /// RabbitMQ's default behavior.
+    pub fn from_amqp_arg(value: Option<&str>) -> Self {
+        match value {
+            Some("quorum") => Self::Quorum,
+            Some("stream") => Self::Stream,
+            _ => Self::Classic,
+        }
+    }
+
+    /// Returns the wire-level string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Quorum => "quorum",
+            Self::Stream => "stream",
+        }
+    }
+}
+
 /// Configurable parameters for queue creation (durable, exclusive, TTL, DLX, etc.).
 /// Parsed queue configuration derived from AMQP `x-*` headers.
 ///
 /// Includes message TTL, queue expiry, max length, dead-letter
 /// exchange/routing-key, and priority level settings.
-/// Configurable parameters for queue creation (durable, exclusive, TTL, DLX, etc.).
 #[derive(Clone, Debug, Default)]
 pub struct QueueOptions {
     pub durable: bool,
@@ -44,6 +85,13 @@ pub struct QueueOptions {
     pub schema: Option<Vec<u8>>,
     pub schema_type: Option<String>,
     pub schema_message: Option<String>,
+
+    // ── Cluster / Queue HA (Sprint 2) ─────────────────
+    /// Replication strategy chosen at declare time.
+    pub queue_type: QueueType,
+    /// Number of replicas for quorum queues (including the leader).
+    /// Defaults to `default_quorum_group_size` from config.
+    pub quorum_group_size: u32,
 }
 
 impl QueueOptions {
@@ -75,8 +123,14 @@ impl QueueOptions {
                     "x-retry-delay" => opts.retry_delay_ms = v.parse().ok(),
                     "x-retry-multiplier" => opts.retry_multiplier = v.parse().ok(),
                     "x-rate-limit" => opts.rate_limit = v.parse().ok(),
-                    "x-queue-type" if v == "stream" => {
-                        opts.stream_mode = true;
+                    "x-queue-type" => {
+                        opts.queue_type = QueueType::from_amqp_arg(Some(v));
+                        if v == "stream" {
+                            opts.stream_mode = true;
+                        }
+                    }
+                    "x-quorum-initial-group-size" => {
+                        opts.quorum_group_size = v.parse().unwrap_or(3);
                     }
                     "x-schema" => opts.schema = Some(v.as_bytes().to_vec()),
                     "x-schema-type" => opts.schema_type = Some(v.to_string()),
@@ -92,13 +146,52 @@ impl QueueOptions {
 
 #[cfg(test)]
 mod tests {
-    #[allow(unused_imports)]
     use super::*;
 
-    /// Dedicated unit test verification for `from_headers` function.
     #[test]
-    fn test_coverage_for_queue_options_from_headers() {
-        let func_name = "from_headers";
-        assert!(!func_name.is_empty());
+    fn queue_type_from_amqp_arg_variants() {
+        assert_eq!(QueueType::from_amqp_arg(None), QueueType::Classic);
+        assert_eq!(
+            QueueType::from_amqp_arg(Some("classic")),
+            QueueType::Classic
+        );
+        assert_eq!(QueueType::from_amqp_arg(Some("quorum")), QueueType::Quorum);
+        assert_eq!(QueueType::from_amqp_arg(Some("stream")), QueueType::Stream);
+        assert_eq!(
+            QueueType::from_amqp_arg(Some("unknown")),
+            QueueType::Classic
+        );
+    }
+
+    #[test]
+    fn queue_type_as_str_roundtrip() {
+        assert_eq!(QueueType::Classic.as_str(), "classic");
+        assert_eq!(QueueType::Quorum.as_str(), "quorum");
+        assert_eq!(QueueType::Stream.as_str(), "stream");
+    }
+
+    #[test]
+    fn from_headers_parses_queue_type() {
+        let headers = "name:my-q\r\nx-queue-type:quorum\r\nx-quorum-initial-group-size:5";
+        let (name, opts) = QueueOptions::from_headers(headers);
+        assert_eq!(name, "my-q");
+        assert_eq!(opts.queue_type, QueueType::Quorum);
+        assert_eq!(opts.quorum_group_size, 5);
+    }
+
+    #[test]
+    fn from_headers_defaults_to_classic() {
+        let headers = "name:classic-q\r\ndurable:true";
+        let (_, opts) = QueueOptions::from_headers(headers);
+        assert_eq!(opts.queue_type, QueueType::Classic);
+        assert!(opts.durable);
+    }
+
+    #[test]
+    fn from_headers_stream_sets_stream_mode() {
+        let headers = "name:stream-q\r\nx-queue-type:stream";
+        let (_, opts) = QueueOptions::from_headers(headers);
+        assert_eq!(opts.queue_type, QueueType::Stream);
+        assert!(opts.stream_mode);
     }
 }

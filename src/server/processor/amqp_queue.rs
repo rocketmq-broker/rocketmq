@@ -125,6 +125,22 @@ pub async fn handle_declare(
         ..QueueOptions::default()
     };
 
+    // Parse x-queue-type for quorum/stream support
+    if let Some(FieldValue::LongString(v)) = arguments.get("x-queue-type") {
+        let type_str = String::from_utf8_lossy(v);
+        opts.queue_type = crate::queue::options::QueueType::from_amqp_arg(Some(&type_str));
+        if type_str == "stream" {
+            opts.stream_mode = true;
+        }
+    }
+    if let Some(FieldValue::LongInt(v)) = arguments.get("x-quorum-initial-group-size") {
+        opts.quorum_group_size = *v as u32;
+    }
+    // Quorum queues are always durable (Raft requires persistence)
+    if opts.queue_type == crate::queue::options::QueueType::Quorum {
+        opts.durable = true;
+    }
+
     if let Some(FieldValue::LongInt(v)) = arguments.get("x-message-ttl") {
         opts.message_ttl = Some(std::time::Duration::from_millis(*v as u64));
     }
@@ -238,6 +254,11 @@ pub async fn handle_declare(
 
     let is_new = !broker.queues.contains_key(&name);
 
+    // Capture before `opts` is consumed by or_insert_with closure
+    let queue_type_str = opts.queue_type.as_str().to_string();
+    let group_size = opts.quorum_group_size;
+    let is_quorum = opts.queue_type == crate::queue::options::QueueType::Quorum;
+
     // Scoped to drop the DashMap RefMut before auto_bind_default_exchange,
     // which also accesses broker.queues and would deadlock otherwise.
     {
@@ -296,6 +317,24 @@ pub async fn handle_declare(
     broker.auto_bind_default_exchange(&name);
 
     if is_new {
+        // For quorum queues: create Raft group and set replica info
+        if is_quorum {
+            if let Some(c) = broker.cluster() {
+                let node_id = c.node_id;
+                let replicas = c.create_queue_raft_group(&name, group_size);
+                if let Some(mut q) = broker.queues.get_mut(&name) {
+                    q.leader_node = Some(node_id);
+                    q.replica_nodes = replicas;
+                }
+            } else {
+                // Single-node: set self as leader
+                if let Some(mut q) = broker.queues.get_mut(&name) {
+                    q.leader_node = Some(crate::config::get_node_id());
+                    q.replica_nodes = vec![crate::config::get_node_id()];
+                }
+            }
+        }
+
         if let Some(c) = broker.cluster() {
             let c = c.clone();
             let name_clone = name.clone();
@@ -305,6 +344,8 @@ pub async fn handle_declare(
                     durable,
                     exclusive,
                     auto_delete,
+                    queue_type: queue_type_str,
+                    group_size,
                 })
                 .await;
             });

@@ -18,7 +18,7 @@
 // Description: Individual queue state management, delivery tracking, and consumer subscription.
 
 use super::message::Message;
-use super::options::QueueOptions;
+use super::options::{QueueOptions, QueueType};
 use super::priority::PriorityQueue;
 use crate::schema::CompiledSchema;
 use std::collections::HashMap;
@@ -140,6 +140,15 @@ pub struct QueueState {
     pub stat_delivered: u64,
     pub stat_acked: u64,
     pub schema: Option<Arc<CompiledSchema>>,
+
+    // ── Cluster HA (Sprint 2 + 3) ─────────────────────
+    /// Replication strategy for this queue.
+    pub queue_type: QueueType,
+    /// Node ID of the current leader (the node owning the queue).
+    /// For classic queues this is always the declaring node.
+    pub leader_node: Option<u64>,
+    /// Node IDs hosting replicas (including leader) for quorum queues.
+    pub replica_nodes: Vec<u64>,
 }
 
 impl Default for QueueState {
@@ -157,6 +166,7 @@ impl QueueState {
     pub fn with_options(options: QueueOptions) -> Self {
         let rate_limiter = options.rate_limit.map(TokenBucket::new);
         let stream_mode = options.stream_mode;
+        let queue_type = options.queue_type.clone();
         Self {
             options,
             owner_conn_id: None,
@@ -175,6 +185,9 @@ impl QueueState {
             stat_delivered: 0,
             stat_acked: 0,
             schema: None,
+            queue_type,
+            leader_node: None,
+            replica_nodes: Vec::new(),
         }
     }
 
