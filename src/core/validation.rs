@@ -28,6 +28,19 @@
 use crate::core::amqp_codec::*;
 use crate::core::method::*;
 
+/// Branchless frame-type validation via pre-computed 256-entry lookup table.
+/// Index by frame_type byte: true = valid, false = invalid.
+/// Valid types: 1 (METHOD), 2 (HEADER), 3 (BODY), 8 (HEARTBEAT).
+static VALID_FRAME_TYPE: [bool; 256] = {
+    let mut table = [false; 256];
+    table[FRAME_METHOD as usize] = true;
+    table[FRAME_HEADER as usize] = true;
+    table[FRAME_BODY as usize] = true;
+    table[FRAME_HEARTBEAT as usize] = true;
+    table
+};
+
+#[inline(always)]
 pub fn validate_channel(channel: u16, class_id: u16) -> Option<&'static str> {
     // Connection class MUST be on channel 0
     if class_id == CLASS_CONNECTION && channel != 0 {
@@ -40,13 +53,16 @@ pub fn validate_channel(channel: u16, class_id: u16) -> Option<&'static str> {
     None
 }
 
+#[inline(always)]
 pub fn validate_frame_type(frame_type: u8) -> Option<&'static str> {
-    match frame_type {
-        FRAME_METHOD | FRAME_HEADER | FRAME_BODY | FRAME_HEARTBEAT => None,
-        _ => Some("unknown frame type"),
+    if VALID_FRAME_TYPE[frame_type as usize] {
+        None
+    } else {
+        Some("unknown frame type")
     }
 }
 
+#[inline(always)]
 pub fn validate_frame_size(payload_len: usize, frame_max: u32) -> Option<&'static str> {
     if frame_max == 0 {
         return None; // 0 means unlimited
@@ -58,6 +74,7 @@ pub fn validate_frame_size(payload_len: usize, frame_max: u32) -> Option<&'stati
     None
 }
 
+#[inline(always)]
 pub fn validate_channel_number(channel: u16, channel_max: u16) -> Option<&'static str> {
     if channel_max == 0 {
         return None;
@@ -68,16 +85,19 @@ pub fn validate_channel_number(channel: u16, channel_max: u16) -> Option<&'stati
     None
 }
 
+#[inline(always)]
 pub fn validate_heartbeat(channel: u16, payload_len: usize) -> Option<&'static str> {
-    if channel != 0 {
-        return Some("heartbeat on non-zero channel");
-    }
-    if payload_len != 0 {
+    // Branchless: combine both checks. Both must be zero.
+    if (channel as usize | payload_len) != 0 {
+        if channel != 0 {
+            return Some("heartbeat on non-zero channel");
+        }
         return Some("heartbeat with non-empty payload");
     }
     None
 }
 
+#[inline(always)]
 pub fn validate_content_channel(channel: u16) -> Option<&'static str> {
     if channel == 0 {
         return Some("content frame on channel 0");
