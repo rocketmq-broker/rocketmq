@@ -247,7 +247,7 @@ pub fn to_broker_error(queue: &str, err: &SchemaValidationError) -> BrokerError 
         },
 
         SchemaValidationError::DecodeFailed(_) => BrokerError {
-            code: ErrorCode::SchemaCompileFailed,
+            code: ErrorCode::ValidationTypeMismatch,
             queue: queue.to_string(),
             fields: vec![],
             truncated: false,
