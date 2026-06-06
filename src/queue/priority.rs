@@ -26,6 +26,8 @@ use std::collections::{BTreeMap, VecDeque};
 /// A queue structure that prioritizes messages based on priority field values.
 pub struct PriorityQueue {
     buckets: BTreeMap<u8, VecDeque<QueueMessage>>,
+    /// OPT-6: cached total count — makes len() O(1) instead of O(B).
+    total_len: usize,
 }
 
 impl Default for PriorityQueue {
@@ -39,23 +41,29 @@ impl PriorityQueue {
     pub fn new() -> Self {
         Self {
             buckets: BTreeMap::new(),
+            total_len: 0,
         }
     }
 
+    #[inline]
     pub fn push_back(&mut self, msg: QueueMessage) {
         self.buckets
             .entry(msg.priority())
             .or_default()
             .push_back(msg);
+        self.total_len += 1;
     }
 
+    #[inline]
     pub fn push_front(&mut self, msg: QueueMessage) {
         self.buckets
             .entry(msg.priority())
             .or_default()
             .push_front(msg);
+        self.total_len += 1;
     }
 
+    #[inline]
     pub fn pop_front(&mut self) -> Option<QueueMessage> {
         let key = *self.buckets.keys().next_back()?;
         let queue = self.buckets.get_mut(&key)?;
@@ -63,9 +71,13 @@ impl PriorityQueue {
         if queue.is_empty() {
             self.buckets.remove(&key);
         }
+        if msg.is_some() {
+            self.total_len -= 1;
+        }
         msg
     }
 
+    #[inline]
     pub fn pop_oldest(&mut self) -> Option<QueueMessage> {
         let key = *self.buckets.keys().next()?;
         let queue = self.buckets.get_mut(&key)?;
@@ -73,24 +85,32 @@ impl PriorityQueue {
         if queue.is_empty() {
             self.buckets.remove(&key);
         }
+        if msg.is_some() {
+            self.total_len -= 1;
+        }
         msg
     }
 
+    /// Returns the total number of messages across all priority levels.
+    /// O(1) — uses a cached counter maintained on push/pop.
+    #[inline(always)]
     pub fn len(&self) -> usize {
-        self.buckets.values().map(|q| q.len()).sum()
+        self.total_len
     }
 
+    #[inline]
     pub fn peek_front(&self) -> Option<&QueueMessage> {
         let key = *self.buckets.keys().next_back()?;
         self.buckets.get(&key)?.front()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.buckets.is_empty()
+        self.total_len == 0
     }
 
     pub fn clear(&mut self) {
         self.buckets.clear();
+        self.total_len = 0;
     }
 }
 
