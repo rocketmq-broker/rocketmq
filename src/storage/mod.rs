@@ -17,6 +17,7 @@
 // File: mod.rs
 // Description: Storage engine and persistence layer interfaces.
 
+pub mod stream;
 pub mod wal;
 
 use std::sync::Arc;
@@ -61,6 +62,8 @@ fn replay(broker: &Arc<BrokerState>, entries: &[WalEntry]) {
             EntryType::DeclareExchange => replay_declare_exchange(broker, &entry.data),
             EntryType::Bind => replay_bind(broker, &entry.data),
             EntryType::SetQueueSchema => replay_set_queue_schema(broker, &entry.data),
+            // Raft entries are replayed by the cluster module, not here.
+            EntryType::RaftEntry | EntryType::RaftVote => Ok(()),
         };
         if let Err(err) = res {
             tracing::warn!(?entry.entry_type, %err, "Failed to replay WAL entry");

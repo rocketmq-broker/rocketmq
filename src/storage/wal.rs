@@ -28,6 +28,8 @@
 //!   0x03 Ack           { msg_id: u64 }
 //!   0x04 DeclareExchange { name_len: u16, name: [u8], kind: u8, durable: u8 }
 //!   0x05 Bind          { exchange_len: u16, exchange: [u8], queue_len: u16, queue: [u8], rk_len: u16, rk: [u8] }
+//!   0x10 RaftEntry     { term: u64, index: u64, command_len: u32, command_json: [u8] }
+//!   0x11 RaftVote      { term: u64, voted_for: u64 }
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
@@ -134,6 +136,10 @@ pub enum EntryType {
     DeclareExchange = 0x04,
     Bind = 0x05,
     SetQueueSchema = 0x06,
+    /// Persists a single Raft log entry (term + index + serialized command).
+    RaftEntry = 0x10,
+    /// Persists the current term and voted_for state for crash recovery.
+    RaftVote = 0x11,
 }
 
 impl TryFrom<u8> for EntryType {
@@ -146,6 +152,8 @@ impl TryFrom<u8> for EntryType {
             0x04 => Ok(Self::DeclareExchange),
             0x05 => Ok(Self::Bind),
             0x06 => Ok(Self::SetQueueSchema),
+            0x10 => Ok(Self::RaftEntry),
+            0x11 => Ok(Self::RaftVote),
             _ => Err(()),
         }
     }
@@ -584,6 +592,42 @@ impl Wal {
         w.write_str_u16(queue);
         w.write_str_u16(routing_key);
         self.append(EntryType::Bind, &w.finish())
+    }
+
+    /// Persists a Raft log entry so it survives broker restarts.
+    ///
+    /// Format: `[term: u64] [index: u64] [command_json_len: u32] [command_json: [u8]]`
+    ///
+    /// ```ignore
+    /// wal.log_raft_entry(3, 7, &serde_json::to_vec(&cmd).unwrap())?;
+    /// ```
+    pub fn log_raft_entry(
+        &self,
+        term: u64,
+        index: u64,
+        command_json: &[u8],
+    ) -> std::io::Result<u64> {
+        let cap = 8 + 8 + 4 + command_json.len();
+        let mut w = WalWriter::with_capacity(cap);
+        w.write_u64(term);
+        w.write_u64(index);
+        w.write_bytes_u32(command_json);
+        self.append(EntryType::RaftEntry, &w.finish())
+    }
+
+    /// Persists the node's current term and voted_for so election
+    /// state survives crashes (Raft §5.2 persistent state).
+    ///
+    /// `voted_for` of 0 means "no vote cast this term".
+    ///
+    /// ```ignore
+    /// wal.log_raft_vote(5, 2)?; // voted for node 2 in term 5
+    /// ```
+    pub fn log_raft_vote(&self, term: u64, voted_for: u64) -> std::io::Result<u64> {
+        let mut w = WalWriter::with_capacity(16);
+        w.write_u64(term);
+        w.write_u64(voted_for);
+        self.append(EntryType::RaftVote, &w.finish())
     }
 }
 
