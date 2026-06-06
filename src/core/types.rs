@@ -59,21 +59,25 @@ pub enum FieldValue {
 // ─── Reading ───────────────────────────────────────────
 
 /// Reads a single unsigned byte (`AMQP octet`) from the stream.
+#[inline(always)]
 pub fn read_octet(r: &mut impl Read) -> io::Result<u8> {
     r.read_u8()
 }
 
 /// Reads a big-endian `u16` (`AMQP short`) from the stream.
+#[inline(always)]
 pub fn read_short(r: &mut impl Read) -> io::Result<u16> {
     r.read_u16::<BigEndian>()
 }
 
 /// Reads a big-endian `u32` (`AMQP long`) from the stream.
+#[inline(always)]
 pub fn read_long(r: &mut impl Read) -> io::Result<u32> {
     r.read_u32::<BigEndian>()
 }
 
 /// Reads a big-endian `u64` (`AMQP long-long`) from the stream.
+#[inline(always)]
 pub fn read_longlong(r: &mut impl Read) -> io::Result<u64> {
     r.read_u64::<BigEndian>()
 }
@@ -81,6 +85,7 @@ pub fn read_longlong(r: &mut impl Read) -> io::Result<u64> {
 /// Reads a length-prefixed short string (max 255 bytes) from the stream.
 ///
 /// The first byte is the length, followed by exactly that many UTF-8 bytes.
+#[inline]
 pub fn read_shortstr(r: &mut impl Read) -> io::Result<String> {
     let len = r.read_u8()? as usize;
     let mut buf = vec![0u8; len];
@@ -145,26 +150,31 @@ pub fn read_field_value(r: &mut impl Read) -> io::Result<FieldValue> {
 // ─── Writing ───────────────────────────────────────────
 
 /// Writes a single unsigned byte (`AMQP octet`) to the stream.
+#[inline(always)]
 pub fn write_octet(w: &mut impl Write, v: u8) -> io::Result<()> {
     w.write_u8(v)
 }
 
 /// Writes a big-endian `u16` (`AMQP short`) to the stream.
+#[inline(always)]
 pub fn write_short(w: &mut impl Write, v: u16) -> io::Result<()> {
     w.write_u16::<BigEndian>(v)
 }
 
 /// Writes a big-endian `u32` (`AMQP long`) to the stream.
+#[inline(always)]
 pub fn write_long(w: &mut impl Write, v: u32) -> io::Result<()> {
     w.write_u32::<BigEndian>(v)
 }
 
 /// Writes a big-endian `u64` (`AMQP long-long`) to the stream.
+#[inline(always)]
 pub fn write_longlong(w: &mut impl Write, v: u64) -> io::Result<()> {
     w.write_u64::<BigEndian>(v)
 }
 
 /// Writes a length-prefixed short string (max 255 bytes) to the stream.
+#[inline]
 pub fn write_shortstr(w: &mut impl Write, s: &str) -> io::Result<()> {
     let bytes = s.as_bytes();
     if bytes.len() > 255 {
@@ -178,6 +188,7 @@ pub fn write_shortstr(w: &mut impl Write, s: &str) -> io::Result<()> {
 }
 
 /// Writes a length-prefixed long string to the stream.
+#[inline]
 pub fn write_longstr(w: &mut impl Write, data: &[u8]) -> io::Result<()> {
     w.write_u32::<BigEndian>(data.len() as u32)?;
     w.write_all(data)
