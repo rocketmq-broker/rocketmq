@@ -453,94 +453,118 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// Dedicated unit test verification for `new` function.
     #[test]
-    fn test_coverage_for_auth_backend_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
+    fn new_creates_both_default_users() {
+        let auth = AuthBackend::new();
+        let users = auth.list_users();
+        let names: Vec<&str> = users.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"guest"), "default guest user missing");
+        assert!(names.contains(&"admin"), "default admin user missing");
     }
 
-    /// Dedicated unit test verification for `authenticate` function.
     #[test]
-    fn test_coverage_for_auth_backend_authenticate() {
-        let func_name = "authenticate";
-        assert!(!func_name.is_empty());
+    fn authenticate_rejects_empty_password() {
+        let auth = AuthBackend::new();
+        assert!(auth.authenticate("guest", "", localhost()).is_err());
     }
 
-    /// Dedicated unit test verification for `check_vhost_access` function.
     #[test]
-    fn test_coverage_for_auth_backend_check_vhost_access() {
-        let func_name = "check_vhost_access";
-        assert!(!func_name.is_empty());
+    fn add_duplicate_user_fails() {
+        let auth = AuthBackend::new();
+        auth.add_user("ops", "pass", vec![]).unwrap();
+        let err = auth.add_user("ops", "other", vec![]);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("already exists"));
     }
 
-    /// Dedicated unit test verification for `check_configure` function.
     #[test]
-    fn test_coverage_for_auth_backend_check_configure() {
-        let func_name = "check_configure";
-        assert!(!func_name.is_empty());
+    fn set_user_tags_updates_existing_user() {
+        let auth = AuthBackend::new();
+        auth.add_user("tagger", "pass", vec![UserTag::None])
+            .unwrap();
+        auth.set_user_tags("tagger", vec![UserTag::Administrator, UserTag::Monitoring])
+            .unwrap();
+
+        let users = auth.list_users();
+        let (_, tags) = users.iter().find(|(n, _)| n == "tagger").unwrap();
+        assert_eq!(tags.len(), 2);
+        assert!(tags.contains(&UserTag::Administrator));
+        assert!(tags.contains(&UserTag::Monitoring));
     }
 
-    /// Dedicated unit test verification for `check_write` function.
     #[test]
-    fn test_coverage_for_auth_backend_check_write() {
-        let func_name = "check_write";
-        assert!(!func_name.is_empty());
+    fn set_user_tags_unknown_user_fails() {
+        let auth = AuthBackend::new();
+        let err = auth.set_user_tags("nobody", vec![]);
+        assert!(err.is_err());
     }
 
-    /// Dedicated unit test verification for `check_read` function.
     #[test]
-    fn test_coverage_for_auth_backend_check_read() {
-        let func_name = "check_read";
-        assert!(!func_name.is_empty());
+    fn set_permissions_unknown_user_fails() {
+        let auth = AuthBackend::new();
+        let err = auth.set_permissions("nobody", "/", ".*", ".*", ".*");
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("not found"));
     }
 
-    /// Dedicated unit test verification for `check_permission` function.
     #[test]
-    fn test_coverage_for_auth_backend_check_permission() {
-        let func_name = "check_permission";
-        assert!(!func_name.is_empty());
+    fn multi_vhost_permission_isolation() {
+        let auth = AuthBackend::new();
+        auth.add_user("multi", "pass", vec![]).unwrap();
+        auth.set_permissions("multi", "/prod", "^prod\\..*", ".*", ".*")
+            .unwrap();
+        auth.set_permissions("multi", "/staging", "^staging\\..*", ".*", ".*")
+            .unwrap();
+
+        assert!(auth.check_configure("multi", "/prod", "prod.orders"));
+        assert!(!auth.check_configure("multi", "/prod", "staging.orders"));
+        assert!(auth.check_configure("multi", "/staging", "staging.events"));
+        assert!(!auth.check_configure("multi", "/staging", "prod.events"));
     }
 
-    /// Dedicated unit test verification for `set_user_tags` function.
     #[test]
-    fn test_coverage_for_auth_backend_set_user_tags() {
-        let func_name = "set_user_tags";
-        assert!(!func_name.is_empty());
+    fn list_user_permissions_returns_all_vhosts() {
+        let auth = AuthBackend::new();
+        auth.add_user("lister", "pass", vec![]).unwrap();
+        auth.set_permissions("lister", "/", ".*", ".*", ".*")
+            .unwrap();
+        auth.set_permissions("lister", "/staging", ".*", ".*", ".*")
+            .unwrap();
+
+        let perms = auth.list_user_permissions("lister");
+        assert_eq!(perms.len(), 2);
     }
 
-    /// Dedicated unit test verification for `set_permissions` function.
     #[test]
-    fn test_coverage_for_auth_backend_set_permissions() {
-        let func_name = "set_permissions";
-        assert!(!func_name.is_empty());
+    fn check_permission_regex_anchoring() {
+        let auth = AuthBackend::new();
+        auth.add_user("regex", "pass", vec![]).unwrap();
+        // Pattern anchored at start: only matches "app.*"
+        auth.set_permissions("regex", "/", "^app$", ".*", ".*")
+            .unwrap();
+
+        assert!(auth.check_configure("regex", "/", "app"));
+        assert!(!auth.check_configure("regex", "/", "app.queue"));
+        assert!(!auth.check_configure("regex", "/", "myapp"));
     }
 
-    /// Dedicated unit test verification for `list_user_permissions` function.
     #[test]
-    fn test_coverage_for_auth_backend_list_user_permissions() {
-        let func_name = "list_user_permissions";
-        assert!(!func_name.is_empty());
+    fn change_password_unknown_user_fails() {
+        let auth = AuthBackend::new();
+        let err = auth.change_password("nobody", "new");
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("not found"));
     }
 
-    /// Dedicated unit test verification for `save_to_file` function.
     #[test]
-    fn test_coverage_for_auth_backend_save_to_file() {
-        let func_name = "save_to_file";
-        assert!(!func_name.is_empty());
+    fn is_loopback_true_for_localhost() {
+        let addr = localhost();
+        assert!(is_loopback(&addr));
     }
 
-    /// Dedicated unit test verification for `load_from_file` function.
     #[test]
-    fn test_coverage_for_auth_backend_load_from_file() {
-        let func_name = "load_from_file";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `is_loopback` function.
-    #[test]
-    fn test_coverage_for_is_loopback() {
-        let func_name = "is_loopback";
-        assert!(!func_name.is_empty());
+    fn is_loopback_false_for_remote() {
+        let addr = remote();
+        assert!(!is_loopback(&addr));
     }
 }
