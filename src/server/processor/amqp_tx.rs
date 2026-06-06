@@ -135,12 +135,13 @@ pub async fn process_tx_commit(
                 }
             }
             PendingOp::Ack { msg_id } => {
-                for mut entry in broker.queues.iter_mut() {
-                    if entry.value_mut().inflight.remove(msg_id).is_some() {
-                        {
+                // OPT-1: O(1) lookup via delivery_index
+                let queue_name = broker.delivery_index.remove(msg_id).map(|(_, v)| v);
+                if let Some(qn) = queue_name {
+                    if let Some(mut entry) = broker.queues.get_mut(&qn) {
+                        if entry.inflight.remove(msg_id).is_some() {
                             let _ = broker.wal().log_ack(*msg_id);
                         }
-                        break;
                     }
                 }
             }
