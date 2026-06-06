@@ -126,6 +126,7 @@ impl Exchange {
 
     /// Routes a message through this exchange, returning the names of all
     /// queues whose bindings match the given routing key and headers.
+    #[inline]
     pub fn route(&self, routing_key: &str, headers: &HashMap<String, String>) -> Vec<String> {
         match self.kind {
             ExchangeType::Direct => self.route_direct(routing_key),
@@ -135,6 +136,7 @@ impl Exchange {
         }
     }
 
+    #[inline]
     fn route_direct(&self, routing_key: &str) -> Vec<String> {
         self.bindings
             .iter()
@@ -143,10 +145,12 @@ impl Exchange {
             .collect()
     }
 
+    #[inline]
     fn route_fanout(&self) -> Vec<String> {
         self.bindings.iter().map(|b| b.queue_name.clone()).collect()
     }
 
+    #[inline]
     fn route_topic(&self, routing_key: &str) -> Vec<String> {
         self.bindings
             .iter()
@@ -155,6 +159,7 @@ impl Exchange {
             .collect()
     }
 
+    #[inline]
     fn route_headers(&self, msg_headers: &HashMap<String, String>) -> Vec<String> {
         self.bindings
             .iter()
@@ -176,35 +181,64 @@ impl Exchange {
 ///
 /// Supports `*` (exactly one dot-delimited word) and `#` (zero or
 /// more words) wildcards per the AMQP topic exchange specification.
+///
+/// OPT-11: Uses an O(P × K) iterative DP algorithm instead of the
+/// previous O(n!) recursive approach that was exponential for
+/// pathological patterns like `#.#.#.#`.
+#[inline]
 fn topic_matches(pattern: &str, routing_key: &str) -> bool {
-    let pattern_parts: Vec<&str> = pattern.split('.').collect();
-    let key_parts: Vec<&str> = routing_key.split('.').collect();
-    topic_match_recursive(&pattern_parts, &key_parts)
-}
+    // Fast path: exact match or lone "#"
+    if pattern == routing_key {
+        return true;
+    }
+    if pattern == "#" {
+        return true;
+    }
 
-fn topic_match_recursive(pattern: &[&str], key: &[&str]) -> bool {
-    match (pattern.first(), key.first()) {
-        (None, None) => true,
-        (Some(&"#"), _) => {
-            // # matches zero or more words
-            if pattern.len() == 1 {
-                return true; // trailing # matches everything
-            }
-            // Try matching # as zero words, one word, two words, etc.
-            for skip in 0..=key.len() {
-                if topic_match_recursive(&pattern[1..], &key[skip..]) {
-                    return true;
+    let pat: Vec<&str> = pattern.split('.').collect();
+    let key: Vec<&str> = routing_key.split('.').collect();
+    let kn = key.len();
+
+    // DP: dp[j] = "can pat[0..i] match key[0..j]?"
+    // We use two rows (prev, curr) to save memory.
+    let mut prev = vec![false; kn + 1];
+    prev[0] = true;
+
+    for segment in &pat {
+        let mut curr = vec![false; kn + 1];
+
+        if *segment == "#" {
+            // '#' matches zero or more words.
+            // curr[j] is true if prev[j] is true (match zero)
+            // OR curr[j-1] is true (extend match by one more word).
+            for j in 0..=kn {
+                if prev[j] {
+                    curr[j] = true;
+                }
+                if j > 0 && curr[j - 1] {
+                    curr[j] = true;
                 }
             }
-            false
+        } else if *segment == "*" {
+            // '*' matches exactly one word.
+            for j in 1..=kn {
+                if prev[j - 1] {
+                    curr[j] = true;
+                }
+            }
+        } else {
+            // Literal segment — must match exactly.
+            for j in 1..=kn {
+                if prev[j - 1] && *segment == key[j - 1] {
+                    curr[j] = true;
+                }
+            }
         }
-        (Some(&"*"), Some(_)) => {
-            // * matches exactly one word
-            topic_match_recursive(&pattern[1..], &key[1..])
-        }
-        (Some(p), Some(k)) if p == k => topic_match_recursive(&pattern[1..], &key[1..]),
-        _ => false,
+
+        prev = curr;
     }
+
+    prev[kn]
 }
 
 /// Creates the set of pre-declared AMQP default exchanges:
