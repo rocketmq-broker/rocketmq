@@ -84,7 +84,7 @@ fn queue_options_invalid_ttl_ignored() {
 
 #[test]
 fn message_new_defaults() {
-    let msg = Message::new(1, vec![], vec![1, 2, 3]);
+    let msg = Message::new(1, vec![].into(), vec![1, 2, 3].into());
     assert_eq!(msg.id, 1);
     assert_eq!(msg.priority, 0);
     assert!(!msg.redelivered);
@@ -95,14 +95,14 @@ fn message_new_defaults() {
 fn message_expired() {
     let msg = Message {
         id: 1,
-        headers: vec![],
-        body: vec![],
+        headers: bytes::Bytes::new(),
+        body: bytes::Bytes::new(),
         priority: 0,
         expiration: Some(Instant::now() - Duration::from_secs(1)),
         redelivered: false,
         delivery_count: 0,
-        exchange: "".to_string(),
-        routing_key: "".to_string(),
+        exchange: std::sync::Arc::from(""),
+        routing_key: std::sync::Arc::from(""),
     };
     assert!(msg.is_expired());
 }
@@ -111,14 +111,14 @@ fn message_expired() {
 fn message_not_expired() {
     let msg = Message {
         id: 1,
-        headers: vec![],
-        body: vec![],
+        headers: bytes::Bytes::new(),
+        body: bytes::Bytes::new(),
         priority: 0,
         expiration: Some(Instant::now() + Duration::from_secs(60)),
         redelivered: false,
         delivery_count: 0,
-        exchange: "".to_string(),
-        routing_key: "".to_string(),
+        exchange: std::sync::Arc::from(""),
+        routing_key: std::sync::Arc::from(""),
     };
     assert!(!msg.is_expired());
 }
@@ -128,41 +128,50 @@ fn priority_queue_fifo_same_priority() {
     let mut pq = PriorityQueue::new();
     pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
         1,
-        vec![],
-        b"first".to_vec(),
+        bytes::Bytes::new(),
+        bytes::Bytes::from_static(b"first"),
     )));
     pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
         2,
-        vec![],
-        b"second".to_vec(),
+        bytes::Bytes::new(),
+        bytes::Bytes::from_static(b"second"),
     )));
     pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
         3,
-        vec![],
-        b"third".to_vec(),
+        bytes::Bytes::new(),
+        bytes::Bytes::from_static(b"third"),
     )));
     assert_eq!(pq.len(), 3);
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"first");
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"second");
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"third");
+    assert_eq!(
+        pq.pop_front().unwrap().unwrap_full().body.as_ref(),
+        b"first"
+    );
+    assert_eq!(
+        pq.pop_front().unwrap().unwrap_full().body.as_ref(),
+        b"second"
+    );
+    assert_eq!(
+        pq.pop_front().unwrap().unwrap_full().body.as_ref(),
+        b"third"
+    );
     assert!(pq.pop_front().is_none());
 }
 
 #[test]
 fn priority_queue_higher_priority_first() {
     let mut pq = PriorityQueue::new();
-    let mut low = Message::new(1, vec![], b"low".to_vec());
+    let mut low = Message::new(1, vec![].into(), b"low".to_vec().into());
     low.priority = 1;
-    let mut high = Message::new(2, vec![], b"high".to_vec());
+    let mut high = Message::new(2, vec![].into(), b"high".to_vec().into());
     high.priority = 10;
-    let mut mid = Message::new(3, vec![], b"mid".to_vec());
+    let mut mid = Message::new(3, vec![].into(), b"mid".to_vec().into());
     mid.priority = 5;
     pq.push_back(crate::queue::message::QueueMessage::Full(low));
     pq.push_back(crate::queue::message::QueueMessage::Full(high));
     pq.push_back(crate::queue::message::QueueMessage::Full(mid));
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"high");
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"mid");
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"low");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body.as_ref(), b"high");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body.as_ref(), b"mid");
+    assert_eq!(pq.pop_front().unwrap().unwrap_full().body.as_ref(), b"low");
 }
 
 #[test]
@@ -170,27 +179,30 @@ fn priority_queue_push_front_stays_at_front() {
     let mut pq = PriorityQueue::new();
     pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
         1,
-        vec![],
-        b"back".to_vec(),
+        bytes::Bytes::new(),
+        bytes::Bytes::from_static(b"back"),
     )));
     pq.push_front(crate::queue::message::QueueMessage::Full(Message::new(
         2,
-        vec![],
-        b"front".to_vec(),
+        bytes::Bytes::new(),
+        bytes::Bytes::from_static(b"front"),
     )));
-    assert_eq!(pq.pop_front().unwrap().unwrap_full().body, b"front");
+    assert_eq!(
+        pq.pop_front().unwrap().unwrap_full().body.as_ref(),
+        b"front"
+    );
 }
 
 #[test]
 fn priority_queue_pop_oldest_evicts_lowest() {
     let mut pq = PriorityQueue::new();
-    let mut low = Message::new(1, vec![], b"low".to_vec());
+    let mut low = Message::new(1, vec![].into(), b"low".to_vec().into());
     low.priority = 0;
-    let mut high = Message::new(2, vec![], b"high".to_vec());
+    let mut high = Message::new(2, vec![].into(), b"high".to_vec().into());
     high.priority = 10;
     pq.push_back(crate::queue::message::QueueMessage::Full(low));
     pq.push_back(crate::queue::message::QueueMessage::Full(high));
-    assert_eq!(pq.pop_oldest().unwrap().unwrap_full().body, b"low");
+    assert_eq!(pq.pop_oldest().unwrap().unwrap_full().body.as_ref(), b"low");
     assert_eq!(pq.len(), 1);
 }
 
@@ -207,101 +219,173 @@ fn queue_state_round_robin() {
     let mut q = QueueState::new();
     let bs = test_broker();
 
-    bs.conn_state
-        .insert(10, crate::state::ConnectionState::new());
-    bs.conn_state
-        .insert(20, crate::state::ConnectionState::new());
-    bs.conn_state
-        .insert(30, crate::state::ConnectionState::new());
+    bs.conn_state.insert(
+        10,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs.conn_state.insert(
+        20,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs.conn_state.insert(
+        30,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
     bs.conn_state
         .get_mut(&10)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs.conn_state
         .get_mut(&20)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs.conn_state
         .get_mut(&30)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
 
     q.listeners = vec![(10, 1), (20, 1), (30, 1)];
     assert_eq!(q.next_target(&bs.into()), Some((10, 1)));
 
     let bs2 = test_broker();
-    bs2.conn_state
-        .insert(10, crate::state::ConnectionState::new());
-    bs2.conn_state
-        .insert(20, crate::state::ConnectionState::new());
-    bs2.conn_state
-        .insert(30, crate::state::ConnectionState::new());
+    bs2.conn_state.insert(
+        10,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs2.conn_state.insert(
+        20,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs2.conn_state.insert(
+        30,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
     bs2.conn_state
         .get_mut(&10)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs2.conn_state
         .get_mut(&20)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs2.conn_state
         .get_mut(&30)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     assert_eq!(q.next_target(&bs2.into()), Some((20, 1)));
 
     let bs3 = test_broker();
-    bs3.conn_state
-        .insert(10, crate::state::ConnectionState::new());
-    bs3.conn_state
-        .insert(20, crate::state::ConnectionState::new());
-    bs3.conn_state
-        .insert(30, crate::state::ConnectionState::new());
+    bs3.conn_state.insert(
+        10,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs3.conn_state.insert(
+        20,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs3.conn_state.insert(
+        30,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
     bs3.conn_state
         .get_mut(&10)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs3.conn_state
         .get_mut(&20)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs3.conn_state
         .get_mut(&30)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     assert_eq!(q.next_target(&bs3.into()), Some((30, 1)));
 
     let bs4 = test_broker();
-    bs4.conn_state
-        .insert(10, crate::state::ConnectionState::new());
-    bs4.conn_state
-        .insert(20, crate::state::ConnectionState::new());
-    bs4.conn_state
-        .insert(30, crate::state::ConnectionState::new());
+    bs4.conn_state.insert(
+        10,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs4.conn_state.insert(
+        20,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
+    bs4.conn_state.insert(
+        30,
+        Box::new(crate::protocol::amqp::session::ConnectionState::new()),
+    );
     bs4.conn_state
         .get_mut(&10)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs4.conn_state
         .get_mut(&20)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     bs4.conn_state
         .get_mut(&30)
         .unwrap()
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<crate::protocol::amqp::session::ConnectionState>()
+        .unwrap()
         .channels
-        .insert(1, crate::state::ChannelState::new(1));
+        .insert(1, crate::protocol::amqp::session::ChannelState::new(1));
     assert_eq!(q.next_target(&bs4.into()), Some((10, 1)));
 }
 
@@ -315,7 +399,7 @@ fn queue_state_no_listeners() {
 #[test]
 fn consumer_tag_auto_generated() {
     let mut q = QueueState::new();
-    let tag = q.add_consumer(10, 1, None, None);
+    let tag = q.add_consumer(10, 1, None, None, false);
     assert_eq!(tag, "ctag-10-1");
     assert_eq!(q.listeners.len(), 1);
     assert_eq!(q.consumer_count, 1);
@@ -324,7 +408,7 @@ fn consumer_tag_auto_generated() {
 #[test]
 fn consumer_tag_custom() {
     let mut q = QueueState::new();
-    let tag = q.add_consumer(10, 1, Some("my-worker".to_string()), None);
+    let tag = q.add_consumer(10, 1, Some("my-worker".to_string()), None, false);
     assert_eq!(tag, "my-worker");
     assert!(q.consumer_tags.contains_key("my-worker"));
 }
@@ -332,8 +416,8 @@ fn consumer_tag_custom() {
 #[test]
 fn consumer_cancel_by_tag() {
     let mut q = QueueState::new();
-    q.add_consumer(10, 1, Some("worker-1".to_string()), None);
-    q.add_consumer(20, 1, Some("worker-2".to_string()), None);
+    q.add_consumer(10, 1, Some("worker-1".to_string()), None, false);
+    q.add_consumer(20, 1, Some("worker-2".to_string()), None, false);
     assert_eq!(q.listeners.len(), 2);
 
     assert!(q.cancel_consumer("worker-1"));
@@ -347,8 +431,8 @@ fn consumer_cancel_by_tag() {
 #[test]
 fn consumer_add_idempotent() {
     let mut q = QueueState::new();
-    q.add_consumer(10, 1, Some("tag-a".to_string()), None);
-    q.add_consumer(10, 1, Some("tag-b".to_string()), None);
+    q.add_consumer(10, 1, Some("tag-a".to_string()), None, false);
+    q.add_consumer(10, 1, Some("tag-b".to_string()), None, false);
 
     assert_eq!(q.listeners.len(), 1);
 
@@ -359,7 +443,7 @@ fn consumer_add_idempotent() {
 #[test]
 fn delay_queue_schedule_and_drain() {
     let dq = DelayQueue::new();
-    let msg = Message::new(1, vec![], b"delayed".to_vec());
+    let msg = Message::new(1, vec![].into(), b"delayed".to_vec().into());
     dq.schedule("q1".to_string(), msg, Duration::from_millis(1));
     assert_eq!(dq.len(), 1);
 
@@ -367,14 +451,14 @@ fn delay_queue_schedule_and_drain() {
     let ready = dq.drain_ready();
     assert_eq!(ready.len(), 1);
     assert_eq!(ready[0].queue_name, "q1");
-    assert_eq!(ready[0].message.body, b"delayed");
+    assert_eq!(ready[0].message.body.as_ref(), b"delayed");
     assert_eq!(dq.len(), 0);
 }
 
 #[test]
 fn delay_queue_future_not_drained() {
     let dq = DelayQueue::new();
-    let msg = Message::new(1, vec![], b"future".to_vec());
+    let msg = Message::new(1, vec![].into(), b"future".to_vec().into());
     dq.schedule("q1".to_string(), msg, Duration::from_secs(60));
     let ready = dq.drain_ready();
     assert!(ready.is_empty());
@@ -394,7 +478,7 @@ fn queue_options_parses_new_fields() {
 
 #[test]
 fn message_delivery_count_default() {
-    let msg = Message::new(1, vec![], vec![]);
+    let msg = Message::new(1, vec![].into(), vec![].into());
     assert_eq!(msg.delivery_count, 0);
 }
 
@@ -404,10 +488,13 @@ fn priority_queue_peek_front() {
     assert!(pq.peek_front().is_none());
     pq.push_back(crate::queue::message::QueueMessage::Full(Message::new(
         1,
-        vec![],
-        b"a".to_vec(),
+        bytes::Bytes::new(),
+        bytes::Bytes::from_static(b"a"),
     )));
-    assert_eq!(pq.peek_front().unwrap().clone().unwrap_full().body, b"a");
+    assert_eq!(
+        pq.peek_front().unwrap().clone().unwrap_full().body.as_ref(),
+        b"a"
+    );
     assert_eq!(pq.len(), 1);
 }
 
@@ -447,7 +534,13 @@ fn consumer_group_remove_nonexistent() {
 #[test]
 fn queue_add_consumer_with_group() {
     let mut q = QueueState::new();
-    let tag = q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
+    let tag = q.add_consumer(
+        1,
+        1,
+        Some("w1".to_string()),
+        Some("workers".to_string()),
+        false,
+    );
     assert_eq!(tag, "w1");
     assert!(q.groups.contains_key("workers"));
     assert_eq!(q.groups["workers"].members.len(), 1);
@@ -456,8 +549,8 @@ fn queue_add_consumer_with_group() {
 #[test]
 fn queue_multiple_consumers_same_group() {
     let mut q = QueueState::new();
-    q.add_consumer(1, 1, Some("w1".to_string()), Some("g1".to_string()));
-    q.add_consumer(2, 1, Some("w2".to_string()), Some("g1".to_string()));
+    q.add_consumer(1, 1, Some("w1".to_string()), Some("g1".to_string()), false);
+    q.add_consumer(2, 1, Some("w2".to_string()), Some("g1".to_string()), false);
     assert_eq!(q.groups.len(), 1);
     assert_eq!(q.groups["g1"].members.len(), 2);
 }
@@ -465,16 +558,28 @@ fn queue_multiple_consumers_same_group() {
 #[test]
 fn queue_multiple_groups() {
     let mut q = QueueState::new();
-    q.add_consumer(1, 1, Some("a".to_string()), Some("g1".to_string()));
-    q.add_consumer(2, 1, Some("b".to_string()), Some("g2".to_string()));
+    q.add_consumer(1, 1, Some("a".to_string()), Some("g1".to_string()), false);
+    q.add_consumer(2, 1, Some("b".to_string()), Some("g2".to_string()), false);
     assert_eq!(q.groups.len(), 2);
 }
 
 #[test]
 fn queue_cancel_consumer_removes_from_group() {
     let mut q = QueueState::new();
-    q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
-    q.add_consumer(2, 1, Some("w2".to_string()), Some("workers".to_string()));
+    q.add_consumer(
+        1,
+        1,
+        Some("w1".to_string()),
+        Some("workers".to_string()),
+        false,
+    );
+    q.add_consumer(
+        2,
+        1,
+        Some("w2".to_string()),
+        Some("workers".to_string()),
+        false,
+    );
 
     q.cancel_consumer("w1");
     assert_eq!(q.groups["workers"].members.len(), 1);
@@ -483,7 +588,13 @@ fn queue_cancel_consumer_removes_from_group() {
 #[test]
 fn queue_cancel_last_consumer_removes_group() {
     let mut q = QueueState::new();
-    q.add_consumer(1, 1, Some("w1".to_string()), Some("workers".to_string()));
+    q.add_consumer(
+        1,
+        1,
+        Some("w1".to_string()),
+        Some("workers".to_string()),
+        false,
+    );
 
     q.cancel_consumer("w1");
 
@@ -493,7 +604,7 @@ fn queue_cancel_last_consumer_removes_group() {
 #[test]
 fn queue_consumer_no_group() {
     let mut q = QueueState::new();
-    q.add_consumer(1, 1, Some("solo".to_string()), None);
+    q.add_consumer(1, 1, Some("solo".to_string()), None, false);
     assert!(q.groups.is_empty());
 }
 

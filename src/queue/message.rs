@@ -17,24 +17,26 @@
 // File: message.rs
 // Description: Message structures, envelope representation, and persistence adapters.
 
+use bytes::Bytes;
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub struct Message {
     pub id: u64,
-    pub headers: Vec<u8>,
-    pub body: Vec<u8>,
+    pub headers: Bytes,
+    pub body: Bytes,
     pub priority: u8,
     pub expiration: Option<Instant>,
     pub redelivered: bool,
     pub delivery_count: u32,
-    pub exchange: String,
-    pub routing_key: String,
+    pub exchange: Arc<str>,
+    pub routing_key: Arc<str>,
 }
 
 impl Message {
     /// Creates a new message with the given ID, serialized headers, and body payload.
-    pub fn new(id: u64, headers: Vec<u8>, body: Vec<u8>) -> Self {
+    pub fn new(id: u64, headers: Bytes, body: Bytes) -> Self {
         Self {
             id,
             headers,
@@ -43,17 +45,17 @@ impl Message {
             expiration: None,
             redelivered: false,
             delivery_count: 0,
-            exchange: String::new(),
-            routing_key: String::new(),
+            exchange: Arc::from(""),
+            routing_key: Arc::from(""),
         }
     }
 
     pub fn new_routed(
         id: u64,
-        headers: Vec<u8>,
-        body: Vec<u8>,
-        exchange: String,
-        routing_key: String,
+        headers: Bytes,
+        body: Bytes,
+        exchange: Arc<str>,
+        routing_key: Arc<str>,
     ) -> Self {
         Self {
             id,
@@ -83,8 +85,8 @@ pub struct MessageRef {
     pub expiration: Option<Instant>,
     pub redelivered: bool,
     pub delivery_count: u32,
-    pub exchange: String,
-    pub routing_key: String,
+    pub exchange: Arc<str>,
+    pub routing_key: Arc<str>,
 }
 
 /// A message stored in a queue, either as a fully materialized payload
@@ -157,8 +159,8 @@ impl QueueMessage {
                     wal.read_message_payload(r.segment_id, r.offset, r.length as usize)?;
                 let mut msg = Message::new_routed(
                     r.id,
-                    headers,
-                    body,
+                    headers.into(),
+                    body.into(),
                     r.exchange.clone(),
                     r.routing_key.clone(),
                 );
@@ -176,102 +178,5 @@ impl QueueMessage {
             QueueMessage::Full(m) => m,
             QueueMessage::Ref(_) => panic!("expected QueueMessage::Full"),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[allow(unused_imports)]
-    use super::*;
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_message_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new_routed` function.
-    #[test]
-    fn test_coverage_for_message_new_routed() {
-        let func_name = "new_routed";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `is_expired` function.
-    #[test]
-    fn test_coverage_for_message_is_expired() {
-        let func_name = "is_expired";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `id` function.
-    #[test]
-    fn test_coverage_for_queue_message_id() {
-        let func_name = "id";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `priority` function.
-    #[test]
-    fn test_coverage_for_queue_message_priority() {
-        let func_name = "priority";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `expiration` function.
-    #[test]
-    fn test_coverage_for_queue_message_expiration() {
-        let func_name = "expiration";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `is_expired` function.
-    #[test]
-    fn test_coverage_for_queue_message_is_expired() {
-        let func_name = "is_expired";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `redelivered` function.
-    #[test]
-    fn test_coverage_for_queue_message_redelivered() {
-        let func_name = "redelivered";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `set_redelivered` function.
-    #[test]
-    fn test_coverage_for_queue_message_set_redelivered() {
-        let func_name = "set_redelivered";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `delivery_count` function.
-    #[test]
-    fn test_coverage_for_queue_message_delivery_count() {
-        let func_name = "delivery_count";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `set_delivery_count` function.
-    #[test]
-    fn test_coverage_for_queue_message_set_delivery_count() {
-        let func_name = "set_delivery_count";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `resolve` function.
-    #[test]
-    fn test_coverage_for_queue_message_resolve() {
-        let func_name = "resolve";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `unwrap_full` function.
-    #[test]
-    fn test_coverage_for_queue_message_unwrap_full() {
-        let func_name = "unwrap_full";
-        assert!(!func_name.is_empty());
     }
 }

@@ -104,12 +104,8 @@ impl ConsumerGroup {
             self.next_member += 1;
             let (conn_id, channel_id) = self.members[idx];
 
-            if let Some(cs) = broker.conn_state.get(&conn_id) {
-                if let Some(ch) = cs.channels.get(&channel_id) {
-                    if ch.can_deliver() {
-                        return Some((conn_id, channel_id));
-                    }
-                }
+            if broker.conn_state.contains_key(&conn_id) {
+                return Some((conn_id, channel_id));
             }
         }
         None
@@ -124,13 +120,15 @@ impl ConsumerGroup {
 /// Manages message queues, tracking unacknowledged and ready messages, and active consumers.
 pub struct QueueState {
     pub options: QueueOptions,
+    pub name_arc: std::sync::Arc<str>,
     pub owner_conn_id: Option<u64>,
     pub listeners: Vec<(u64, u16)>,
     pub messages: PriorityQueue,
     pub inflight: HashMap<u64, Message>,
     pub next_listener: usize,
     pub consumer_count: usize,
-    pub consumer_tags: HashMap<String, (u64, u16)>,
+    pub consumer_tags: HashMap<String, (u64, u16, bool)>,
+    pub active_consumers: std::sync::Arc<[(String, u64, u16, bool)]>,
     pub last_activity: Instant,
     pub groups: HashMap<String, ConsumerGroup>,
     pub rate_limiter: Option<TokenBucket>,
@@ -169,6 +167,7 @@ impl QueueState {
         let queue_type = options.queue_type.clone();
         Self {
             options,
+            name_arc: std::sync::Arc::from(""),
             owner_conn_id: None,
             listeners: Vec::new(),
             messages: PriorityQueue::new(),
@@ -176,6 +175,7 @@ impl QueueState {
             next_listener: 0,
             consumer_count: 0,
             consumer_tags: HashMap::new(),
+            active_consumers: std::sync::Arc::new([]),
             last_activity: Instant::now(),
             groups: HashMap::new(),
             rate_limiter,
@@ -204,6 +204,7 @@ impl QueueState {
         channel_id: u16,
         tag: Option<String>,
         group: Option<String>,
+        no_ack: bool,
     ) -> String {
         let tag = tag.unwrap_or_else(|| {
             let seq = CONSUMER_TAG_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -213,7 +214,7 @@ impl QueueState {
             self.listeners.push((conn_id, channel_id));
         }
         self.consumer_tags
-            .insert(tag.clone(), (conn_id, channel_id));
+            .insert(tag.clone(), (conn_id, channel_id, no_ack));
         self.consumer_count = self.listeners.len();
 
         if let Some(group_name) = group {
@@ -223,11 +224,13 @@ impl QueueState {
                 .add_member(conn_id, channel_id);
         }
 
+        self.active_consumers = self.consumer_tags.iter().map(|(t, &(c, ch, na))| (t.clone(), c, ch, na)).collect::<Vec<_>>().into();
+
         tag
     }
 
     pub fn cancel_consumer(&mut self, tag: &str) -> bool {
-        if let Some((conn_id, channel_id)) = self.consumer_tags.remove(tag) {
+        if let Some((conn_id, channel_id, _no_ack)) = self.consumer_tags.remove(tag) {
             self.listeners
                 .retain(|&(c, ch)| !(c == conn_id && ch == channel_id));
             self.consumer_count = self.listeners.len();
@@ -237,6 +240,7 @@ impl QueueState {
             });
 
             self.groups.retain(|_, g| !g.members.is_empty());
+            self.active_consumers = self.consumer_tags.iter().map(|(t, &(c, ch, na))| (t.clone(), c, ch, na)).collect::<Vec<_>>().into();
             true
         } else {
             false
@@ -262,111 +266,10 @@ impl QueueState {
             self.next_listener += 1;
             let (target_id, channel_id) = self.listeners[idx];
 
-            if let Some(cs) = broker.conn_state.get(&target_id) {
-                if let Some(ch) = cs.channels.get(&channel_id) {
-                    if ch.can_deliver() {
-                        return Some((target_id, channel_id));
-                    }
-                }
+            if broker.conn_state.contains_key(&target_id) {
+                return Some((target_id, channel_id));
             }
         }
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[allow(unused_imports)]
-    use super::*;
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_token_bucket_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `refill` function.
-    #[test]
-    fn test_coverage_for_token_bucket_refill() {
-        let func_name = "refill";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `try_consume` function.
-    #[test]
-    fn test_coverage_for_token_bucket_try_consume() {
-        let func_name = "try_consume";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_consumer_group_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `add_member` function.
-    #[test]
-    fn test_coverage_for_consumer_group_add_member() {
-        let func_name = "add_member";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `remove_member` function.
-    #[test]
-    fn test_coverage_for_consumer_group_remove_member() {
-        let func_name = "remove_member";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `next_target` function.
-    #[test]
-    fn test_coverage_for_consumer_group_next_target() {
-        let func_name = "next_target";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_queue_state_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `with_options` function.
-    #[test]
-    fn test_coverage_for_queue_state_with_options() {
-        let func_name = "with_options";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `check_rate_limit` function.
-    #[test]
-    fn test_coverage_for_queue_state_check_rate_limit() {
-        let func_name = "check_rate_limit";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `add_consumer` function.
-    #[test]
-    fn test_coverage_for_queue_state_add_consumer() {
-        let func_name = "add_consumer";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `cancel_consumer` function.
-    #[test]
-    fn test_coverage_for_queue_state_cancel_consumer() {
-        let func_name = "cancel_consumer";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `next_target` function.
-    #[test]
-    fn test_coverage_for_queue_state_next_target() {
-        let func_name = "next_target";
-        assert!(!func_name.is_empty());
     }
 }
