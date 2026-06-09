@@ -83,7 +83,8 @@ pub fn build_queue_info(name: &str, q: &crate::queue::QueueState, broker: &Broke
             username = cs.username();
             if let Some(ch) = cs.get_channels().into_iter().find(|c| c.id == channel_id) {
                 prefetch = ch.prefetch_count as usize;
-                active = ch.flow_active && (ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count);
+                active = ch.flow_active
+                    && (ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count);
             }
         }
 

@@ -107,7 +107,9 @@ pub fn spawn_amqp_on_stream(
             .get(&conn_id)
             .and_then(|guard| {
                 guard
-                    .value().as_any().downcast_ref::<ConnectionState>()
+                    .value()
+                    .as_any()
+                    .downcast_ref::<ConnectionState>()
                     .map(|cs| cs.heartbeat)
             })
             .unwrap_or(DEFAULT_HEARTBEAT);
@@ -132,7 +134,9 @@ pub fn spawn_amqp_on_stream(
                 .get(&conn_id)
                 .and_then(|guard| {
                     guard
-                        .value().as_any().downcast_ref::<ConnectionState>()
+                        .value()
+                        .as_any()
+                        .downcast_ref::<ConnectionState>()
                         .map(|cs| (cs.frame_max, cs.channel_max))
                 })
                 .unwrap_or((DEFAULT_FRAME_MAX, DEFAULT_CHANNEL_MAX));

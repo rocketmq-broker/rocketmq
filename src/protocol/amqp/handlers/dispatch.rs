@@ -180,7 +180,11 @@ async fn handle_channel_open(
     broker: &Broker,
 ) {
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             cs.channels
                 .entry(channel)
                 .or_insert_with(|| ChannelState::new(channel));
@@ -212,7 +216,11 @@ async fn handle_channel_close(
     }
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             cs.channels.remove(&channel);
         }
     }
@@ -234,7 +242,11 @@ async fn handle_channel_flow(
     let active = args.first().copied().unwrap_or(1) != 0;
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             if let Some(ch) = cs.channels.get_mut(&channel) {
                 ch.flow_active = active;
             }

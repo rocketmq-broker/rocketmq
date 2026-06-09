@@ -129,13 +129,16 @@ impl crate::protocol::ConnectionMeta for ConnectionState {
     }
 
     fn get_channels(&self) -> Vec<crate::protocol::ChannelMeta> {
-        self.channels.values().map(|ch| crate::protocol::ChannelMeta {
-            id: ch.id,
-            prefetch_count: ch.prefetch_count,
-            unacked_count: ch.unacked_count,
-            confirm_mode: ch.confirm_mode,
-            flow_active: ch.flow_active,
-        }).collect()
+        self.channels
+            .values()
+            .map(|ch| crate::protocol::ChannelMeta {
+                id: ch.id,
+                prefetch_count: ch.prefetch_count,
+                unacked_count: ch.unacked_count,
+                confirm_mode: ch.confirm_mode,
+                flow_active: ch.flow_active,
+            })
+            .collect()
     }
 
     fn heartbeat(&self) -> u16 {

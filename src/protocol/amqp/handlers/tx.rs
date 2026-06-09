@@ -39,7 +39,11 @@ pub async fn handle_tx_select(
     broker: &Broker,
 ) {
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             cs.tx_mode = true;
             cs.tx_buffer.clear();
         }
@@ -63,7 +67,11 @@ pub async fn process_tx_commit(
             Some(g) => g,
             None => return,
         };
-        let cs = match cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        let cs = match cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             Some(c) => c,
             None => return,
         };
@@ -175,7 +183,11 @@ pub async fn process_tx_rollback(
             Some(g) => g,
             None => return,
         };
-        let cs = match cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        let cs = match cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             Some(c) => c,
             None => return,
         };
@@ -215,7 +227,11 @@ pub async fn handle_confirm_select(
     let no_wait = args.first().copied().unwrap_or(0) & 0x01 != 0;
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             if let Some(ch) = cs.channels.get_mut(&channel) {
                 ch.confirm_mode = true;
                 ch.next_delivery_tag = 1;
@@ -349,7 +365,11 @@ mod tests {
         assert!(got_channel_error);
 
         let mut cs_guard = broker.conn_state.get_mut(&1).unwrap();
-        let conn_state = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>().unwrap();
+        let conn_state = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+            .unwrap();
         conn_state.tx_buffer.clear();
         let properties_proto = crate::protocol::amqp::properties::BasicProperties {
             content_type: Some("application/x-protobuf".to_string()),

@@ -83,12 +83,22 @@ pub async fn handle_publish(
     let tx_mode = broker
         .conn_state
         .get(&conn_id)
-        .and_then(|guard| guard.value().as_any().downcast_ref::<ConnectionState>().map(|cs| cs.tx_mode))
+        .and_then(|guard| {
+            guard
+                .value()
+                .as_any()
+                .downcast_ref::<ConnectionState>()
+                .map(|cs| cs.tx_mode)
+        })
         .unwrap_or(false);
 
     if tx_mode {
         if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-            if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+            if let Some(cs) = cs_guard
+                .value_mut()
+                .as_any_mut()
+                .downcast_mut::<ConnectionState>()
+            {
                 let mut prop_bytes = Vec::new();
                 properties.encode(&mut prop_bytes).unwrap_or_default();
                 cs.tx_buffer.push(PendingOp::Publish {
@@ -323,7 +333,10 @@ pub async fn handle_publish(
 
 fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64> {
     let mut cs_guard = broker.conn_state.get_mut(&conn_id)?;
-    let cs = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>()?;
+    let cs = cs_guard
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<ConnectionState>()?;
     let ch = cs.channels.get_mut(&channel)?;
     if !ch.confirm_mode {
         return None;
@@ -594,7 +607,11 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
     let _multiple = flags & 0x01 != 0;
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             if let Some(ch) = cs.channels.get_mut(&channel) {
                 if ch.unacked_count > 0 {
                     ch.unacked_count -= 1;
@@ -639,7 +656,11 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
     let requeue = flags & 0x01 != 0;
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             if let Some(ch) = cs.channels.get_mut(&channel) {
                 if ch.unacked_count > 0 {
                     ch.unacked_count -= 1;
@@ -683,7 +704,11 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
     let requeue = flags & 0x02 != 0;
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             if let Some(ch) = cs.channels.get_mut(&channel) {
                 if ch.unacked_count > 0 {
                     ch.unacked_count -= 1;
@@ -837,7 +862,11 @@ pub async fn handle_qos(
     let global = flags & 0x01 != 0;
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             if global {
                 for ch in cs.channels.values_mut() {
                     ch.prefetch_count = prefetch_count;

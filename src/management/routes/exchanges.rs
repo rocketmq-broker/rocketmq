@@ -142,9 +142,11 @@ pub async fn publish_message(
         match exchanges.get(exchange_name_resolved) {
             Some(ex) => {
                 let mut qs = Vec::new();
-                ex.route_each(&req.routing_key, &std::collections::HashMap::new(), |q| qs.push(q.as_ref().to_string()));
+                ex.route_each(&req.routing_key, &std::collections::HashMap::new(), |q| {
+                    qs.push(q.as_ref().to_string())
+                });
                 qs
-            },
+            }
             None => {
                 return Err((
                     StatusCode::NOT_FOUND,

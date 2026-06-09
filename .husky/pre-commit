@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# Ensure the script fails if any command fails
+set -e
+
+echo "🚀 Running Husky Pre-Commit Hooks..."
+
+echo "======================"
+echo "✨ 1. Format Check (cargo fmt)"
+echo "======================"
+# We use --check to ensure the commit is aborted if files are unformatted.
+cargo fmt --all -- --check || {
+    echo "❌ cargo fmt failed! Please run 'cargo fmt --all' to format your code."
+    exit 1
+}
+
+echo "======================"
+echo "🔍 2. Lint Check (cargo clippy)"
+echo "======================"
+# -D warnings treats warnings as errors to keep the codebase clean.
+cargo clippy -- -D warnings || {
+    echo "❌ cargo clippy failed! Please fix the linting errors."
+    exit 1
+}
+
+echo "======================"
+echo "🧪 3. Tests (cargo test)"
+echo "======================"
+cargo test || {
+    echo "❌ cargo test failed! Please fix failing tests before committing."
+    exit 1
+}
+
+echo "✅ All pre-commit checks passed successfully!"

@@ -86,7 +86,9 @@ pub fn get_conn_auth(broker: &Broker, conn_id: u64) -> (String, String) {
         .get(&conn_id)
         .and_then(|guard| {
             guard
-                .value().as_any().downcast_ref::<ConnectionState>()
+                .value()
+                .as_any()
+                .downcast_ref::<ConnectionState>()
                 .map(|cs| (cs.username.clone(), cs.vhost.clone()))
         })
         .unwrap_or_default()

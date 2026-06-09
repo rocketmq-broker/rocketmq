@@ -24,7 +24,11 @@ pub async fn list_bindings(State(broker): State<Broker>) -> Json<Vec<BindingInfo
                 destination_type: "queue".into(),
                 routing_key: rk.as_ref().to_string(),
                 arguments: serde_json::json!({}),
-                properties_key: if rk.is_empty() { "~".into() } else { rk.as_ref().to_string() },
+                properties_key: if rk.is_empty() {
+                    "~".into()
+                } else {
+                    rk.as_ref().to_string()
+                },
             });
         }
     }
@@ -55,7 +59,11 @@ pub async fn exchange_bindings_source(
                 destination_type: "queue".into(),
                 routing_key: rk.as_ref().to_string(),
                 arguments: serde_json::json!({}),
-                properties_key: if rk.is_empty() { "~".into() } else { rk.as_ref().to_string() },
+                properties_key: if rk.is_empty() {
+                    "~".into()
+                } else {
+                    rk.as_ref().to_string()
+                },
             });
         }
     }
@@ -87,7 +95,11 @@ pub async fn queue_bindings_vhost(
                     destination_type: "queue".into(),
                     routing_key: rk.as_ref().to_string(),
                     arguments: serde_json::json!({}),
-                    properties_key: if rk.is_empty() { "~".into() } else { rk.as_ref().to_string() },
+                    properties_key: if rk.is_empty() {
+                        "~".into()
+                    } else {
+                        rk.as_ref().to_string()
+                    },
                 });
             }
         }

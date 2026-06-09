@@ -101,7 +101,11 @@ pub async fn perform_handshake(
     );
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             cs.username = username.clone();
             cs.authenticated = true;
         }
@@ -124,7 +128,11 @@ pub async fn perform_handshake(
 
     let (channel_max, frame_max, heartbeat) = parse_tune_ok(&method.arguments)?;
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             cs.channel_max = channel_max;
             cs.frame_max = frame_max;
             cs.heartbeat = heartbeat;
@@ -163,7 +171,9 @@ pub async fn perform_handshake(
         .get(&conn_id)
         .and_then(|guard| {
             guard
-                .value().as_any().downcast_ref::<ConnectionState>()
+                .value()
+                .as_any()
+                .downcast_ref::<ConnectionState>()
                 .map(|cs| cs.username.clone())
         })
         .unwrap_or_default();
@@ -187,7 +197,11 @@ pub async fn perform_handshake(
     }
 
     if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard.value_mut().as_any_mut().downcast_mut::<ConnectionState>() {
+        if let Some(cs) = cs_guard
+            .value_mut()
+            .as_any_mut()
+            .downcast_mut::<ConnectionState>()
+        {
             cs.vhost = vhost.clone();
         }
     }

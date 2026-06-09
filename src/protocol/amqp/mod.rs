@@ -14,7 +14,6 @@
 
 //! AMQP 0-9-1 protocol implementation.
 
-
 use std::sync::Arc;
 
 pub mod codec;

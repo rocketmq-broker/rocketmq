@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-use tracing::{info, warn};
-use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
 use crate::protocol::ProtocolAdapter;
 use crate::state::BrokerState;
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
+use tracing::{info, warn};
 
 pub async fn spawn_listener(
     addr: &str,

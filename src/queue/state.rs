@@ -224,7 +224,12 @@ impl QueueState {
                 .add_member(conn_id, channel_id);
         }
 
-        self.active_consumers = self.consumer_tags.iter().map(|(t, &(c, ch, na))| (t.clone(), c, ch, na)).collect::<Vec<_>>().into();
+        self.active_consumers = self
+            .consumer_tags
+            .iter()
+            .map(|(t, &(c, ch, na))| (t.clone(), c, ch, na))
+            .collect::<Vec<_>>()
+            .into();
 
         tag
     }
@@ -240,7 +245,12 @@ impl QueueState {
             });
 
             self.groups.retain(|_, g| !g.members.is_empty());
-            self.active_consumers = self.consumer_tags.iter().map(|(t, &(c, ch, na))| (t.clone(), c, ch, na)).collect::<Vec<_>>().into();
+            self.active_consumers = self
+                .consumer_tags
+                .iter()
+                .map(|(t, &(c, ch, na))| (t.clone(), c, ch, na))
+                .collect::<Vec<_>>()
+                .into();
             true
         } else {
             false

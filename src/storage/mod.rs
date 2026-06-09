@@ -191,14 +191,11 @@ fn replay_declare_queue(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
     if durable {
         let mut opts = QueueOptions::default();
         opts.durable = true;
-        broker
-            .queues
-            .entry(name.clone())
-            .or_insert_with(|| {
-                let mut q = QueueState::with_options(opts);
-                q.name_arc = std::sync::Arc::from(name.as_str());
-                q
-            });
+        broker.queues.entry(name.clone()).or_insert_with(|| {
+            let mut q = QueueState::with_options(opts);
+            q.name_arc = std::sync::Arc::from(name.as_str());
+            q
+        });
         broker.auto_bind_default_exchange(&name);
         info!(queue = name.as_str(), "restored durable queue");
     }
@@ -263,7 +260,13 @@ fn replay_enqueue(
 
     // Re-enqueue the message (only if queue exists)
     if let Some(mut queue) = broker.queues.get_mut(&queue_name) {
-        let mut msg = Message::new_routed(msg_id, headers.into(), body.into(), exchange.into(), routing_key.into());
+        let mut msg = Message::new_routed(
+            msg_id,
+            headers.into(),
+            body.into(),
+            exchange.into(),
+            routing_key.into(),
+        );
         msg.redelivered = true; // recovered messages are marked as redelivered
         queue
             .messages
