@@ -18,6 +18,7 @@
 // Description: Exchange types (direct, fanout, topic, headers) and routing logic.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// AMQP exchange type discriminator.
 ///
@@ -79,8 +80,8 @@ pub enum HeadersMatch {
 /// and headers-match arguments.
 #[derive(Clone, Debug)]
 pub struct Binding {
-    pub queue_name: String,
-    pub routing_key: String,
+    pub queue_name: Arc<str>,
+    pub routing_key: Arc<str>,
     pub headers_match: Option<HeadersMatch>,
 }
 
@@ -89,7 +90,7 @@ pub struct Binding {
 /// Exchanges are identified by name, typed by [`ExchangeType`], and hold
 /// a set of [`Binding`] entries used during message routing.
 pub struct Exchange {
-    pub name: String,
+    pub name: Arc<str>,
     pub kind: ExchangeType,
     pub durable: bool,
     pub auto_delete: bool,
@@ -98,7 +99,7 @@ pub struct Exchange {
 
 impl Exchange {
     /// Creates a new instance with the given name, kind, durable.
-    pub fn new(name: impl Into<String>, kind: ExchangeType, durable: bool) -> Self {
+    pub fn new(name: impl Into<Arc<str>>, kind: ExchangeType, durable: bool) -> Self {
         Self {
             name: name.into(),
             kind,
@@ -120,50 +121,66 @@ impl Exchange {
     }
 
     pub fn remove_binding(&mut self, queue_name: &str, routing_key: &str) {
-        self.bindings
-            .retain(|b| !(b.queue_name == queue_name && b.routing_key == routing_key));
+        self.bindings.retain(|b| {
+            !(b.queue_name.as_ref() == queue_name && b.routing_key.as_ref() == routing_key)
+        });
     }
-
-    /// Routes a message through this exchange, returning the names of all
-    /// queues whose bindings match the given routing key and headers.
+    /// Routes a message through this exchange, invoking `visitor` for each matched queue name.
+    /// Zero allocations!
     #[inline]
-    pub fn route(&self, routing_key: &str, headers: &HashMap<String, String>) -> Vec<String> {
+    pub fn route_each<F>(&self, routing_key: &str, headers: &HashMap<String, String>, visitor: F)
+    where
+        F: FnMut(&Arc<str>),
+    {
         match self.kind {
-            ExchangeType::Direct => self.route_direct(routing_key),
-            ExchangeType::Fanout => self.route_fanout(),
-            ExchangeType::Topic => self.route_topic(routing_key),
-            ExchangeType::Headers => self.route_headers(headers),
+            ExchangeType::Direct => self.route_direct(routing_key, visitor),
+            ExchangeType::Fanout => self.route_fanout(visitor),
+            ExchangeType::Topic => self.route_topic(routing_key, visitor),
+            ExchangeType::Headers => self.route_headers(headers, visitor),
         }
     }
 
     #[inline]
-    fn route_direct(&self, routing_key: &str) -> Vec<String> {
-        self.bindings
-            .iter()
-            .filter(|b| b.routing_key == routing_key)
-            .map(|b| b.queue_name.clone())
-            .collect()
+    fn route_direct<F>(&self, routing_key: &str, mut visitor: F)
+    where
+        F: FnMut(&Arc<str>),
+    {
+        for b in &self.bindings {
+            if b.routing_key.as_ref() == routing_key {
+                visitor(&b.queue_name);
+            }
+        }
     }
 
     #[inline]
-    fn route_fanout(&self) -> Vec<String> {
-        self.bindings.iter().map(|b| b.queue_name.clone()).collect()
+    fn route_fanout<F>(&self, mut visitor: F)
+    where
+        F: FnMut(&Arc<str>),
+    {
+        for b in &self.bindings {
+            visitor(&b.queue_name);
+        }
     }
 
     #[inline]
-    fn route_topic(&self, routing_key: &str) -> Vec<String> {
-        self.bindings
-            .iter()
-            .filter(|b| topic_matches(&b.routing_key, routing_key))
-            .map(|b| b.queue_name.clone())
-            .collect()
+    fn route_topic<F>(&self, routing_key: &str, mut visitor: F)
+    where
+        F: FnMut(&Arc<str>),
+    {
+        for b in &self.bindings {
+            if topic_matches(&b.routing_key, routing_key) {
+                visitor(&b.queue_name);
+            }
+        }
     }
 
     #[inline]
-    fn route_headers(&self, msg_headers: &HashMap<String, String>) -> Vec<String> {
-        self.bindings
-            .iter()
-            .filter(|b| match &b.headers_match {
+    fn route_headers<F>(&self, msg_headers: &HashMap<String, String>, mut visitor: F)
+    where
+        F: FnMut(&Arc<str>),
+    {
+        for b in &self.bindings {
+            let matched = match &b.headers_match {
                 Some(HeadersMatch::All(required)) => {
                     required.iter().all(|(k, v)| msg_headers.get(k) == Some(v))
                 }
@@ -171,9 +188,11 @@ impl Exchange {
                     required.iter().any(|(k, v)| msg_headers.get(k) == Some(v))
                 }
                 None => false,
-            })
-            .map(|b| b.queue_name.clone())
-            .collect()
+            };
+            if matched {
+                visitor(&b.queue_name);
+            }
+        }
     }
 }
 
@@ -292,9 +311,30 @@ mod tests {
         });
 
         let empty = HashMap::new();
-        assert_eq!(ex.route("orders", &empty), vec!["q1"]);
-        assert_eq!(ex.route("payments", &empty), vec!["q2"]);
-        assert!(ex.route("unknown", &empty).is_empty());
+        assert_eq!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("orders", &empty, |q| qs.push(q.as_ref().to_string()));
+                qs
+            },
+            vec!["q1"]
+        );
+        assert_eq!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("payments", &empty, |q| qs.push(q.as_ref().to_string()));
+                qs
+            },
+            vec!["q2"]
+        );
+        assert!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("unknown", &empty, |q| qs.push(q.as_ref().to_string()));
+                qs
+            }
+            .is_empty()
+        );
     }
 
     #[test]
@@ -302,17 +342,21 @@ mod tests {
         let mut ex = Exchange::new("test", ExchangeType::Fanout, false);
         ex.add_binding(Binding {
             queue_name: "q1".into(),
-            routing_key: String::new(),
+            routing_key: "".into(),
             headers_match: None,
         });
         ex.add_binding(Binding {
             queue_name: "q2".into(),
-            routing_key: String::new(),
+            routing_key: "".into(),
             headers_match: None,
         });
 
         let empty = HashMap::new();
-        let routed = ex.route("anything", &empty);
+        let routed = {
+            let mut qs = Vec::new();
+            ex.route_each("anything", &empty, |q| qs.push(q.as_ref().to_string()));
+            qs
+        };
         assert_eq!(routed.len(), 2);
         assert!(routed.contains(&"q1".to_string()));
         assert!(routed.contains(&"q2".to_string()));
@@ -340,19 +384,33 @@ mod tests {
         let empty = HashMap::new();
 
         // logs.app.error → matches all three
-        let routed = ex.route("logs.app.error", &empty);
+        let routed = {
+            let mut qs = Vec::new();
+            ex.route_each("logs.app.error", &empty, |q| {
+                qs.push(q.as_ref().to_string())
+            });
+            qs
+        };
         assert!(routed.contains(&"all_logs".to_string()));
         assert!(routed.contains(&"app_errors".to_string()));
         assert!(routed.contains(&"any_error".to_string()));
 
         // logs.db.error → matches all_logs + any_error
-        let routed = ex.route("logs.db.error", &empty);
+        let routed = {
+            let mut qs = Vec::new();
+            ex.route_each("logs.db.error", &empty, |q| qs.push(q.as_ref().to_string()));
+            qs
+        };
         assert!(routed.contains(&"all_logs".to_string()));
         assert!(routed.contains(&"any_error".to_string()));
         assert!(!routed.contains(&"app_errors".to_string()));
 
         // logs.app.info → matches only all_logs
-        let routed = ex.route("logs.app.info", &empty);
+        let routed = {
+            let mut qs = Vec::new();
+            ex.route_each("logs.app.info", &empty, |q| qs.push(q.as_ref().to_string()));
+            qs
+        };
         assert_eq!(routed, vec!["all_logs"]);
     }
 
@@ -365,19 +423,33 @@ mod tests {
 
         ex.add_binding(Binding {
             queue_name: "pdf_reports".into(),
-            routing_key: String::new(),
+            routing_key: "".into(),
             headers_match: Some(HeadersMatch::All(required)),
         });
 
         let mut msg_headers = HashMap::new();
         msg_headers.insert("format".into(), "pdf".into());
         msg_headers.insert("type".into(), "report".into());
-        assert_eq!(ex.route("", &msg_headers), vec!["pdf_reports"]);
+        assert_eq!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("", &msg_headers, |q| qs.push(q.as_ref().to_string()));
+                qs
+            },
+            vec!["pdf_reports"]
+        );
 
         // Missing one header → no match
         let mut partial = HashMap::new();
         partial.insert("format".into(), "pdf".into());
-        assert!(ex.route("", &partial).is_empty());
+        assert!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("", &partial, |q| qs.push(q.as_ref().to_string()));
+                qs
+            }
+            .is_empty()
+        );
     }
 
     #[test]
@@ -439,7 +511,7 @@ mod tests {
 
         ex.remove_binding("q1", "a");
         assert_eq!(ex.bindings.len(), 1);
-        assert_eq!(ex.bindings[0].queue_name, "q2");
+        assert_eq!(ex.bindings[0].queue_name.as_ref(), "q2");
     }
 
     #[test]
@@ -505,17 +577,31 @@ mod tests {
 
         ex.add_binding(Binding {
             queue_name: "q1".into(),
-            routing_key: String::new(),
+            routing_key: "".into(),
             headers_match: Some(HeadersMatch::Any(required)),
         });
 
         let mut h = HashMap::new();
         h.insert("color".into(), "red".into());
-        assert_eq!(ex.route("", &h), vec!["q1"]);
+        assert_eq!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("", &h, |q| qs.push(q.as_ref().to_string()));
+                qs
+            },
+            vec!["q1"]
+        );
 
         let mut h2 = HashMap::new();
         h2.insert("color".into(), "blue".into());
-        assert!(ex.route("", &h2).is_empty());
+        assert!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("", &h2, |q| qs.push(q.as_ref().to_string()));
+                qs
+            }
+            .is_empty()
+        );
     }
 
     // ── Edge cases ──────────────────────────────────────────────────────
@@ -524,7 +610,14 @@ mod tests {
     fn exchange_no_bindings_routes_nothing() {
         let ex = Exchange::new("empty", ExchangeType::Direct, false);
         let empty = HashMap::new();
-        assert!(ex.route("anything", &empty).is_empty());
+        assert!(
+            {
+                let mut qs = Vec::new();
+                ex.route_each("anything", &empty, |q| qs.push(q.as_ref().to_string()));
+                qs
+            }
+            .is_empty()
+        );
     }
 
     #[test]
@@ -538,7 +631,13 @@ mod tests {
 
         let empty = HashMap::new();
 
-        let routed = ex.route("totally_different", &empty);
+        let routed = {
+            let mut qs = Vec::new();
+            ex.route_each("totally_different", &empty, |q| {
+                qs.push(q.as_ref().to_string())
+            });
+            qs
+        };
         assert_eq!(routed, vec!["q1"]);
     }
 
@@ -557,7 +656,11 @@ mod tests {
         });
 
         let empty = HashMap::new();
-        let routed = ex.route("events", &empty);
+        let routed = {
+            let mut qs = Vec::new();
+            ex.route_each("events", &empty, |q| qs.push(q.as_ref().to_string()));
+            qs
+        };
         assert_eq!(routed.len(), 2);
     }
 
@@ -591,75 +694,5 @@ mod tests {
         for ex in exchanges.values() {
             assert!(ex.durable, "{} should be durable", ex.name);
         }
-    }
-
-    /// Dedicated unit test verification for `to_byte` function.
-    #[test]
-    fn test_coverage_for_exchange_type_to_byte() {
-        let func_name = "to_byte";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_exchange_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `add_binding` function.
-    #[test]
-    fn test_coverage_for_exchange_add_binding() {
-        let func_name = "add_binding";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `route_direct` function.
-    #[test]
-    fn test_coverage_for_exchange_route_direct() {
-        let func_name = "route_direct";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `route_fanout` function.
-    #[test]
-    fn test_coverage_for_exchange_route_fanout() {
-        let func_name = "route_fanout";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `route_topic` function.
-    #[test]
-    fn test_coverage_for_exchange_route_topic() {
-        let func_name = "route_topic";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `route_headers` function.
-    #[test]
-    fn test_coverage_for_exchange_route_headers() {
-        let func_name = "route_headers";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `topic_matches` function.
-    #[test]
-    fn test_coverage_for_topic_matches() {
-        let func_name = "topic_matches";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `topic_match_recursive` function.
-    #[test]
-    fn test_coverage_for_topic_match_recursive() {
-        let func_name = "topic_match_recursive";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `create_default_exchanges` function.
-    #[test]
-    fn test_coverage_for_create_default_exchanges() {
-        let func_name = "create_default_exchanges";
-        assert!(!func_name.is_empty());
     }
 }

@@ -194,7 +194,11 @@ fn replay_declare_queue(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
         broker
             .queues
             .entry(name.clone())
-            .or_insert_with(|| QueueState::with_options(opts));
+            .or_insert_with(|| {
+                let mut q = QueueState::with_options(opts);
+                q.name_arc = std::sync::Arc::from(name.as_str());
+                q
+            });
         broker.auto_bind_default_exchange(&name);
         info!(queue = name.as_str(), "restored durable queue");
     }
@@ -259,7 +263,7 @@ fn replay_enqueue(
 
     // Re-enqueue the message (only if queue exists)
     if let Some(mut queue) = broker.queues.get_mut(&queue_name) {
-        let mut msg = Message::new_routed(msg_id, headers, body, exchange, routing_key);
+        let mut msg = Message::new_routed(msg_id, headers.into(), body.into(), exchange.into(), routing_key.into());
         msg.redelivered = true; // recovered messages are marked as redelivered
         queue
             .messages
@@ -305,8 +309,8 @@ fn replay_bind(broker: &Arc<BrokerState>, data: &[u8]) -> Result<()> {
     if let Ok(mut exchanges) = broker.exchanges.try_write() {
         if let Some(ex) = exchanges.get_mut(&exchange) {
             ex.add_binding(Binding {
-                queue_name: queue,
-                routing_key,
+                queue_name: queue.into(),
+                routing_key: routing_key.into(),
                 headers_match: None,
             });
         }
@@ -446,113 +450,8 @@ mod tests {
         assert!(exchanges.contains_key("my.fanout"));
         let ex = exchanges.get("my.fanout").unwrap();
         assert_eq!(ex.bindings.len(), 1);
-        assert_eq!(ex.bindings[0].queue_name, "q1");
+        assert_eq!(ex.bindings[0].queue_name.as_ref(), "q1");
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
-    }
-
-    /// Dedicated unit test verification for `open_wal` function.
-    #[test]
-    fn test_coverage_for_open_wal() {
-        let func_name = "open_wal";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `recover` function.
-    #[test]
-    fn test_coverage_for_recover() {
-        let func_name = "recover";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `replay` function.
-    #[test]
-    fn test_coverage_for_replay() {
-        let func_name = "replay";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `fmt` function.
-    #[test]
-    fn test_coverage_for_display_fmt() {
-        let func_name = "fmt";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `read_u8` function.
-    #[test]
-    fn test_coverage_for_read_u8() {
-        let func_name = "read_u8";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `read_u16` function.
-    #[test]
-    fn test_coverage_for_read_u16() {
-        let func_name = "read_u16";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `read_u32` function.
-    #[test]
-    fn test_coverage_for_read_u32() {
-        let func_name = "read_u32";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `read_u64` function.
-    #[test]
-    fn test_coverage_for_read_u64() {
-        let func_name = "read_u64";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `read_slice` function.
-    #[test]
-    fn test_coverage_for_read_slice() {
-        let func_name = "read_slice";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `read_string_u16` function.
-    #[test]
-    fn test_coverage_for_read_string_u16() {
-        let func_name = "read_string_u16";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `replay_declare_queue` function.
-    #[test]
-    fn test_coverage_for_replay_declare_queue() {
-        let func_name = "replay_declare_queue";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `replay_enqueue` function.
-    #[test]
-    fn test_coverage_for_replay_enqueue() {
-        let func_name = "replay_enqueue";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `replay_declare_exchange` function.
-    #[test]
-    fn test_coverage_for_replay_declare_exchange() {
-        let func_name = "replay_declare_exchange";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `replay_bind` function.
-    #[test]
-    fn test_coverage_for_replay_bind() {
-        let func_name = "replay_bind";
-        assert!(!func_name.is_empty());
     }
 }
