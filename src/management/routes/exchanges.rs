@@ -140,7 +140,11 @@ pub async fn publish_message(
         let exchanges = broker.exchanges.read().await;
         let exchange_name_resolved = resolve_exchange_name(&exchange_name);
         match exchanges.get(exchange_name_resolved) {
-            Some(ex) => ex.route(&req.routing_key, &std::collections::HashMap::new()),
+            Some(ex) => {
+                let mut qs = Vec::new();
+                ex.route_each(&req.routing_key, &std::collections::HashMap::new(), |q| qs.push(q.as_ref().to_string()));
+                qs
+            },
             None => {
                 return Err((
                     StatusCode::NOT_FOUND,
@@ -157,18 +161,18 @@ pub async fn publish_message(
     for queue_name in &target_queues {
         let msg = crate::queue::message::Message::new_routed(
             msg_id,
-            Vec::new(),
-            req.payload.as_bytes().to_vec(),
-            exchange_name.clone(),
-            req.routing_key.clone(),
+            Vec::new().into(),
+            req.payload.as_bytes().to_vec().into(),
+            exchange_name.clone().into(),
+            req.routing_key.clone().into(),
         );
-        if let Some(mut entry) = broker.queues.get_mut(queue_name) {
+        if let Some(mut entry) = broker.queues.get_mut(queue_name.as_str()) {
             entry.value_mut().stat_published += 1;
             entry
                 .value_mut()
                 .messages
                 .push_back(crate::queue::message::QueueMessage::Full(msg));
-            crate::metrics::record_published(queue_name);
+            crate::metrics::record_published(queue_name.as_str());
         }
     }
 

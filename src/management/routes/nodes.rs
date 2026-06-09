@@ -29,7 +29,7 @@ pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
     }
 
     for entry in broker.conn_state.iter() {
-        total_channels += entry.value().channels.len();
+        total_channels += entry.value().channels_count();
     }
 
     let version = env!("CARGO_PKG_VERSION").to_string();

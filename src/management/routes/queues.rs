@@ -62,7 +62,7 @@ pub fn build_queue_info(name: &str, q: &crate::queue::QueueState, broker: &Broke
     let arguments = serde_json::Value::Object(args);
 
     let mut consumer_details = Vec::new();
-    for (tag, &(conn_id, channel_id)) in &q.consumer_tags {
+    for (tag, &(conn_id, channel_id, _)) in &q.consumer_tags {
         let mut prefetch = 0;
         let mut active = true;
         let mut channel_name = String::new();
@@ -78,11 +78,12 @@ pub fn build_queue_info(name: &str, q: &crate::queue::QueueState, broker: &Broke
             channel_name = format!("{}:{} -> 5672 ({})", peer_ip, peer_port, channel_id);
         }
 
-        if let Some(cs) = broker.conn_state.get(&conn_id) {
-            username = cs.username.clone();
-            if let Some(ch) = cs.channels.get(&channel_id) {
+        if let Some(cs_guard) = broker.conn_state.get(&conn_id) {
+            let cs = cs_guard.value();
+            username = cs.username();
+            if let Some(ch) = cs.get_channels().into_iter().find(|c| c.id == channel_id) {
                 prefetch = ch.prefetch_count as usize;
-                active = ch.can_deliver();
+                active = ch.flow_active && (ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count);
             }
         }
 
@@ -261,13 +262,14 @@ pub async fn create_queue_vhost(
 ) -> StatusCode {
     use crate::queue::{QueueOptions, QueueState};
     broker.queues.entry(name.clone()).or_insert_with(|| {
-        info!(queue = name.as_str(), "queue created via management API");
-        QueueState::with_options(QueueOptions {
+        let mut q = QueueState::with_options(QueueOptions {
             durable: req.durable,
             exclusive: req.exclusive,
             auto_delete: req.auto_delete,
             ..Default::default()
-        })
+        });
+        q.name_arc = std::sync::Arc::from(name.as_str());
+        q
     });
     StatusCode::NO_CONTENT
 }

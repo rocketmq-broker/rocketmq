@@ -20,11 +20,11 @@ pub async fn list_bindings(State(broker): State<Broker>) -> Json<Vec<BindingInfo
             bindings.push(BindingInfo {
                 source: name.clone(),
                 vhost: "/".into(),
-                destination: b.queue_name.clone(),
+                destination: b.queue_name.as_ref().to_string(),
                 destination_type: "queue".into(),
-                routing_key: rk.clone(),
+                routing_key: rk.as_ref().to_string(),
                 arguments: serde_json::json!({}),
-                properties_key: if rk.is_empty() { "~".into() } else { rk },
+                properties_key: if rk.is_empty() { "~".into() } else { rk.as_ref().to_string() },
             });
         }
     }
@@ -51,11 +51,11 @@ pub async fn exchange_bindings_source(
             out.push(BindingInfo {
                 source: name.clone(),
                 vhost: "/".into(),
-                destination: b.queue_name.clone(),
+                destination: b.queue_name.as_ref().to_string(),
                 destination_type: "queue".into(),
-                routing_key: rk.clone(),
+                routing_key: rk.as_ref().to_string(),
                 arguments: serde_json::json!({}),
-                properties_key: if rk.is_empty() { "~".into() } else { rk },
+                properties_key: if rk.is_empty() { "~".into() } else { rk.as_ref().to_string() },
             });
         }
     }
@@ -78,16 +78,16 @@ pub async fn queue_bindings_vhost(
     let mut bindings = Vec::new();
     for (name, ex) in exchanges.iter() {
         for b in &ex.bindings {
-            if b.queue_name == queue_name {
+            if b.queue_name.as_ref() == queue_name {
                 let rk = b.routing_key.clone();
                 bindings.push(BindingInfo {
                     source: name.clone(),
                     vhost: "/".into(),
-                    destination: b.queue_name.clone(),
+                    destination: b.queue_name.as_ref().to_string(),
                     destination_type: "queue".into(),
-                    routing_key: rk.clone(),
+                    routing_key: rk.as_ref().to_string(),
                     arguments: serde_json::json!({}),
-                    properties_key: if rk.is_empty() { "~".into() } else { rk },
+                    properties_key: if rk.is_empty() { "~".into() } else { rk.as_ref().to_string() },
                 });
             }
         }
@@ -103,8 +103,8 @@ pub async fn create_binding_eq(
     let mut exchanges = broker.exchanges.write().await;
     if let Some(ex) = exchanges.get_mut(&source) {
         ex.bindings.push(crate::routing::exchange::Binding {
-            queue_name: dest,
-            routing_key: req.routing_key,
+            queue_name: dest.into(),
+            routing_key: req.routing_key.into(),
             headers_match: None,
         });
         info!(
@@ -126,7 +126,7 @@ pub async fn delete_binding_eq(
         let rk = if pk == "~" { String::new() } else { pk };
         let before = ex.bindings.len();
         ex.bindings
-            .retain(|b| !(b.queue_name == dest && b.routing_key == rk));
+            .retain(|b| !(b.queue_name.as_ref() == dest && b.routing_key.as_ref() == rk));
         if ex.bindings.len() < before {
             StatusCode::NO_CONTENT
         } else {

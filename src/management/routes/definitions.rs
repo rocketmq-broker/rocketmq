@@ -27,7 +27,7 @@ pub async fn get_definitions(State(broker): State<Broker>) -> Json<serde_json::V
     let mut bindings = Vec::new();
     for (n, ex) in exchanges_guard.iter() {
         for b in &ex.bindings {
-            bindings.push(serde_json::json!({ "source": n, "vhost": "/", "destination": b.queue_name, "destination_type": "queue", "routing_key": b.routing_key, "arguments": {} }));
+            bindings.push(serde_json::json!({ "source": n, "vhost": "/", "destination": b.queue_name.as_ref().to_string(), "destination_type": "queue", "routing_key": b.routing_key.as_ref().to_string(), "arguments": {} }));
         }
     }
     let perms: Vec<serde_json::Value> = broker.auth.list_users().into_iter()

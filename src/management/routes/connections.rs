@@ -26,13 +26,14 @@ pub async fn list_connections(
             let mut frame_max = 131_072;
             let mut channel_max = 2047;
 
-            if let Some(cs) = broker.conn_state.get(&handle.id) {
-                user = cs.username.clone();
-                channels = cs.channels.len();
-                vhost = cs.vhost.clone();
-                timeout = cs.heartbeat as u32;
-                frame_max = cs.frame_max;
-                channel_max = cs.channel_max;
+            if let Some(cs_guard) = broker.conn_state.get(&handle.id) {
+                let cs = cs_guard.value();
+                user = cs.username();
+                channels = cs.channels_count();
+                vhost = cs.vhost();
+                timeout = cs.heartbeat() as u32;
+                frame_max = cs.frame_max();
+                channel_max = cs.channel_max();
             }
 
             let addr = handle.addr;
@@ -76,13 +77,14 @@ pub async fn get_connection(
             let mut frame_max = 131_072;
             let mut channel_max = 2047;
 
-            if let Some(cs) = broker.conn_state.get(&handle.id) {
-                user = cs.username.clone();
-                channels = cs.channels.len();
-                vhost = cs.vhost.clone();
-                timeout = cs.heartbeat as u32;
-                frame_max = cs.frame_max;
-                channel_max = cs.channel_max;
+            if let Some(cs_guard) = broker.conn_state.get(&handle.id) {
+                let cs = cs_guard.value();
+                user = cs.username();
+                channels = cs.channels_count();
+                vhost = cs.vhost();
+                timeout = cs.heartbeat() as u32;
+                frame_max = cs.frame_max();
+                channel_max = cs.channel_max();
             }
 
             return Ok(Json(ConnectionInfo {
@@ -148,14 +150,15 @@ pub async fn connection_channels(
         let addr = handle.addr;
         let conn_name = format!("{}:{} -> 5672", addr.ip(), addr.port());
         if conn_name == name {
-            if let Some(cs) = broker.conn_state.get(&handle.id) {
-                for ch in cs.channels.values() {
+            if let Some(cs_guard) = broker.conn_state.get(&handle.id) {
+                let cs = cs_guard.value();
+                for ch in cs.get_channels() {
                     channels.push(build_channel_info(
                         &conn_name,
                         handle.id,
-                        &cs.vhost,
-                        &cs.username,
-                        ch,
+                        &cs.vhost(),
+                        &cs.username(),
+                        &ch,
                         &broker,
                     ));
                 }
@@ -175,14 +178,15 @@ pub async fn list_channels(
         let handle = entry.value();
         let addr = handle.addr;
         let conn_name = format!("{}:{} -> 5672", addr.ip(), addr.port());
-        if let Some(cs) = broker.conn_state.get(&handle.id) {
-            for ch in cs.channels.values() {
+        if let Some(cs_guard) = broker.conn_state.get(&handle.id) {
+            let cs = cs_guard.value();
+            for ch in cs.get_channels() {
                 channels.push(build_channel_info(
                     &conn_name,
                     handle.id,
-                    &cs.vhost,
-                    &cs.username,
-                    ch,
+                    &cs.vhost(),
+                    &cs.username(),
+                    &ch,
                     &broker,
                 ));
             }
@@ -199,16 +203,17 @@ pub async fn get_channel(
         let handle = entry.value();
         let addr = handle.addr;
         let conn_name = format!("{}:{} -> 5672", addr.ip(), addr.port());
-        if let Some(cs) = broker.conn_state.get(&handle.id) {
-            for ch in cs.channels.values() {
+        if let Some(cs_guard) = broker.conn_state.get(&handle.id) {
+            let cs = cs_guard.value();
+            for ch in cs.get_channels() {
                 let full_name = format!("{} ({})", conn_name, ch.id);
                 if full_name == name {
                     return Ok(Json(build_channel_info(
                         &conn_name,
                         handle.id,
-                        &cs.vhost,
-                        &cs.username,
-                        ch,
+                        &cs.vhost(),
+                        &cs.username(),
+                        &ch,
                         &broker,
                     )));
                 }
@@ -223,7 +228,7 @@ pub fn build_channel_info(
     conn_id: u64,
     vhost: &str,
     user: &str,
-    ch: &crate::state::ChannelState,
+    ch: &crate::protocol::ChannelMeta,
     broker: &Broker,
 ) -> ChannelInfo {
     let (pub_val, pub_rate, del_val, del_rate, ack_val, ack_rate) = get_rates();
@@ -231,14 +236,14 @@ pub fn build_channel_info(
     let mut consumer_details = Vec::new();
     for entry in broker.queues.iter() {
         let (q_name, queue) = entry.pair();
-        for (tag, &(c_id, ch_id)) in &queue.consumer_tags {
+        for (tag, &(c_id, ch_id, _)) in &queue.consumer_tags {
             if c_id == conn_id && ch_id == ch.id {
                 consumer_details.push(serde_json::json!({
                     "consumer_tag": tag,
                     "ack_required": true,
                     "exclusive": false,
                     "prefetch_count": ch.prefetch_count,
-                    "active": ch.can_deliver(),
+                    "active": ch.flow_active && (ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count),
                     "activity_status": "idle",
                     "consumer_timeout": 0,
                     "arguments": {},
