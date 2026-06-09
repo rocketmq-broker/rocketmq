@@ -31,4 +31,4 @@ prometheus = "0.14.0"
 tracing-opentelemetry = "0.30"
 sysinfo = "0.39"
 memchr = "2.8.1"
-
+async-trait = "0.1"

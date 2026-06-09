@@ -30,11 +30,11 @@ mod cluster;
 #[allow(dead_code)]
 mod config;
 #[allow(dead_code)]
-mod core;
-#[allow(dead_code)]
 mod management;
 #[allow(dead_code)]
 mod metrics;
+#[allow(dead_code)]
+pub mod protocol;
 #[allow(dead_code)]
 mod queue;
 #[allow(dead_code)]
@@ -49,7 +49,6 @@ mod state;
 mod storage;
 
 use std::sync::Arc;
-use tracing::{info, warn};
 
 use config::*;
 
@@ -77,8 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     server::tasks::spawn_all(broker.clone());
 
-    server::amqp_delivery::spawn_delivery_task(broker.clone());
-
     let mgmt_broker = broker.clone();
     tokio::spawn(async move {
         if let Err(e) = management::serve(mgmt_broker).await {
@@ -86,82 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let amqp_addr = get_amqp_listen_addr();
-    let amqp_listener = tokio::net::TcpListener::bind(&amqp_addr).await?;
-    info!("AMQP 0-9-1 on {}", amqp_addr);
-
-    let amqps_addr = get_amqps_listen_addr();
-    let tls_acceptor =
-        match server::tls::build_tls_acceptor(&get_tls_cert_path(), &get_tls_key_path()) {
-            Ok(acc) => {
-                let amqps_listener = tokio::net::TcpListener::bind(&amqps_addr).await?;
-                info!("AMQPS (TLS) on {}", amqps_addr);
-                Some((amqps_listener, acc))
-            }
-            Err(e) => {
-                warn!(error = %e, "TLS setup failed — AMQPS disabled, plain AMQP only");
-                None
-            }
-        };
-
-    tokio::spawn(handle_plain_accept(amqp_listener, broker.clone()));
-
-    if let Some((tls_listener, acceptor)) = tls_acceptor {
-        tokio::spawn(handle_tls_accept(tls_listener, acceptor, broker.clone()));
-    }
+    protocol::start_adapters(broker.clone()).await?;
 
     std::future::pending::<()>().await;
-    Ok(())
-}
-
-async fn handle_plain_accept(
-    amqp_listener: tokio::net::TcpListener,
-    broker: Arc<state::broker::BrokerState>,
-) {
-    loop {
-        match amqp_listener.accept().await {
-            Ok((stream, addr)) => {
-                server::amqp_loop::spawn_amqp(stream, addr, broker.clone());
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to accept plain AMQP connection");
-            }
-        }
-    }
-}
-
-async fn handle_tls_accept(
-    tls_listener: tokio::net::TcpListener,
-    acceptor: tokio_rustls::TlsAcceptor,
-    broker: Arc<state::broker::BrokerState>,
-) {
-    loop {
-        match tls_listener.accept().await {
-            Ok((tcp_stream, addr)) => {
-                let acceptor = acceptor.clone();
-                let broker = broker.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_tls_handshake(tcp_stream, addr, acceptor, broker).await {
-                        warn!(%addr, error = %e, "TLS handshake failed");
-                    }
-                });
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to accept TLS AMQPS connection");
-            }
-        }
-    }
-}
-
-async fn handle_tls_handshake(
-    tcp_stream: tokio::net::TcpStream,
-    addr: std::net::SocketAddr,
-    acceptor: tokio_rustls::TlsAcceptor,
-    broker: Arc<state::broker::BrokerState>,
-) -> Result<(), std::io::Error> {
-    let tls_stream = acceptor.accept(tcp_stream).await?;
-    info!(%addr, "TLS handshake complete");
-    let boxed: Box<dyn server::AsyncStream> = Box::new(tls_stream);
-    server::amqp_loop::spawn_amqp_on_stream(boxed, addr, broker);
     Ok(())
 }
