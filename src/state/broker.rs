@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 
 use dashmap::DashMap;
 
@@ -38,7 +38,7 @@ use crate::state::vhost::{DEFAULT_VHOST, VHost};
 pub struct ConnHandle {
     pub id: u64,
     pub addr: SocketAddr,
-    pub amqp_tx: mpsc::Sender<Vec<u8>>,
+    pub sink: std::sync::Arc<dyn crate::protocol::DeliverySink>,
 }
 
 /// Per-channel state tracking within an AMQP connection.
@@ -152,7 +152,13 @@ pub struct BrokerState {
     pub exchanges: RwLock<HashMap<String, Exchange>>,
     pub queues: DashMap<String, QueueState>,
     pub connections: DashMap<u64, ConnHandle>,
-    pub conn_state: DashMap<u64, ConnectionState>,
+    pub conn_state: DashMap<u64, Box<dyn crate::protocol::ConnectionMeta>>,
+    pub conn_consumers: DashMap<u64, Vec<(String, String, u16)>>, // conn_id -> Vec<(queue_name, consumer_tag, channel_id)>
+    pub conn_exclusive_queues: DashMap<u64, Vec<String>>,         // conn_id -> Vec<queue_name>
+    /// Maps delivery tag -> queue name.
+    pub delivery_index: DashMap<u64, Arc<str>>,
+    /// Tracks which deliveries were sent to each connection (for ack/nack).
+    pub conn_deliveries: DashMap<u64, Vec<(Arc<str>, u64)>>, // conn_id -> Vec<(queue_name, delivery_tag)>
     wal: Arc<crate::storage::wal::Wal>,
     pub dedup_cache: DashMap<String, Instant>,
     pub delay_queue: DelayQueue,
@@ -161,10 +167,6 @@ pub struct BrokerState {
     cluster: OnceLock<Arc<crate::cluster::ClusterCoordinator>>,
     /// Epoch ms when the broker started.
     started_at_ms: u64,
-    /// OPT-1: O(1) delivery_tag → queue_name index.
-    /// Populated on delivery, removed on ack/reject/nack.
-    /// Eliminates the O(Q) full-queue scan in ack handlers.
-    pub delivery_index: DashMap<u64, String>,
     /// OPT-2: O(1) consumer_tag → queue_name index.
     /// Populated on consume, removed on cancel/disconnect.
     /// Eliminates the O(Q) full-queue scan in cancel handler.
@@ -192,6 +194,10 @@ impl BrokerState {
             queues: DashMap::new(),
             connections: DashMap::new(),
             conn_state: DashMap::new(),
+            conn_consumers: DashMap::new(),
+            conn_exclusive_queues: DashMap::new(),
+            delivery_index: DashMap::new(),
+            conn_deliveries: DashMap::new(),
             wal,
             dedup_cache: DashMap::new(),
             delay_queue: DelayQueue::new(),
@@ -209,7 +215,6 @@ impl BrokerState {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-            delivery_index: DashMap::new(),
             consumer_index: DashMap::new(),
         }
     }
@@ -258,6 +263,24 @@ impl BrokerState {
         self.connections.remove(&conn_id);
         self.conn_state.remove(&conn_id);
 
+        if let Some((_, excl_queues)) = self.conn_exclusive_queues.remove(&conn_id) {
+            for queue_name in excl_queues {
+                self.queues.remove(&queue_name);
+            }
+        }
+
+        if let Some((_, deliveries)) = self.conn_deliveries.remove(&conn_id) {
+            for (queue_name, delivery_tag) in deliveries {
+                self.delivery_index.remove(&delivery_tag);
+                if let Some(mut q) = self.queues.get_mut(queue_name.as_ref()) {
+                    if let Some(msg) = q.inflight.remove(&delivery_tag) {
+                        q.messages
+                            .push_front(crate::queue::message::QueueMessage::Full(msg));
+                    }
+                }
+            }
+        }
+
         let mut queues_to_remove = Vec::new();
         for mut entry in self.queues.iter_mut() {
             let (name, queue) = entry.pair_mut();
@@ -267,7 +290,7 @@ impl BrokerState {
             let removed_tags: Vec<String> = queue
                 .consumer_tags
                 .iter()
-                .filter(|(_, (cid, _))| *cid == conn_id)
+                .filter(|(_, (cid, _, _))| *cid == conn_id)
                 .map(|(tag, _)| tag.clone())
                 .collect();
             for tag in &removed_tags {
@@ -276,14 +299,8 @@ impl BrokerState {
 
             queue
                 .consumer_tags
-                .retain(|_tag, &mut (cid, _)| cid != conn_id);
+                .retain(|_tag, &mut (cid, _, _)| cid != conn_id);
             queue.consumer_count = queue.listeners.len();
-
-            // Clean up delivery_index for inflight messages owned by this connection
-            let inflight_tags: Vec<u64> = queue.inflight.keys().copied().collect();
-            for tag in &inflight_tags {
-                self.delivery_index.remove(tag);
-            }
 
             if queue.options.exclusive && queue.owner_conn_id == Some(conn_id) {
                 queues_to_remove.push(name.clone());
@@ -316,21 +333,46 @@ impl BrokerState {
         };
 
         default_ex.add_binding(Binding {
-            queue_name: queue_name.to_string(),
-            routing_key: queue_name.to_string(),
+            queue_name: queue_name.to_string().into(),
+            routing_key: queue_name.to_string().into(),
             headers_match: None,
         });
     }
 
-    /// Allocates a globally unique, monotonically increasing delivery tag.
-    pub fn alloc_delivery_tag(&self, conn_id: u64) -> u64 {
-        if let Some(mut cs) = self.conn_state.get_mut(&conn_id) {
-            let tag = cs.next_delivery_tag;
-            cs.next_delivery_tag += 1;
-            tag
-        } else {
-            0
+    pub fn register_exclusive_queue(&self, conn_id: u64, queue_name: &str) {
+        self.conn_exclusive_queues
+            .entry(conn_id)
+            .or_default()
+            .push(queue_name.to_string());
+    }
+
+    pub fn deregister_exclusive_queue(&self, conn_id: u64, queue_name: &str) {
+        if let Some(mut qs) = self.conn_exclusive_queues.get_mut(&conn_id) {
+            qs.retain(|q| q != queue_name);
         }
+    }
+
+    pub fn register_consumer(
+        &self,
+        conn_id: u64,
+        channel_id: u16,
+        queue_name: &str,
+        consumer_tag: &str,
+    ) {
+        self.conn_consumers.entry(conn_id).or_default().push((
+            queue_name.to_string(),
+            consumer_tag.to_string(),
+            channel_id,
+        ));
+        self.consumer_index
+            .insert(consumer_tag.to_string(), queue_name.to_string());
+    }
+
+    pub fn deregister_consumer(&self, conn_id: u64, consumer_tag: &str) {
+        if let Some(mut cons) = self.conn_consumers.get_mut(&conn_id) {
+            cons.retain(|(_, tag, _)| tag != consumer_tag);
+        }
+        self.consumer_index.remove(consumer_tag);
     }
 }
 
@@ -341,6 +383,46 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
     use crate::queue::QueueOptions;
+    use tokio::sync::mpsc;
+
+    struct MockConnectionMeta {
+        vhost: String,
+        username: String,
+        tx_mode: bool,
+    }
+
+    impl crate::protocol::ConnectionMeta for MockConnectionMeta {
+        fn username(&self) -> String {
+            self.username.clone()
+        }
+        fn vhost(&self) -> String {
+            self.vhost.clone()
+        }
+        fn channels_count(&self) -> usize {
+            0
+        }
+        fn get_channels(&self) -> Vec<crate::protocol::ChannelMeta> {
+            vec![]
+        }
+        fn heartbeat(&self) -> u16 {
+            0
+        }
+        fn frame_max(&self) -> u32 {
+            0
+        }
+        fn channel_max(&self) -> u16 {
+            0
+        }
+        fn tx_mode(&self) -> bool {
+            self.tx_mode
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
 
     /// Creates a test BrokerState with a temporary WAL file.
     fn test_broker() -> BrokerState {
@@ -416,10 +498,9 @@ mod tests {
             ConnHandle {
                 id: 1,
                 addr: "127.0.0.1:1234".parse().unwrap(),
-                amqp_tx,
+                sink: std::sync::Arc::new(crate::protocol::MpscDeliverySink::new(amqp_tx)),
             },
         );
-        bs.conn_state.insert(1, ConnectionState::new());
         bs.queues.insert("q1".into(), QueueState::new());
         bs.queues.get_mut("q1").unwrap().listeners.push((1, 1));
 
@@ -437,10 +518,9 @@ mod tests {
             ConnHandle {
                 id: 1,
                 addr: "127.0.0.1:1234".parse().unwrap(),
-                amqp_tx,
+                sink: std::sync::Arc::new(crate::protocol::MpscDeliverySink::new(amqp_tx)),
             },
         );
-        bs.conn_state.insert(1, ConnectionState::new());
         let mut opts = QueueOptions::default();
         opts.exclusive = true;
         let mut q = QueueState::with_options(opts);
@@ -517,341 +597,5 @@ mod tests {
 
         assert!(bs.vhosts.get("/a").unwrap().queues.contains_key("q1"));
         assert!(!bs.vhosts.get("/b").unwrap().queues.contains_key("q1"));
-    }
-
-    #[test]
-    fn connection_state_defaults_to_root_vhost() {
-        let cs = ConnectionState::new();
-        assert_eq!(cs.vhost, "/");
-    }
-
-    #[test]
-    fn connection_state_vhost_can_be_changed() {
-        let mut cs = ConnectionState::new();
-        cs.vhost = "/production".to_string();
-        assert_eq!(cs.vhost, "/production");
-    }
-
-    #[test]
-    fn connection_vhost_tracks_per_connection() {
-        let bs = test_broker();
-        bs.conn_state.insert(1, ConnectionState::new());
-        bs.conn_state.insert(2, ConnectionState::new());
-
-        assert_eq!(bs.conn_state.get(&1).unwrap().vhost, "/");
-
-        bs.conn_state.get_mut(&2).unwrap().vhost = "/staging".to_string();
-        assert_eq!(bs.conn_state.get(&2).unwrap().vhost, "/staging");
-
-        assert_eq!(bs.conn_state.get(&1).unwrap().vhost, "/");
-    }
-
-    // ──────────────────────────────────────────────
-    // Transaction tests
-    // ──────────────────────────────────────────────
-
-    #[test]
-    fn connection_state_defaults_no_tx() {
-        let cs = ConnectionState::new();
-        assert!(!cs.tx_mode);
-        assert!(cs.tx_buffer.is_empty());
-    }
-
-    #[test]
-    fn tx_mode_enable() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-        assert!(cs.tx_mode);
-    }
-
-    #[test]
-    fn tx_buffer_publish_op() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-        cs.tx_buffer.push(PendingOp::Publish {
-            exchange: "".to_string(),
-            routing_key: "q1".to_string(),
-            headers: vec![],
-            body: b"hello".to_vec(),
-        });
-        assert_eq!(cs.tx_buffer.len(), 1);
-        match &cs.tx_buffer[0] {
-            PendingOp::Publish {
-                routing_key, body, ..
-            } => {
-                assert_eq!(routing_key, "q1");
-                assert_eq!(body, b"hello");
-            }
-            _ => panic!("expected Publish"),
-        }
-    }
-
-    #[test]
-    fn tx_buffer_ack_op() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-        cs.tx_buffer.push(PendingOp::Ack { msg_id: 42 });
-        assert_eq!(cs.tx_buffer.len(), 1);
-        match &cs.tx_buffer[0] {
-            PendingOp::Ack { msg_id } => assert_eq!(*msg_id, 42),
-            _ => panic!("expected Ack"),
-        }
-    }
-
-    #[test]
-    fn tx_buffer_mixed_ops() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-        cs.tx_buffer.push(PendingOp::Publish {
-            exchange: "ex1".to_string(),
-            routing_key: "q1".to_string(),
-            headers: b"h:v\r\n".to_vec(),
-            body: b"msg1".to_vec(),
-        });
-        cs.tx_buffer.push(PendingOp::Ack { msg_id: 1 });
-        cs.tx_buffer.push(PendingOp::Publish {
-            exchange: "".to_string(),
-            routing_key: "q2".to_string(),
-            headers: vec![],
-            body: b"msg2".to_vec(),
-        });
-        assert_eq!(cs.tx_buffer.len(), 3);
-    }
-
-    #[test]
-    fn tx_rollback_clears_buffer() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-        cs.tx_buffer.push(PendingOp::Publish {
-            exchange: "".to_string(),
-            routing_key: "q1".to_string(),
-            headers: vec![],
-            body: b"data".to_vec(),
-        });
-        cs.tx_buffer.push(PendingOp::Ack { msg_id: 5 });
-
-        cs.tx_buffer.clear();
-        assert!(cs.tx_buffer.is_empty());
-
-        assert!(cs.tx_mode);
-    }
-
-    #[test]
-    fn tx_commit_drains_buffer() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-        cs.tx_buffer.push(PendingOp::Publish {
-            exchange: "".to_string(),
-            routing_key: "q1".to_string(),
-            headers: vec![],
-            body: b"data".to_vec(),
-        });
-
-        let ops = std::mem::take(&mut cs.tx_buffer);
-        assert_eq!(ops.len(), 1);
-        assert!(cs.tx_buffer.is_empty());
-    }
-
-    #[test]
-    fn tx_commit_applies_publish_to_queue() {
-        let bs = test_broker();
-        bs.queues.insert("q1".into(), QueueState::new());
-
-        let op = PendingOp::Publish {
-            exchange: "".to_string(),
-            routing_key: "q1".to_string(),
-            headers: vec![],
-            body: b"committed".to_vec(),
-        };
-
-        if let PendingOp::Publish {
-            exchange,
-            routing_key,
-            headers,
-            body,
-        } = &op
-        {
-            let msg_id = bs.alloc_msg_id();
-            if let Some(mut queue) = bs.queues.get_mut(routing_key.as_str()) {
-                let msg = crate::queue::Message::new_routed(
-                    msg_id,
-                    headers.clone(),
-                    body.clone(),
-                    exchange.clone(),
-                    routing_key.clone(),
-                );
-                queue
-                    .messages
-                    .push_back(crate::queue::message::QueueMessage::Full(msg));
-            }
-        }
-
-        let q = bs.queues.get("q1").unwrap();
-        assert_eq!(q.messages.len(), 1);
-    }
-
-    #[test]
-    fn tx_commit_applies_ack_removes_inflight() {
-        let bs = test_broker();
-        bs.queues.insert("q1".into(), QueueState::new());
-
-        let msg = crate::queue::Message::new(42, vec![], b"test".to_vec());
-        bs.queues.get_mut("q1").unwrap().inflight.insert(42, msg);
-
-        let op = PendingOp::Ack { msg_id: 42 };
-        if let PendingOp::Ack { msg_id } = &op {
-            for mut entry in bs.queues.iter_mut() {
-                if entry.value_mut().inflight.remove(msg_id).is_some() {
-                    break;
-                }
-            }
-        }
-
-        let q = bs.queues.get("q1").unwrap();
-        assert!(q.inflight.is_empty());
-    }
-
-    #[test]
-    fn tx_multiple_commits_independent() {
-        let mut cs = ConnectionState::new();
-        cs.tx_mode = true;
-
-        cs.tx_buffer.push(PendingOp::Publish {
-            exchange: "".to_string(),
-            routing_key: "q1".to_string(),
-            headers: vec![],
-            body: b"tx1".to_vec(),
-        });
-        let ops1 = std::mem::take(&mut cs.tx_buffer);
-        assert_eq!(ops1.len(), 1);
-
-        cs.tx_buffer.push(PendingOp::Ack { msg_id: 10 });
-        cs.tx_buffer.push(PendingOp::Ack { msg_id: 20 });
-        let ops2 = std::mem::take(&mut cs.tx_buffer);
-        assert_eq!(ops2.len(), 2);
-        assert!(cs.tx_buffer.is_empty());
-    }
-
-    #[test]
-    fn pending_op_clone() {
-        let op = PendingOp::Publish {
-            exchange: "ex".to_string(),
-            routing_key: "rk".to_string(),
-            headers: vec![1, 2],
-            body: vec![3, 4],
-        };
-        let cloned = op.clone();
-        match cloned {
-            PendingOp::Publish {
-                exchange,
-                routing_key,
-                headers,
-                body,
-            } => {
-                assert_eq!(exchange, "ex");
-                assert_eq!(routing_key, "rk");
-                assert_eq!(headers, vec![1, 2]);
-                assert_eq!(body, vec![3, 4]);
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn pending_op_debug() {
-        let op = PendingOp::Ack { msg_id: 99 };
-        let debug_str = format!("{:?}", op);
-        assert!(debug_str.contains("99"));
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_channel_state_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `can_deliver` function.
-    #[test]
-    fn test_coverage_for_channel_state_can_deliver() {
-        let func_name = "can_deliver";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_connection_state_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `new` function.
-    #[test]
-    fn test_coverage_for_broker_state_new() {
-        let func_name = "new";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `set_cluster` function.
-    #[test]
-    fn test_coverage_for_broker_state_set_cluster() {
-        let func_name = "set_cluster";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `start_time_ms` function.
-    #[test]
-    fn test_coverage_for_broker_state_start_time_ms() {
-        let func_name = "start_time_ms";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `list_vhosts` function.
-    #[test]
-    fn test_coverage_for_broker_state_list_vhosts() {
-        let func_name = "list_vhosts";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `cluster` function.
-    #[test]
-    fn test_coverage_for_broker_state_cluster() {
-        let func_name = "cluster";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `wal` function.
-    #[test]
-    fn test_coverage_for_broker_state_wal() {
-        let func_name = "wal";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `alloc_conn_id` function.
-    #[test]
-    fn test_coverage_for_broker_state_alloc_conn_id() {
-        let func_name = "alloc_conn_id";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `alloc_msg_id` function.
-    #[test]
-    fn test_coverage_for_broker_state_alloc_msg_id() {
-        let func_name = "alloc_msg_id";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `auto_bind_default_exchange` function.
-    #[test]
-    fn test_coverage_for_broker_state_auto_bind_default_exchange() {
-        let func_name = "auto_bind_default_exchange";
-        assert!(!func_name.is_empty());
-    }
-
-    /// Dedicated unit test verification for `alloc_delivery_tag` function.
-    #[test]
-    fn test_coverage_for_broker_state_alloc_delivery_tag() {
-        let func_name = "alloc_delivery_tag";
-        assert!(!func_name.is_empty());
     }
 }

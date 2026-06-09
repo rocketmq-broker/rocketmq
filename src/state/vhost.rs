@@ -100,8 +100,9 @@ mod tests {
         let vh = VHost::new("/".to_string());
 
         let opts = QueueOptions::default();
-        vh.queues
-            .insert("q1".into(), QueueState::with_options(opts));
+        let mut q = QueueState::with_options(opts);
+        q.name_arc = std::sync::Arc::from("q1");
+        vh.queues.insert("q1".into(), q);
         assert!(vh.queues.contains_key("q1"));
 
         vh.queues.remove("q1");
