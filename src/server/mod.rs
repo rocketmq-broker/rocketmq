@@ -15,19 +15,8 @@
 // Author: Edilson Pateguana
 // Year: 2026
 // File: mod.rs
-// Description: AMQP network server module declarations.
+// Description: Network server module declarations.
 
-pub mod amqp_connection;
-pub mod amqp_delivery;
-pub mod amqp_loop;
-pub mod processor;
 pub mod tasks;
 pub mod tls;
-
-use tokio::io::{BufWriter, WriteHalf};
-
-pub type AmqpWriter = BufWriter<WriteHalf<Box<dyn crate::server::AsyncStream>>>;
-
-/// Defines behavioral capabilities for async stream.
-pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
-impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> AsyncStream for T {}
+pub mod transport;

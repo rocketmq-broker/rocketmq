@@ -664,6 +664,7 @@ fn handle_declare_queue(
             quorum_group_size: group_size,
             ..Default::default()
         });
+        q.name_arc = std::sync::Arc::from(name);
 
         // For quorum queues, register this node as a replica
         if is_quorum {
@@ -697,8 +698,8 @@ async fn handle_bind_queue(broker: &Broker, exchange: &str, queue: &str, routing
     let mut exchanges = broker.exchanges.write().await;
     if let Some(ex) = exchanges.get_mut(exchange) {
         ex.add_binding(crate::routing::exchange::Binding {
-            queue_name: queue.to_string(),
-            routing_key: routing_key.to_string(),
+            queue_name: queue.to_string().into(),
+            routing_key: routing_key.to_string().into(),
             headers_match: None,
         });
         info!(
@@ -733,10 +734,10 @@ async fn handle_replicate_publish(
             }
             let msg = crate::queue::message::Message::new_routed(
                 msg_id,
-                Vec::new(),
-                body.to_vec(),
-                String::new(),
-                String::new(),
+                Vec::new().into(),
+                body.to_vec().into(),
+                String::new().into(),
+                String::new().into(),
             );
             q.messages
                 .push_back(crate::queue::message::QueueMessage::Full(msg));
