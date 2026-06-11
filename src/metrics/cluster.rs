@@ -16,8 +16,6 @@ use opentelemetry::metrics::{Counter, Gauge};
 
 use super::METER_NAME;
 
-// ─── Gauge Singletons ──────────────────────────────────
-
 static CLUSTER_NODE_COUNT: OnceLock<Gauge<u64>> = OnceLock::new();
 static CLUSTER_LEADER_ID: OnceLock<Gauge<u64>> = OnceLock::new();
 static RAFT_TERM: OnceLock<Gauge<u64>> = OnceLock::new();
@@ -26,8 +24,6 @@ static RAFT_COMMIT_INDEX: OnceLock<Gauge<u64>> = OnceLock::new();
 static REPLICATION_LAG: OnceLock<Gauge<u64>> = OnceLock::new();
 static ELECTION_COUNT: OnceLock<Counter<u64>> = OnceLock::new();
 static PARTITION_DETECTED: OnceLock<Counter<u64>> = OnceLock::new();
-
-// ─── Lazy Accessors ────────────────────────────────────
 
 fn cluster_node_count() -> &'static Gauge<u64> {
     CLUSTER_NODE_COUNT.get_or_init(|| {
@@ -112,8 +108,6 @@ pub fn register_all() {
     election_count();
     partition_detected();
 }
-
-// ─── Public Recording API ──────────────────────────────
 
 /// Records the current cluster size.
 #[inline]

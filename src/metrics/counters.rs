@@ -14,8 +14,6 @@ use opentelemetry::metrics::Counter;
 
 use super::METER_NAME;
 
-// ─── Counter Singletons ──────────────────────────────
-
 static MSGS_PUBLISHED: OnceLock<Counter<u64>> = OnceLock::new();
 static MSGS_DELIVERED: OnceLock<Counter<u64>> = OnceLock::new();
 static MSGS_ACKED: OnceLock<Counter<u64>> = OnceLock::new();
@@ -28,8 +26,6 @@ static QUEUES_DECLARED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_CREATED: OnceLock<Counter<u64>> = OnceLock::new();
 static QUEUES_DELETED: OnceLock<Counter<u64>> = OnceLock::new();
 static SCHEMA_FAILURES: OnceLock<Counter<u64>> = OnceLock::new();
-
-// ─── Lazy Accessors ──────────────────────────────────
 
 fn msgs_published() -> &'static Counter<u64> {
     MSGS_PUBLISHED.get_or_init(|| {
@@ -155,8 +151,6 @@ pub fn register_all() {
     schema_failures();
 }
 
-// ─── Public Recording API ────────────────────────────
-
 #[inline]
 pub fn record_published(queue: &str) {
     msgs_published().add(1, &[KeyValue::new("queue", queue.to_string())]);
@@ -216,8 +210,6 @@ pub fn record_queue_deleted() {
 pub fn record_schema_validation_failed(queue: &str) {
     schema_failures().add(1, &[KeyValue::new("queue", queue.to_string())]);
 }
-
-// ─── Counter Value Reader ────────────────────────────
 
 /// Snapshot of all counter totals, read from the Prometheus registry.
 pub struct CounterSnapshot {

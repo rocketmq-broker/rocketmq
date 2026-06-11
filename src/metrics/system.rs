@@ -36,7 +36,6 @@ pub fn register_all() {
 }
 
 fn register_memory_gauges(meter: &opentelemetry::metrics::Meter) {
-    // ─── Process RSS ─────────────────────────────────
     let _mem_rss: ObservableGauge<u64> = meter
         .u64_observable_gauge("process_resident_memory_bytes")
         .with_description("Resident set size of the broker process")
@@ -45,7 +44,6 @@ fn register_memory_gauges(meter: &opentelemetry::metrics::Meter) {
         })
         .build();
 
-    // ─── System Total Memory ─────────────────────────
     let _mem_total: ObservableGauge<u64> = meter
         .u64_observable_gauge("system_memory_total_bytes")
         .with_description("Total system physical memory")
@@ -56,7 +54,6 @@ fn register_memory_gauges(meter: &opentelemetry::metrics::Meter) {
         })
         .build();
 
-    // ─── System Available Memory ─────────────────────
     let _mem_avail: ObservableGauge<u64> = meter
         .u64_observable_gauge("system_memory_available_bytes")
         .with_description("Available system memory")
@@ -110,8 +107,6 @@ fn register_disk_gauge(meter: &opentelemetry::metrics::Meter) {
         })
         .build();
 }
-
-// ─── Cross-Platform Helpers ──────────────────────────
 
 /// Returns the RSS of the current process in bytes via sysinfo.
 pub fn process_rss_bytes() -> u64 {

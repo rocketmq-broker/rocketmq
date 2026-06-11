@@ -31,7 +31,6 @@ pub fn register_all(broker: Broker) {
     set_broker(broker);
     let meter = global::meter(METER_NAME);
 
-    // ─── Active Connections ──────────────────────────
     let _conns: ObservableGauge<u64> = meter
         .u64_observable_gauge("amqp_connections_active")
         .with_description("Current open AMQP connections")
@@ -42,7 +41,6 @@ pub fn register_all(broker: Broker) {
         })
         .build();
 
-    // ─── Total Queues ────────────────────────────────
     let _queues: ObservableGauge<u64> = meter
         .u64_observable_gauge("amqp_queues_active")
         .with_description("Current queue count")
@@ -53,7 +51,6 @@ pub fn register_all(broker: Broker) {
         })
         .build();
 
-    // ─── Total Messages (across all queues) ──────────
     let _msgs: ObservableGauge<u64> = meter
         .u64_observable_gauge("amqp_messages_ready")
         .with_description("Total messages ready across all queues")
@@ -65,7 +62,6 @@ pub fn register_all(broker: Broker) {
         })
         .build();
 
-    // ─── Total Inflight (unacked) ────────────────────
     let _inflight: ObservableGauge<u64> = meter
         .u64_observable_gauge("amqp_messages_inflight")
         .with_description("Total unacknowledged messages across all queues")
@@ -77,7 +73,6 @@ pub fn register_all(broker: Broker) {
         })
         .build();
 
-    // ─── Total Consumers ─────────────────────────────
     let _consumers: ObservableGauge<u64> = meter
         .u64_observable_gauge("amqp_consumers_active")
         .with_description("Total active consumers across all queues")
