@@ -27,6 +27,8 @@
 //!
 //! Accepts any async stream (plain TCP or TLS) — TLS sits below AMQP.
 
+// TODO: There are long functions and deep nested code
+
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
@@ -102,15 +104,9 @@ pub fn spawn_amqp_on_stream(
             return;
         }
 
-        let heartbeat_secs = broker
-            .conn_state
-            .get(&conn_id)
-            .and_then(|guard| {
-                guard
-                    .value()
-                    .as_any()
-                    .downcast_ref::<ConnectionState>()
-                    .map(|cs| cs.heartbeat)
+        let heartbeat_secs =
+            crate::protocol::amqp::session::with_conn_state_ref(&broker, conn_id, |cs| {
+                cs.heartbeat
             })
             .unwrap_or(DEFAULT_HEARTBEAT);
 
@@ -129,39 +125,34 @@ pub fn spawn_amqp_on_stream(
         let mut content_state: Option<ContentState> = None;
 
         loop {
-            let (neg_frame_max, neg_channel_max) = broker
-                .conn_state
-                .get(&conn_id)
-                .and_then(|guard| {
-                    guard
-                        .value()
-                        .as_any()
-                        .downcast_ref::<ConnectionState>()
-                        .map(|cs| (cs.frame_max, cs.channel_max))
+            let (neg_frame_max, neg_channel_max) =
+                crate::protocol::amqp::session::with_conn_state_ref(&broker, conn_id, |cs| {
+                    (cs.frame_max, cs.channel_max)
                 })
                 .unwrap_or((DEFAULT_FRAME_MAX, DEFAULT_CHANNEL_MAX));
 
             tokio::select! {
-
                 result = amqp_connection::read_amqp_frame(&mut reader) => {
                     let frame = match result {
                         Ok(f) => f,
                         Err(_) => break,
                     };
                     last_activity = Instant::now();
-                    debug!(conn_id, frame_type = frame.frame_type, channel = frame.channel, payload_len = frame.payload.len(), "FRAME_IN");
 
+                    debug!(conn_id, frame_type = frame.frame_type, channel = frame.channel, payload_len = frame.payload.len(), "FRAME_IN");
 
                     if let Some(err) = validation::validate_frame_type(frame.frame_type) {
                         warn!(conn_id, err, frame_type = frame.frame_type, "frame validation failed");
                         send_connection_close(&mut writer, UNEXPECTED_FRAME, err).await;
                         break;
                     }
+
                     if let Some(err) = validation::validate_frame_size(frame.payload.len(), neg_frame_max) {
                         warn!(conn_id, err, "frame too large");
                         send_connection_close(&mut writer, FRAME_ERROR, err).await;
                         break;
                     }
+
                     if let Some(err) = validation::validate_channel_number(frame.channel, neg_channel_max) {
                         warn!(conn_id, err, channel = frame.channel, "channel number invalid");
                         send_connection_close(&mut writer, CHANNEL_ERROR, err).await;
@@ -179,13 +170,11 @@ pub fn spawn_amqp_on_stream(
                                 }
                             };
 
-
                             if let Some(err) = validation::validate_channel(frame.channel, method.class_id) {
                                 warn!(conn_id, err, channel = frame.channel, class_id = method.class_id, "channel/class mismatch");
                                 send_connection_close(&mut writer, COMMAND_INVALID, err).await;
                                 break;
                             }
-
 
                             if method.class_id == CLASS_BASIC && method.method_id == METHOD_BASIC_PUBLISH {
                                 let (exchange, routing_key, mandatory, _immediate) =
@@ -203,10 +192,10 @@ pub fn spawn_amqp_on_stream(
                                 continue;
                             }
 
-
                             let keep = amqp_dispatch::dispatch_method(
                                 conn_id, frame.channel, &method, &mut writer, &broker,
                             ).await;
+
                             if !keep { break; }
                         }
 
@@ -218,7 +207,6 @@ pub fn spawn_amqp_on_stream(
                                         cs.body_size = header.body_size;
                                         cs.properties = header.properties;
                                         cs.body_received.reserve(header.body_size as usize);
-
 
                                         if header.body_size == 0 {
                                             let state = content_state.take().unwrap();
@@ -272,7 +260,6 @@ pub fn spawn_amqp_on_stream(
                     }
                 }
 
-
                 _ = hb_ticker.tick() => {
                     if last_activity.elapsed() > heartbeat_timeout {
                         warn!(conn_id, "heartbeat timeout");
@@ -283,10 +270,8 @@ pub fn spawn_amqp_on_stream(
                     if writer.flush().await.is_err() { break; }
                 }
 
-
                 Some(frame_bytes) = amqp_rx.recv() => {
                     if writer.write_all(&frame_bytes).await.is_err() { break; }
-
                     while let Ok(more) = amqp_rx.try_recv() {
                         if writer.write_all(&more).await.is_err() { break; }
                     }
