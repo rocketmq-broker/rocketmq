@@ -51,8 +51,7 @@ pub async fn handle_declare(
     let _arguments = read_field_table(&mut r).unwrap_or_default();
 
     if passive {
-        let exists = broker.exchanges.read().await.contains_key(&name);
-        if !exists {
+        if !broker.exchanges.read().await.contains_key(&name) {
             send_channel_error(
                 writer,
                 channel,
@@ -64,77 +63,11 @@ pub async fn handle_declare(
             .await;
             return;
         }
-    } else {
-        if name.starts_with("amq.") {
-            send_channel_error(
-                writer,
-                channel,
-                ACCESS_REFUSED,
-                "ACCESS_REFUSED - exchange names starting with 'amq.' are reserved",
-                CLASS_EXCHANGE,
-                METHOD_EXCHANGE_DECLARE,
-            )
-            .await;
-            return;
-        }
-
-        if super::auth_check::check_configure(
-            conn_id,
-            channel,
-            &name,
-            CLASS_EXCHANGE,
-            METHOD_EXCHANGE_DECLARE,
-            writer,
-            broker,
-        )
+    } else if declare_active_exchange(conn_id, channel, &name, &kind_str, durable, writer, broker)
         .await
-        {
-            return;
-        }
-
-        let kind = match ExchangeType::from_str(&kind_str) {
-            Some(k) => k,
-            None => {
-                send_channel_error(
-                    writer,
-                    channel,
-                    COMMAND_INVALID,
-                    "COMMAND_INVALID - unsupported exchange type",
-                    CLASS_EXCHANGE,
-                    METHOD_EXCHANGE_DECLARE,
-                )
-                .await;
-                return;
-            }
-        };
-
-        let kind_byte = kind.to_byte();
-        let mut exchanges = broker.exchanges.write().await;
-        let is_new = !exchanges.contains_key(&name);
-        exchanges
-            .entry(name.clone())
-            .or_insert_with(|| Exchange::new(name.clone(), kind, durable));
-
-        if is_new {
-            if let Some(c) = broker.cluster() {
-                let c = c.clone();
-                let name_clone = name.clone();
-                let kind_clone = kind_str.clone();
-                tokio::spawn(async move {
-                    c.broadcast(crate::cluster::ClusterFrame::DeclareExchange {
-                        name: name_clone,
-                        kind: kind_clone,
-                        durable,
-                    })
-                    .await;
-                });
-            }
-        }
-
-        if durable && is_new {
-            let wal = broker.wal();
-            let _ = wal.log_declare_exchange(&name, kind_byte, true);
-        }
+        .is_err()
+    {
+        return;
     }
 
     info!(
@@ -147,6 +80,94 @@ pub async fn handle_declare(
         let reply = encode_method_frame(channel, CLASS_EXCHANGE, METHOD_EXCHANGE_DECLARE_OK, &[]);
         let _ = writer.write_all(&reply).await;
         let _ = writer.flush().await;
+    }
+}
+
+/// Performs the active (non-passive) exchange declaration: validates name/type,
+/// checks auth, inserts the exchange, broadcasts to cluster, and logs to WAL.
+/// Returns Err(()) if a channel error was sent (caller should return early).
+async fn declare_active_exchange(
+    conn_id: u64,
+    channel: u16,
+    name: &str,
+    kind_str: &str,
+    durable: bool,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) -> Result<(), ()> {
+    if name.starts_with("amq.") {
+        send_channel_error(
+            writer,
+            channel,
+            ACCESS_REFUSED,
+            "ACCESS_REFUSED - exchange names starting with 'amq.' are reserved",
+            CLASS_EXCHANGE,
+            METHOD_EXCHANGE_DECLARE,
+        )
+        .await;
+        return Err(());
+    }
+
+    if super::auth_check::check_configure(
+        conn_id,
+        channel,
+        name,
+        CLASS_EXCHANGE,
+        METHOD_EXCHANGE_DECLARE,
+        writer,
+        broker,
+    )
+    .await
+    {
+        return Err(());
+    }
+
+    let kind = match ExchangeType::from_str(kind_str) {
+        Some(k) => k,
+        None => {
+            send_channel_error(
+                writer,
+                channel,
+                COMMAND_INVALID,
+                "COMMAND_INVALID - unsupported exchange type",
+                CLASS_EXCHANGE,
+                METHOD_EXCHANGE_DECLARE,
+            )
+            .await;
+            return Err(());
+        }
+    };
+
+    let kind_byte = kind.to_byte();
+    let mut exchanges = broker.exchanges.write().await;
+    let is_new = !exchanges.contains_key(name);
+    exchanges
+        .entry(name.to_string())
+        .or_insert_with(|| Exchange::new(name.to_string(), kind, durable));
+    drop(exchanges);
+
+    if is_new {
+        broadcast_exchange_declare(broker, name, kind_str, durable);
+    }
+    if durable && is_new {
+        let _ = broker.wal().log_declare_exchange(name, kind_byte, true);
+    }
+    Ok(())
+}
+
+fn broadcast_exchange_declare(broker: &Broker, name: &str, kind_str: &str, durable: bool) {
+    if let Some(c) = broker.cluster() {
+        let c = c.clone();
+        let name = name.to_string();
+        let kind = kind_str.to_string();
+        tokio::spawn(async move {
+            c.broadcast(crate::cluster::ClusterFrame::DeclareExchange {
+                name,
+                kind,
+                durable,
+            })
+            .await;
+        });
     }
 }
 
