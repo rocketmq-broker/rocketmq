@@ -86,7 +86,6 @@ pub struct QueueOptions {
     pub schema_type: Option<String>,
     pub schema_message: Option<String>,
 
-    // ── Cluster / Queue HA (Sprint 2) ─────────────────
     /// Replication strategy chosen at declare time.
     pub queue_type: QueueType,
     /// Number of replicas for quorum queues (including the leader).

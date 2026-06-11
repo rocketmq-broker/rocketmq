@@ -671,9 +671,7 @@ fn queue_check_rate_limit_no_limiter() {
     assert!(q.check_rate_limit());
 }
 
-// ──────────────────────────────────────────────
 // Stream Mode tests (3.6)
-// ──────────────────────────────────────────────
 
 #[test]
 fn stream_mode_default_off() {
@@ -708,9 +706,7 @@ fn stream_offset_tracking() {
     assert_eq!(q.stream_offset, 43);
 }
 
-// ──────────────────────────────────────────────
 // Options parsing for new fields
-// ──────────────────────────────────────────────
 
 #[test]
 fn options_rate_limit_from_headers() {

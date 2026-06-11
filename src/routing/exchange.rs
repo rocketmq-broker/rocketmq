@@ -465,8 +465,6 @@ mod tests {
         assert_eq!(ex.bindings.len(), 1);
     }
 
-    // ── ExchangeType parsing ────────────────────────────────────────────
-
     #[test]
     fn exchange_type_from_str() {
         assert_eq!(ExchangeType::from_str("direct"), Some(ExchangeType::Direct));
@@ -492,8 +490,6 @@ mod tests {
             assert_eq!(ExchangeType::from_str(s), Some(kind));
         }
     }
-
-    // ── Binding removal ─────────────────────────────────────────────────
 
     #[test]
     fn remove_binding_by_queue_and_key() {
@@ -526,8 +522,6 @@ mod tests {
         ex.remove_binding("q1", "wrong_key");
         assert_eq!(ex.bindings.len(), 1); // still there
     }
-
-    // ── Topic edge cases ────────────────────────────────────────────────
 
     #[test]
     fn topic_hash_matches_everything() {
@@ -566,8 +560,6 @@ mod tests {
         assert!(!topic_matches("a.*", "a"));
     }
 
-    // ── Headers Any ─────────────────────────────────────────────────────
-
     #[test]
     fn headers_any_routing() {
         let mut ex = Exchange::new("test", ExchangeType::Headers, false);
@@ -603,8 +595,6 @@ mod tests {
             .is_empty()
         );
     }
-
-    // ── Edge cases ──────────────────────────────────────────────────────
 
     #[test]
     fn exchange_no_bindings_routes_nothing() {
@@ -663,8 +653,6 @@ mod tests {
         };
         assert_eq!(routed.len(), 2);
     }
-
-    // ── Default exchanges ───────────────────────────────────────────────
 
     #[test]
     fn default_exchanges_correct_types() {

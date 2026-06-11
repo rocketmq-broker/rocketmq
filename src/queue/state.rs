@@ -139,7 +139,6 @@ pub struct QueueState {
     pub stat_acked: u64,
     pub schema: Option<Arc<CompiledSchema>>,
 
-    // ── Cluster HA (Sprint 2 + 3) ─────────────────────
     /// Replication strategy for this queue.
     pub queue_type: QueueType,
     /// Node ID of the current leader (the node owning the queue).
