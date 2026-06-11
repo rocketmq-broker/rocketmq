@@ -164,91 +164,10 @@ pub async fn handle_declare(
     let schema_delete = arguments.contains_key("x-schema-delete");
 
     let mut compiled_schema = None;
-    if let Some(raw) = &opts.schema {
-        let _schema_type = match &opts.schema_type {
-            Some(t) if t == "protobuf" => t.clone(),
-            Some(_) => {
-                let err = crate::schema::error::BrokerError {
-                    code: crate::schema::error::ErrorCode::SchemaUnsupportedType,
-                    queue: name.clone(),
-                    fields: vec![],
-                    truncated: false,
-                };
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &err.to_reply_text(),
-                    CLASS_QUEUE,
-                    METHOD_QUEUE_DECLARE,
-                )
-                .await;
-                return;
-            }
-            None => {
-                let err = crate::schema::error::BrokerError {
-                    code: crate::schema::error::ErrorCode::MissingArgument,
-                    queue: name.clone(),
-                    fields: vec![],
-                    truncated: false,
-                };
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &err.to_reply_text(),
-                    CLASS_QUEUE,
-                    METHOD_QUEUE_DECLARE,
-                )
-                .await;
-                return;
-            }
-        };
-
-        let message_name = match &opts.schema_message {
-            Some(m) => m.clone(),
-            None => {
-                let err = crate::schema::error::BrokerError {
-                    code: crate::schema::error::ErrorCode::MissingArgument,
-                    queue: name.clone(),
-                    fields: vec![],
-                    truncated: false,
-                };
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &err.to_reply_text(),
-                    CLASS_QUEUE,
-                    METHOD_QUEUE_DECLARE,
-                )
-                .await;
-                return;
-            }
-        };
-
-        match crate::schema::compile_proto(raw, &message_name) {
-            Ok(compiled) => {
-                compiled_schema = Some(std::sync::Arc::new(compiled));
-            }
-            Err(_) => {
-                let err = crate::schema::error::BrokerError {
-                    code: crate::schema::error::ErrorCode::SchemaCompileFailed,
-                    queue: name.clone(),
-                    fields: vec![],
-                    truncated: false,
-                };
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &err.to_reply_text(),
-                    CLASS_QUEUE,
-                    METHOD_QUEUE_DECLARE,
-                )
-                .await;
-                return;
-            }
+    if opts.schema.is_some() {
+        match compile_queue_schema(&name, &opts, channel, writer).await {
+            Ok(cs) => compiled_schema = cs,
+            Err(()) => return,
         }
     }
 
@@ -671,6 +590,84 @@ pub async fn handle_unbind(
     let reply = encode_method_frame(channel, CLASS_QUEUE, METHOD_QUEUE_UNBIND_OK, &[]);
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
+}
+
+/// Compiles a protobuf schema from queue declare arguments.
+/// Returns Ok(Some(compiled)) on success, Ok(None) if no schema was provided,
+/// or Err(()) after sending a channel error on failure.
+async fn compile_queue_schema(
+    queue_name: &str,
+    opts: &QueueOptions,
+    channel: u16,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+) -> Result<Option<std::sync::Arc<crate::schema::CompiledSchema>>, ()> {
+    let raw = match &opts.schema {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    let schema_type = opts.schema_type.as_deref().unwrap_or("");
+    if schema_type != "protobuf" {
+        let code = if schema_type.is_empty() {
+            crate::schema::error::ErrorCode::MissingArgument
+        } else {
+            crate::schema::error::ErrorCode::SchemaUnsupportedType
+        };
+        send_schema_error(queue_name, code, channel, writer).await;
+        return Err(());
+    }
+
+    let message_name = match &opts.schema_message {
+        Some(m) => m.clone(),
+        None => {
+            send_schema_error(
+                queue_name,
+                crate::schema::error::ErrorCode::MissingArgument,
+                channel,
+                writer,
+            )
+            .await;
+            return Err(());
+        }
+    };
+
+    match crate::schema::compile_proto(raw, &message_name) {
+        Ok(compiled) => Ok(Some(std::sync::Arc::new(compiled))),
+        Err(_) => {
+            send_schema_error(
+                queue_name,
+                crate::schema::error::ErrorCode::SchemaCompileFailed,
+                channel,
+                writer,
+            )
+            .await;
+            Err(())
+        }
+    }
+}
+
+/// Sends a PRECONDITION_FAILED channel error for a schema-related issue.
+async fn send_schema_error(
+    queue_name: &str,
+    code: crate::schema::error::ErrorCode,
+    channel: u16,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+) {
+    let err = crate::schema::error::BrokerError {
+        code,
+        queue: queue_name.to_string(),
+        fields: vec![],
+        truncated: false,
+    };
+    send_channel_error(
+        writer,
+        channel,
+        PRECONDITION_FAILED,
+        &err.to_reply_text(),
+        CLASS_QUEUE,
+        METHOD_QUEUE_DECLARE,
+    )
+    .await;
 }
 
 async fn send_declare_ok(
