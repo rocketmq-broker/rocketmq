@@ -52,44 +52,36 @@ pub struct ClusterCoordinator {
     pub peers: DashMap<u64, PeerConnection>,
     pub members: RwLock<HashMap<u64, MemberInfo>>,
 
-    // ── Raft state ────────────────────────────────────
     pub current_term: AtomicU64,
     pub leader_id: AtomicU64,
     pub voted_for: AtomicU64,
     pub last_leader_heartbeat: AtomicU64,
 
-    // ── Election vote tracking ────────────────────────
     //
     // Keyed by term → count of granted votes.
     // `start_election` inserts an entry, then network
     // handlers increment it on each `RequestVoteResponse`.
     pub election_votes: DashMap<u64, AtomicU64>,
 
-    // ── Quorum replication tracking ───────────────────
     pub pending_replications: DashMap<u64, tokio::sync::oneshot::Sender<bool>>,
     pub replication_votes: DashMap<u64, AtomicU64>,
 
-    // ── Per-queue Raft groups (Sprint 2) ─────────────
     //
     // Each quorum queue gets its own independent Raft state machine.
     // Classic queues are not tracked here.
     pub queue_raft_groups: DashMap<String, RaftQueueState>,
 
-    // ── Failure detection (Sprint 3) ─────────────────
     //
     // Tracks last-seen timestamps and health status per node.
     pub node_health: DashMap<u64, (u64, NodeStatus)>,
 
-    // ── Metadata Raft group (Sprint 4) ───────────────
     //
     // Single cluster-wide Raft group for exchange/binding/vhost/auth
     // mutations. Ensures metadata consistency across all nodes.
     pub metadata_raft: std::sync::Mutex<MetadataRaftState>,
 
-    // ── Partition handling (Sprint 5) ────────────────
     pub partition_state: PartitionState,
 
-    // ── Operational state (Sprint 9) ─────────────────
     //
     // When true, the node stops accepting new connections and
     // transfers queue leadership before shutdown.
@@ -168,8 +160,6 @@ impl ClusterCoordinator {
         ELECTION_TIMEOUT_MS
     }
 
-    // ── Pre-Vote (§9.6) ──────────────────────────────────
-
     /// Initiates a pre-vote round before starting a real election.
     ///
     /// Pre-vote prevents a partitioned node from bumping the cluster
@@ -235,8 +225,6 @@ impl ClusterCoordinator {
         }
     }
 
-    // ── Election ──────────────────────────────────────────
-
     /// Runs a full Raft leader election with proper vote counting.
     ///
     /// Steps:
@@ -246,13 +234,11 @@ impl ClusterCoordinator {
     /// 4. On quorum: declare self leader and broadcast `LeaderHeartbeat`.
     /// 5. On timeout: revert to follower.
     pub async fn start_election(&self) {
-        // ── Step 1: Pre-vote gate ─────────────────────
         if !self.pre_vote().await {
             warn!("Node {} aborting election — pre-vote failed", self.node_id);
             return;
         }
 
-        // ── Step 2: Increment term, vote for self ─────
         let new_term = self.current_term.fetch_add(1, Ordering::SeqCst) + 1;
         self.voted_for.store(self.node_id, Ordering::SeqCst);
         info!(
@@ -271,7 +257,6 @@ impl ClusterCoordinator {
         };
         self.broadcast(vote_req).await;
 
-        // ── Step 3: Collect votes ─────────────────────
         let deadline =
             tokio::time::Instant::now() + Duration::from_millis(VOTE_COLLECTION_TIMEOUT_MS);
         let quorum = self.quorum();
@@ -296,7 +281,6 @@ impl ClusterCoordinator {
                 .map(|e| e.value().load(Ordering::SeqCst))
                 .unwrap_or(0);
 
-            // ── Step 4: Won ───────────────────────────
             if votes >= quorum {
                 self.election_votes.remove(&new_term);
                 self.leader_id.store(self.node_id, Ordering::SeqCst);
@@ -318,7 +302,6 @@ impl ClusterCoordinator {
                 return;
             }
 
-            // ── Step 5: Timed out ─────────────────────
             if tokio::time::Instant::now() >= deadline {
                 self.election_votes.remove(&new_term);
                 warn!(
@@ -352,8 +335,6 @@ impl ClusterCoordinator {
         self.tally_vote(term);
     }
 
-    // ── Broadcasting ──────────────────────────────────────
-
     /// Sends a frame to all connected peers.
     pub async fn broadcast(&self, frame: ClusterFrame) {
         for entry in self.peers.iter() {
@@ -363,8 +344,6 @@ impl ClusterCoordinator {
             }
         }
     }
-
-    // ── Quorum Replication ────────────────────────────────
 
     /// Records a successful replication ACK and resolves the
     /// pending oneshot when quorum is reached.
@@ -455,8 +434,6 @@ impl ClusterCoordinator {
         }
     }
 
-    // ── Per-queue Raft group management (Sprint 2) ────
-
     /// Creates a Raft group for a quorum queue, assigning replicas
     /// across available nodes.
     ///
@@ -514,8 +491,6 @@ impl ClusterCoordinator {
             true
         }
     }
-
-    // ── Failure detection (Sprint 3) ─────────────────
 
     /// Updates the health status of a peer node based on the
     /// elapsed time since last heartbeat.
@@ -605,8 +580,6 @@ impl ClusterCoordinator {
         promotions
     }
 
-    // ── Metadata operations (Sprint 4) ───────────────
-
     /// Appends a metadata command to the metadata Raft log.
     ///
     /// Returns `Some(index)` if this node is the metadata leader,
@@ -624,8 +597,6 @@ impl ClusterCoordinator {
         let mut raft = self.metadata_raft.lock().unwrap();
         raft.drain_unapplied()
     }
-
-    // ── Partition handling (Sprint 5) ─────────────────
 
     /// Evaluates the partition state based on currently reachable peers.
     ///
@@ -649,8 +620,6 @@ impl ClusterCoordinator {
     pub fn is_paused(&self) -> bool {
         self.partition_state.is_paused()
     }
-
-    // ── Operational tooling (Sprint 9) ────────────────
 
     /// Enables drain mode: stops accepting new connections, prepares
     /// for graceful shutdown by transferring queue leadership.
@@ -877,8 +846,6 @@ mod tests {
         assert!(coord.pre_vote().await);
     }
 
-    // ── Sprint 2: Per-queue Raft group tests ──────────
-
     #[test]
     fn create_queue_raft_group_single_node() {
         let coord = ClusterCoordinator::new(1, "127.0.0.1:5680".into());
@@ -932,8 +899,6 @@ mod tests {
         // No raft group → classic queue → always leader
         assert!(coord.is_queue_leader("classic-q"));
     }
-
-    // ── Sprint 3: Failure detection tests ─────────────
 
     #[test]
     fn record_peer_heartbeat_sets_active() {

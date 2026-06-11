@@ -83,7 +83,6 @@ async fn process_connection(
     let (mut read_half, mut write_half) = stream.into_split();
     let (tx, mut rx) = mpsc::channel::<ClusterFrame>(100);
 
-    // ── Writer task: serializes frames and sends them ──
     tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {
             if let Ok(bytes) = serde_json::to_vec(&frame) {
@@ -109,7 +108,6 @@ async fn process_connection(
     let mut read_buf = vec![0u8; 65536];
     let mut temp_peer_id = None;
 
-    // ── Read loop ─────────────────────────────────────
     loop {
         let mut len_bytes = [0u8; 4];
         if read_half.read_exact(&mut len_bytes).await.is_err() {
@@ -134,7 +132,6 @@ async fn process_connection(
         dispatch_frame(frame, &broker, &manager, &tx, &mut temp_peer_id, inbound).await;
     }
 
-    // ── Cleanup on disconnect ─────────────────────────
     if let Some(peer_id) = temp_peer_id {
         manager.peers.remove(&peer_id);
         let was_leader = manager.leader_id.load(Ordering::SeqCst) == peer_id;
@@ -165,7 +162,6 @@ async fn dispatch_frame(
     inbound: bool,
 ) {
     match frame {
-        // ── Membership ────────────────────────────────
         ClusterFrame::Heartbeat {
             node_id,
             listen_addr,
@@ -177,7 +173,6 @@ async fn dispatch_frame(
             handle_gossip(manager, members).await;
         }
 
-        // ── Pre-Vote (§9.6) ──────────────────────────
         ClusterFrame::PreVote {
             term,
             candidate_id,
@@ -205,7 +200,6 @@ async fn dispatch_frame(
             }
         }
 
-        // ── Raft Vote ────────────────────────────────
         ClusterFrame::RequestVote {
             term,
             candidate_id,
@@ -240,12 +234,10 @@ async fn dispatch_frame(
             }
         }
 
-        // ── Leader Heartbeat ─────────────────────────
         ClusterFrame::LeaderHeartbeat { term, leader_id } => {
             handle_leader_heartbeat(manager, term, leader_id);
         }
 
-        // ── AppendEntries ────────────────────────────
         ClusterFrame::AppendEntries {
             term,
             leader_id,
@@ -275,7 +267,6 @@ async fn dispatch_frame(
             handle_append_entries_response(manager, term, success, match_index);
         }
 
-        // ── Metadata sync ────────────────────────────
         ClusterFrame::DeclareQueue {
             name,
             durable,
@@ -324,7 +315,6 @@ async fn dispatch_frame(
             handle_bind_queue(broker, &exchange, &queue, &routing_key).await;
         }
 
-        // ── Quorum replication ───────────────────────
         ClusterFrame::ReplicatePublish {
             term,
             leader_id,
@@ -367,7 +357,6 @@ async fn dispatch_frame(
             }
         }
 
-        // ── Failure detection (Sprint 3) ──────────────
         ClusterFrame::NodeDown {
             node_id,
             detected_by,
@@ -376,8 +365,6 @@ async fn dispatch_frame(
         }
     }
 }
-
-// ── Frame Handlers ────────────────────────────────────────
 
 async fn handle_heartbeat(
     manager: &Arc<ClusterCoordinator>,
@@ -831,8 +818,6 @@ async fn handle_node_down(
     }
 }
 
-// ── Peer Connector Loop ──────────────────────────────────
-
 /// Spawns a background task that continuously attempts to connect
 /// to seed nodes and discovered peers, gossips membership, sends
 /// leader heartbeats, and triggers elections on heartbeat timeout.
@@ -885,7 +870,6 @@ pub async fn start_peer_connector(
                 });
             }
 
-            // ── Gossip round ──────────────────────────
             let active_members = {
                 let members = manager.members.read().await;
                 members.values().cloned().collect::<Vec<MemberInfo>>()
@@ -896,7 +880,6 @@ pub async fn start_peer_connector(
             };
             manager.broadcast(gossip).await;
 
-            // ── Leader heartbeat ──────────────────────
             if manager.is_leader() {
                 let hb = ClusterFrame::LeaderHeartbeat {
                     term: manager.current_term.load(Ordering::SeqCst),
@@ -905,7 +888,6 @@ pub async fn start_peer_connector(
                 manager.broadcast(hb).await;
             }
 
-            // ── Election timeout check ────────────────
             if !manager.is_leader() && !manager.peers.is_empty() {
                 let last_hb = manager.last_leader_heartbeat.load(Ordering::SeqCst);
                 let elapsed = now_ms().saturating_sub(last_hb);
@@ -921,7 +903,6 @@ pub async fn start_peer_connector(
                 }
             }
 
-            // ── Failure detection (Sprint 3) ────────────
             let downed_nodes = manager.detect_failed_nodes();
             for downed_id in downed_nodes {
                 warn!("Failure detector: node {} declared DOWN", downed_id);

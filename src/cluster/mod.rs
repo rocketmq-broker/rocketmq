@@ -75,8 +75,6 @@ mod tests {
     use super::*;
     use crate::cluster::raft::{RaftCommand, RaftQueueState, RaftRole};
 
-    // ── ClusterCoordinator tests ──────────────────────
-
     #[test]
     fn coordinator_single_node_is_leader() {
         let coord = ClusterCoordinator::new(1, "127.0.0.1:5680".into());
@@ -113,8 +111,6 @@ mod tests {
             other => panic!("expected Ok(true), got {:?}", other),
         }
     }
-
-    // ── RaftQueueState tests ──────────────────────────
 
     #[test]
     fn raft_state_new_initializes_correctly() {
@@ -199,8 +195,6 @@ mod tests {
         assert_eq!(state.commit_index, 1);
     }
 
-    // ── WAL Raft persistence tests ───────────────────
-
     #[test]
     fn wal_raft_entry_roundtrip() {
         use crate::storage::wal::{EntryType, Wal};
@@ -269,8 +263,6 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
-
-    // ── Protocol frame serialization ─────────────────
 
     #[test]
     fn cluster_frame_pre_vote_serializes() {
@@ -344,8 +336,6 @@ mod tests {
         }
     }
 
-    // ── Sprint 2: Queue type and quorum tests ─────────
-
     #[test]
     fn queue_type_default_is_classic() {
         use crate::queue::options::QueueType;
@@ -380,8 +370,6 @@ mod tests {
         // After removal, is_queue_leader falls back to classic (true)
         assert!(coord.is_queue_leader("q1"));
     }
-
-    // ── Sprint 3: Failure detection and failover ──────
 
     #[test]
     fn node_down_frame_serializes() {
@@ -465,8 +453,6 @@ mod tests {
             _ => panic!("wrong variant"),
         }
     }
-
-    // ── Sprint 4: Metadata Raft lifecycle ────────────
 
     #[test]
     fn metadata_raft_leader_appends_and_drains() {
@@ -571,8 +557,6 @@ mod tests {
         }
     }
 
-    // ── Sprint 5: Partition state transitions ────────
-
     #[test]
     fn partition_pause_minority_transitions() {
         use crate::cluster::partition::{PartitionState, PartitionStrategy};
@@ -602,8 +586,6 @@ mod tests {
         assert!(!ps.is_paused());
     }
 
-    // ── Sprint 6: Discovery ─────────────────────────
-
     #[test]
     fn discover_peers_deduplicates() {
         use crate::cluster::discovery::{DiscoveryBackend, discover_peers};
@@ -618,8 +600,6 @@ mod tests {
         // for static; DNS/K8s dedup in the merger)
         assert_eq!(result.len(), 3);
     }
-
-    // ── Sprint 8: Stream cross-segment reads ────────
 
     #[test]
     fn stream_read_range_across_segments() {
@@ -670,8 +650,6 @@ mod tests {
         let last = store.last_offset();
         assert!(store.read(last).is_some());
     }
-
-    // ── Sprint 9: Coordinator drain/maintenance ─────
 
     #[test]
     fn coordinator_drain_mode() {

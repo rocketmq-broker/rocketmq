@@ -44,7 +44,6 @@ pub enum RaftCommand {
 /// ```
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum MetadataCommand {
-    // ── Exchange operations ─────────────────────
     DeclareExchange {
         name: String,
         kind: String,
@@ -54,7 +53,6 @@ pub enum MetadataCommand {
         name: String,
     },
 
-    // ── Binding operations ──────────────────────
     BindQueue {
         exchange: String,
         queue: String,
@@ -66,7 +64,6 @@ pub enum MetadataCommand {
         routing_key: String,
     },
 
-    // ── Vhost operations ────────────────────────
     CreateVhost {
         name: String,
     },
@@ -74,7 +71,6 @@ pub enum MetadataCommand {
         name: String,
     },
 
-    // ── User / auth operations ──────────────────
     CreateUser {
         username: String,
         password_hash: String,

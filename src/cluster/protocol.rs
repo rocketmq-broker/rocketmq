@@ -49,7 +49,6 @@ pub enum NodeStatus {
 /// log replication (AppendEntries), metadata sync, and quorum writes.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClusterFrame {
-    // ── Membership ─────────────────────────────────────
     Heartbeat {
         node_id: u64,
         listen_addr: String,
@@ -58,7 +57,6 @@ pub enum ClusterFrame {
         members: Vec<MemberInfo>,
     },
 
-    // ── Raft Pre-Vote (§9.6 of Raft dissertation) ──────
     //
     // Prevents disruptive elections when a partitioned node
     // rejoins: it must win a pre-vote without incrementing
@@ -74,7 +72,6 @@ pub enum ClusterFrame {
         vote_granted: bool,
     },
 
-    // ── Raft Vote ──────────────────────────────────────
     RequestVote {
         term: u64,
         candidate_id: u64,
@@ -92,7 +89,6 @@ pub enum ClusterFrame {
         leader_id: u64,
     },
 
-    // ── Raft AppendEntries ─────────────────────────────
     AppendEntries {
         term: u64,
         leader_id: u64,
@@ -110,7 +106,6 @@ pub enum ClusterFrame {
         match_index: u64,
     },
 
-    // ── Metadata sync (broadcast, best-effort) ─────────
     DeclareQueue {
         name: String,
         durable: bool,
@@ -136,7 +131,6 @@ pub enum ClusterFrame {
         routing_key: String,
     },
 
-    // ── Quorum replication ─────────────────────────────
     ReplicatePublish {
         term: u64,
         leader_id: u64,
@@ -158,7 +152,6 @@ pub enum ClusterFrame {
         success: bool,
     },
 
-    // ── Failure detection (Sprint 3) ──────────────────
     /// Broadcast when a node is declared down by the failure detector.
     NodeDown {
         node_id: u64,
