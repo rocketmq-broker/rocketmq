@@ -161,88 +161,30 @@ pub fn spawn_amqp_on_stream(
 
                     match frame.frame_type {
                         FRAME_METHOD => {
-                            let method = match decode_method(&frame.payload) {
-                                Ok(m) => m,
-                                Err(e) => {
-                                    warn!(conn_id, error = %e, "bad method frame");
-                                    send_connection_close(&mut writer, SYNTAX_ERROR, "bad method frame").await;
+                            let action = process_method_frame(
+                                conn_id, frame.channel, &frame.payload,
+                                &mut content_state, &mut writer, &broker,
+                            ).await;
+                            match action {
+                                FrameAction::Continue => {}
+                                FrameAction::Close(code, msg) => {
+                                    send_connection_close(&mut writer, code, &msg).await;
                                     break;
                                 }
-                            };
-
-                            if let Some(err) = validation::validate_channel(frame.channel, method.class_id) {
-                                warn!(conn_id, err, channel = frame.channel, class_id = method.class_id, "channel/class mismatch");
-                                send_connection_close(&mut writer, COMMAND_INVALID, err).await;
-                                break;
+                                FrameAction::Disconnect => break,
                             }
-
-                            if method.class_id == CLASS_BASIC && method.method_id == METHOD_BASIC_PUBLISH {
-                                let (exchange, routing_key, mandatory, _immediate) =
-                                    amqp_basic::parse_publish_args(&method.arguments);
-                                debug!(conn_id, exchange = exchange.as_str(), routing_key = routing_key.as_str(), "publish method received, waiting for content");
-                                content_state = Some(ContentState {
-                                    exchange,
-                                    routing_key,
-                                    mandatory,
-                                    properties: BasicProperties::default(),
-                                    body_size: 0,
-                                    body_received: Vec::new(),
-                                    channel: frame.channel,
-                                });
-                                continue;
-                            }
-
-                            let keep = amqp_dispatch::dispatch_method(
-                                conn_id, frame.channel, &method, &mut writer, &broker,
-                            ).await;
-
-                            if !keep { break; }
                         }
 
                         FRAME_HEADER => {
-                            if let Some(ref mut cs) = content_state {
-                                match decode_content_header(&frame.payload) {
-                                    Ok(header) => {
-                                        debug!(conn_id, body_size = header.body_size, "header frame received");
-                                        cs.body_size = header.body_size;
-                                        cs.properties = header.properties;
-                                        cs.body_received.reserve(header.body_size as usize);
-
-                                        if header.body_size == 0 {
-                                            let state = content_state.take().unwrap();
-                                            amqp_basic::handle_publish(
-                                                conn_id, state.channel,
-                                                &state.exchange, &state.routing_key, state.mandatory,
-                                                &state.properties, &state.body_received,
-                                                &mut writer, &broker,
-                                            ).await;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!(conn_id, error = %e, "bad content header");
-                                        content_state = None;
-                                    }
-                                }
-                            } else {
-                                warn!(conn_id, "content header without publish");
-                            }
+                            handle_content_header_frame(
+                                conn_id, &frame.payload, &mut content_state, &mut writer, &broker,
+                            ).await;
                         }
 
                         FRAME_BODY => {
-                            if let Some(ref mut cs) = content_state {
-                                cs.body_received.extend_from_slice(&frame.payload);
-                                if cs.body_received.len() as u64 >= cs.body_size {
-                                    let state = content_state.take().unwrap();
-                                    amqp_basic::handle_publish(
-                                        conn_id, state.channel,
-                                        &state.exchange, &state.routing_key, state.mandatory,
-                                        &state.properties, &state.body_received,
-                                        &mut writer, &broker,
-                                    ).await;
-                                }
-                            } else {
-                                warn!(conn_id, "body frame without content state");
-                            }
+                            handle_content_body_frame(
+                                conn_id, &frame.payload, &mut content_state, &mut writer, &broker,
+                            ).await;
                         }
 
                         FRAME_HEARTBEAT => {
@@ -284,6 +226,153 @@ pub fn spawn_amqp_on_stream(
         crate::metrics::record_conn_closed();
         info!(conn_id, "AMQP connection closed");
     });
+}
+
+/// Outcome of processing a single AMQP method frame.
+enum FrameAction {
+    /// Continue the connection loop normally.
+    Continue,
+    /// Send a connection.close with the given code/text, then disconnect.
+    Close(u16, String),
+    /// Disconnect immediately (e.g. the handler returned keep=false).
+    Disconnect,
+}
+
+/// Decodes and dispatches a single AMQP method frame.
+/// If the method is basic.publish, it initializes content_state for the
+/// multi-frame publish flow and returns Continue.
+async fn process_method_frame(
+    conn_id: u64,
+    channel: u16,
+    payload: &[u8],
+    content_state: &mut Option<ContentState>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) -> FrameAction {
+    let method = match decode_method(payload) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!(conn_id, error = %e, "bad method frame");
+            return FrameAction::Close(SYNTAX_ERROR, "bad method frame".into());
+        }
+    };
+
+    if let Some(err) = validation::validate_channel(channel, method.class_id) {
+        warn!(
+            conn_id,
+            err,
+            channel,
+            class_id = method.class_id,
+            "channel/class mismatch"
+        );
+        return FrameAction::Close(COMMAND_INVALID, err.into());
+    }
+
+    if method.class_id == CLASS_BASIC && method.method_id == METHOD_BASIC_PUBLISH {
+        let (exchange, routing_key, mandatory, _immediate) =
+            amqp_basic::parse_publish_args(&method.arguments);
+        debug!(
+            conn_id,
+            exchange = exchange.as_str(),
+            routing_key = routing_key.as_str(),
+            "publish method received, waiting for content"
+        );
+        *content_state = Some(ContentState {
+            exchange,
+            routing_key,
+            mandatory,
+            properties: BasicProperties::default(),
+            body_size: 0,
+            body_received: Vec::new(),
+            channel,
+        });
+        return FrameAction::Continue;
+    }
+
+    let keep = amqp_dispatch::dispatch_method(conn_id, channel, &method, writer, broker).await;
+    if keep {
+        FrameAction::Continue
+    } else {
+        FrameAction::Disconnect
+    }
+}
+
+/// Processes an AMQP content header frame, updating the content state
+/// and invoking handle_publish when body_size == 0.
+async fn handle_content_header_frame(
+    conn_id: u64,
+    payload: &[u8],
+    content_state: &mut Option<ContentState>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) {
+    let Some(cs) = content_state.as_mut() else {
+        warn!(conn_id, "content header without publish");
+        return;
+    };
+
+    let header = match decode_content_header(payload) {
+        Ok(h) => h,
+        Err(e) => {
+            warn!(conn_id, error = %e, "bad content header");
+            *content_state = None;
+            return;
+        }
+    };
+
+    debug!(
+        conn_id,
+        body_size = header.body_size,
+        "header frame received"
+    );
+    cs.body_size = header.body_size;
+    cs.properties = header.properties;
+    cs.body_received.reserve(header.body_size as usize);
+
+    if header.body_size == 0 {
+        flush_publish(conn_id, content_state, writer, broker).await;
+    }
+}
+
+/// Processes an AMQP body frame, appending data to the content state
+/// and invoking handle_publish when all bytes have been received.
+async fn handle_content_body_frame(
+    conn_id: u64,
+    payload: &[u8],
+    content_state: &mut Option<ContentState>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) {
+    let Some(cs) = content_state.as_mut() else {
+        warn!(conn_id, "body frame without content state");
+        return;
+    };
+    cs.body_received.extend_from_slice(payload);
+    if cs.body_received.len() as u64 >= cs.body_size {
+        flush_publish(conn_id, content_state, writer, broker).await;
+    }
+}
+
+/// Takes the completed content state and dispatches the full publish.
+async fn flush_publish(
+    conn_id: u64,
+    content_state: &mut Option<ContentState>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) {
+    let state = content_state.take().unwrap();
+    amqp_basic::handle_publish(
+        conn_id,
+        state.channel,
+        &state.exchange,
+        &state.routing_key,
+        state.mandatory,
+        &state.properties,
+        &state.body_received,
+        writer,
+        broker,
+    )
+    .await;
 }
 
 async fn send_connection_close(
