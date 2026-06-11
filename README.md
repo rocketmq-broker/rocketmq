@@ -1,14 +1,24 @@
 # RocketMQ
 
-A high-performance message broker with **built-in schema enforcement**, written in Rust. One binary, no external services.
+A high-performance message broker written in Rust, designed with built-in schema validation and minimal operational overhead. Deploy a single binary with no external dependencies.
 
-## Why RocketMQ
+## Why RocketMQ?
 
-**Messages are validated before they're accepted.** Attach a schema (Protobuf or JSON) to any queue and the broker rejects malformed payloads at publish time. Bad data never reaches your consumers. No schema registry to deploy, no sidecar to maintain — it's part of the broker.
+**Schema validation at the broker layer**
 
-**Drop-in RabbitMQ alternative.** Wire-compatible with AMQP 0-9-1. Point any standard client (`amqplib`, `pika`, `lapin`) at it and it works. More protocols planned.
+Define a schema (Protobuf or JSON) for any queue, and RocketMQ validates messages before they are accepted. Invalid payloads are rejected at publish time, ensuring consumers only receive data that conforms to the expected contract. Schema management is integrated directly into the broker, eliminating the need for a separate schema registry or additional infrastructure.
 
-**Single binary, zero dependencies.** No JVM, no Zookeeper, no Erlang runtime. `cargo build` and you're running.
+**AMQP 0-9-1 compatibility**
+
+RocketMQ is compatible with the AMQP 0-9-1 protocol, making migration from RabbitMQ straightforward. Existing clients such as `amqplib`, `pika`, and `lapin` can connect without modification. Support for additional protocols is planned.
+
+**Simple deployment**
+
+RocketMQ runs as a single executable with no JVM, Erlang runtime, ZooKeeper, or other external services required. Build and run with standard Rust tooling, reducing operational complexity and resource requirements.
+
+**Built for performance**
+
+Implemented in Rust, RocketMQ combines predictable performance, memory safety, and efficient resource utilization, making it suitable for both small deployments and high-throughput production workloads.
 
 ## Features
 
