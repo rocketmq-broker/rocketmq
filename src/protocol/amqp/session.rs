@@ -165,3 +165,72 @@ impl crate::protocol::ConnectionMeta for ConnectionState {
         self
     }
 }
+
+//
+// These eliminate the triple-nested `broker.conn_state.get_mut → as_any_mut
+// → downcast_mut::<ConnectionState>` pattern that causes 3+ nesting levels
+// in ~24 call sites. Each helper acquires the DashMap guard internally and
+// passes a `&mut ConnectionState` (or `&mut ChannelState`) to the caller's
+// closure — zero clone, zero allocation.
+
+/// Runs `f` against the mutable `ConnectionState` for `conn_id`.
+///
+/// Returns `None` if the connection doesn't exist or the downcast fails.
+///
+/// # Example
+/// ```ignore
+/// let tx_mode = with_conn_state(broker, conn_id, |cs| cs.tx_mode);
+/// ```
+pub fn with_conn_state<F, R>(broker: &crate::state::BrokerState, conn_id: u64, f: F) -> Option<R>
+where
+    F: FnOnce(&mut ConnectionState) -> R,
+{
+    let mut guard = broker.conn_state.get_mut(&conn_id)?;
+    let cs = guard
+        .value_mut()
+        .as_any_mut()
+        .downcast_mut::<ConnectionState>()?;
+    Some(f(cs))
+}
+
+/// Runs `f` against the immutable `ConnectionState` for `conn_id`.
+///
+/// Returns `None` if the connection doesn't exist or the downcast fails.
+/// Prefer this over `with_conn_state` when mutation is not needed.
+///
+/// # Example
+/// ```ignore
+/// let username = with_conn_state_ref(broker, conn_id, |cs| cs.username.clone());
+/// ```
+pub fn with_conn_state_ref<F, R>(
+    broker: &crate::state::BrokerState,
+    conn_id: u64,
+    f: F,
+) -> Option<R>
+where
+    F: FnOnce(&ConnectionState) -> R,
+{
+    let guard = broker.conn_state.get(&conn_id)?;
+    let cs = guard.value().as_any().downcast_ref::<ConnectionState>()?;
+    Some(f(cs))
+}
+
+/// Runs `f` against a mutable `ChannelState` inside the `ConnectionState`.
+///
+/// Returns `None` if the connection, downcast, or channel lookup fails.
+///
+/// # Example
+/// ```ignore
+/// with_channel(broker, conn_id, channel, |ch| { ch.unacked_count -= 1; });
+/// ```
+pub fn with_channel<F, R>(
+    broker: &crate::state::BrokerState,
+    conn_id: u64,
+    channel: u16,
+    f: F,
+) -> Option<R>
+where
+    F: FnOnce(&mut ChannelState) -> R,
+{
+    with_conn_state(broker, conn_id, |cs| cs.channels.get_mut(&channel).map(f)).flatten()
+}
