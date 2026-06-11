@@ -27,7 +27,6 @@ use tracing::{debug, warn};
 use crate::protocol::amqp::codec::*;
 use crate::protocol::amqp::method::*;
 use crate::protocol::amqp::properties::BasicProperties;
-use crate::protocol::amqp::session::ConnectionState;
 use crate::protocol::amqp::types::*;
 use crate::state::Broker;
 
@@ -163,17 +162,10 @@ fn next_ready_consumer(
 
 /// Checks if a consumer's channel has room under its prefetch limit.
 fn has_prefetch_capacity(broker: &Broker, conn_id: u64, channel: u16) -> bool {
-    broker.conn_state.get(&conn_id).is_none_or(|guard| {
-        guard
-            .value()
-            .as_any()
-            .downcast_ref::<ConnectionState>()
-            .is_none_or(|cs| {
-                cs.channels
-                    .get(&channel)
-                    .is_none_or(|ch| ch.prefetch_count == 0 || ch.unacked_count < ch.prefetch_count)
-            })
+    crate::protocol::amqp::session::with_conn_state_ref(broker, conn_id, |cs| {
+        cs.channels.get(&channel).is_none_or(|ch| ch.can_deliver())
     })
+    .unwrap_or(true)
 }
 
 /// Encodes the full Basic.Deliver frame set (method + header + body).
@@ -214,17 +206,9 @@ fn encode_delivery_frames(
 
 /// Bumps the unacked counter on the consumer's channel state.
 fn increment_unacked(broker: &Broker, conn_id: u64, channel: u16) {
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if let Some(ch) = cs.channels.get_mut(&channel) {
-                ch.unacked_count += 1;
-            }
-        }
-    }
+    crate::protocol::amqp::session::with_channel(broker, conn_id, channel, |ch| {
+        ch.unacked_count += 1;
+    });
 }
 
 /// Attempts to send frames to the connection. Returns false if the channel is full.
