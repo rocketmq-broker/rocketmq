@@ -186,49 +186,7 @@ async fn wal_compact_task(broker: Broker) {
                 return None;
             }
 
-            let mut kept = 0u64;
-            let mut removed = 0u64;
-            if wal.truncate().is_err() {
-                return None;
-            }
-
-            // TODO: Too nested code
-            for entry in &entries {
-                match entry.entry_type {
-                    EntryType::Enqueue => {
-                        let queue_len = u16::from_be_bytes([entry.data[0], entry.data[1]]) as usize;
-                        if entry.data.len() >= 2 + queue_len + 8 {
-                            let msg_id = u64::from_be_bytes(
-                                entry.data[2 + queue_len..2 + queue_len + 8]
-                                    .try_into()
-                                    .unwrap(),
-                            );
-                            if acked_ids.contains(&msg_id) {
-                                removed += 1;
-                                continue;
-                            }
-                        }
-                        let _ = wal.append(entry.entry_type, &entry.data);
-                        kept += 1;
-                    }
-                    EntryType::Ack => {
-                        if entry.data.len() >= 8 {
-                            let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
-                            if acked_ids.contains(&msg_id) {
-                                removed += 1;
-                                continue;
-                            }
-                        }
-                        let _ = wal.append(entry.entry_type, &entry.data);
-                        kept += 1;
-                    }
-                    _ => {
-                        let _ = wal.append(entry.entry_type, &entry.data);
-                        kept += 1;
-                    }
-                }
-            }
-
+            let (kept, removed) = replay_entries(&entries, &acked_ids, &wal);
             Some((entry_count, kept, removed))
         })
         .await;
@@ -236,5 +194,61 @@ async fn wal_compact_task(broker: Broker) {
         if let Ok(Some((before, after, removed))) = result {
             info!(before, after, removed, "WAL compacted");
         }
+    }
+}
+
+/// Truncates the WAL and replays only entries that haven't been acknowledged.
+/// Returns (kept_count, removed_count).
+fn replay_entries(
+    entries: &[crate::storage::wal::WalEntry],
+    acked_ids: &std::collections::HashSet<u64>,
+    wal: &crate::storage::wal::Wal,
+) -> (u64, u64) {
+    if wal.truncate().is_err() {
+        return (0, 0);
+    }
+
+    let mut kept = 0u64;
+    let mut removed = 0u64;
+    for entry in entries {
+        if is_acked_entry(entry, acked_ids) {
+            removed += 1;
+        } else {
+            let _ = wal.append(entry.entry_type, &entry.data);
+            kept += 1;
+        }
+    }
+    (kept, removed)
+}
+
+/// Checks whether a WAL entry corresponds to an already-acknowledged message.
+fn is_acked_entry(
+    entry: &crate::storage::wal::WalEntry,
+    acked_ids: &std::collections::HashSet<u64>,
+) -> bool {
+    match entry.entry_type {
+        EntryType::Enqueue => {
+            if entry.data.len() < 4 {
+                return false;
+            }
+            let queue_len = u16::from_be_bytes([entry.data[0], entry.data[1]]) as usize;
+            if entry.data.len() < 2 + queue_len + 8 {
+                return false;
+            }
+            let msg_id = u64::from_be_bytes(
+                entry.data[2 + queue_len..2 + queue_len + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            acked_ids.contains(&msg_id)
+        }
+        EntryType::Ack => {
+            if entry.data.len() < 8 {
+                return false;
+            }
+            let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
+            acked_ids.contains(&msg_id)
+        }
+        _ => false,
     }
 }

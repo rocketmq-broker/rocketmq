@@ -28,51 +28,65 @@ pub async fn spawn_listener(
     let listener = TcpListener::bind(addr).await?;
     let protocol_name = adapter.name();
 
-    // TODO: too nested code
     if let Some(acceptor) = tls_acceptor {
         info!("{} (TLS) on {}", protocol_name, addr);
-        tokio::spawn(async move {
-            loop {
-                match listener.accept().await {
-                    Ok((tcp_stream, addr)) => {
-                        let acceptor_clone = acceptor.clone();
-                        let broker_clone = broker.clone();
-                        let adapter_clone = adapter.clone();
-                        tokio::spawn(async move {
-                            match acceptor_clone.accept(tcp_stream).await {
-                                Ok(tls_stream) => {
-                                    info!(%addr, "TLS handshake complete");
-                                    let boxed = Box::new(tls_stream);
-                                    adapter_clone.handle_stream(boxed, addr, broker_clone);
-                                }
-                                Err(e) => {
-                                    warn!(%addr, error = %e, "TLS handshake failed");
-                                }
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "Failed to accept TLS connection");
-                    }
-                }
-            }
-        });
+        spawn_tls_accept_loop(listener, acceptor, adapter, broker);
     } else {
         info!("{} on {}", protocol_name, addr);
-        tokio::spawn(async move {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, addr)) => {
-                        let boxed = Box::new(stream);
-                        adapter.clone().handle_stream(boxed, addr, broker.clone());
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "Failed to accept connection");
-                    }
-                }
-            }
-        });
+        spawn_plain_accept_loop(listener, adapter, broker);
     }
 
     Ok(())
+}
+
+fn spawn_tls_accept_loop(
+    listener: TcpListener,
+    acceptor: TlsAcceptor,
+    adapter: ProtocolAdapter,
+    broker: Arc<BrokerState>,
+) {
+    tokio::spawn(async move {
+        loop {
+            let (tcp_stream, addr) = match listener.accept().await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to accept TLS connection");
+                    continue;
+                }
+            };
+            let acceptor = acceptor.clone();
+            let broker = broker.clone();
+            let adapter = adapter.clone();
+            tokio::spawn(async move {
+                match acceptor.accept(tcp_stream).await {
+                    Ok(tls_stream) => {
+                        info!(%addr, "TLS handshake complete");
+                        adapter.handle_stream(Box::new(tls_stream), addr, broker);
+                    }
+                    Err(e) => warn!(%addr, error = %e, "TLS handshake failed"),
+                }
+            });
+        }
+    });
+}
+
+fn spawn_plain_accept_loop(
+    listener: TcpListener,
+    adapter: ProtocolAdapter,
+    broker: Arc<BrokerState>,
+) {
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    adapter
+                        .clone()
+                        .handle_stream(Box::new(stream), addr, broker.clone());
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to accept connection");
+                }
+            }
+        }
+    });
 }
