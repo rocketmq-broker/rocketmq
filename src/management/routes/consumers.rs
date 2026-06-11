@@ -7,8 +7,6 @@ use std::sync::Arc;
 use crate::management::types::*;
 use crate::state::{Broker, BrokerState};
 
-// ─── Consumers ─────────────────────────────────────────
-
 pub async fn list_consumers(State(broker): State<Broker>) -> Json<Vec<ConsumerInfo>> {
     Json(build_consumers(&broker))
 }

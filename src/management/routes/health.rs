@@ -6,8 +6,6 @@ use axum::response::Json;
 
 use crate::management::types::*;
 
-// ─── Health Checks ─────────────────────────────────────
-
 /// Verifies that the broker HTTP server is responsive.
 /// Verifies that the broker HTTP server is responsive.
 pub async fn healthcheck() -> StatusCode {

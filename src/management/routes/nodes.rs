@@ -8,8 +8,6 @@ use crate::management::routes::helpers::*;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Overview & Nodes ──────────────────────────────────
-
 /// Provides an overview of the broker status, object counts, and message rates.
 pub async fn overview(State(broker): State<Broker>) -> Json<OverviewResponse> {
     let queue_count = broker.queues.len();

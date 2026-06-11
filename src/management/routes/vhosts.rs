@@ -8,8 +8,6 @@ use crate::management::routes::helpers::*;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Virtual Hosts ─────────────────────────────────────
-
 /// Lists all configured virtual hosts in the broker.
 /// Returns the list of all configured virtual host names.
 /// Lists all configured virtual hosts in the broker.

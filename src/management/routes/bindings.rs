@@ -9,8 +9,6 @@ use crate::management::routes::helpers::*;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Bindings ──────────────────────────────────────────
-
 pub async fn list_bindings(State(broker): State<Broker>) -> Json<Vec<BindingInfo>> {
     let exchanges = broker.exchanges.read().await;
     let mut bindings = Vec::new();

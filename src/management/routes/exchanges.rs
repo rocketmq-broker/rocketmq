@@ -9,8 +9,6 @@ use crate::management::routes::helpers::*;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Exchanges ─────────────────────────────────────────
-
 pub async fn list_exchanges(
     State(broker): State<Broker>,
     Query(params): Query<PaginationParams>,

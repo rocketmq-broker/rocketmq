@@ -9,8 +9,6 @@ use crate::management::routes::helpers::*;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Users & Permissions ───────────────────────────────
-
 pub async fn list_users(
     State(broker): State<Broker>,
     Query(params): Query<PaginationParams>,

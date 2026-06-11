@@ -5,8 +5,6 @@ use axum::response::Json;
 
 use crate::management::types::*;
 
-// ─── Stubs & Feature Flags ──────────────────────────────
-
 pub async fn stub_empty_array() -> Json<Vec<serde_json::Value>> {
     Json(vec![])
 }

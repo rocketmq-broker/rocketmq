@@ -8,8 +8,6 @@ use tracing::info;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Queues & Bindings ──────────────────────────────────
-
 pub async fn list_queues(
     State(broker): State<Broker>,
     Query(params): Query<PaginationParams>,

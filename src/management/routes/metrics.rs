@@ -5,8 +5,6 @@ use axum::extract::State;
 use crate::management::routes::helpers::*;
 use crate::state::Broker;
 
-// ─── Prometheus Metricsexposition ───────────────────────
-
 pub async fn prometheus_metrics(State(broker): State<Broker>) -> String {
     let mut out = String::with_capacity(4096);
 

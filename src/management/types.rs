@@ -23,8 +23,6 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-// ─── Telemetry Rates State ─────────────────────────────
-
 pub struct RateState {
     pub last_time: Instant,
     pub last_publish: u64,
@@ -51,8 +49,6 @@ pub struct RateState {
 }
 
 pub static RATE_STATE: OnceLock<Mutex<RateState>> = OnceLock::new();
-
-// ─── Time-Series Sample History ────────────────────────
 
 /// Maximum number of samples to retain (~5 minutes at 5-second polling).
 const MAX_SAMPLES: usize = 61;
@@ -247,8 +243,6 @@ pub fn get_churn_rates() -> serde_json::Value {
         "queue_deleted_details": { "rate": state.queue_deleted_rate }
     })
 }
-
-// ─── Pagination ────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct PaginationParams {

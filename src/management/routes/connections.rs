@@ -8,8 +8,6 @@ use tracing::info;
 use crate::management::types::*;
 use crate::state::Broker;
 
-// ─── Connections & Channels ────────────────────────────
-
 pub async fn list_connections(
     State(broker): State<Broker>,
     Query(params): Query<PaginationParams>,

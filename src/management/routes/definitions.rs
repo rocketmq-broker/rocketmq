@@ -5,8 +5,6 @@ use axum::response::Json;
 
 use crate::state::Broker;
 
-// ─── Definitions (Export) ───────────────────────────────
-
 pub async fn get_definitions(State(broker): State<Broker>) -> Json<serde_json::Value> {
     let users: Vec<serde_json::Value> = broker.auth.list_users().into_iter()
         .map(|(name, tags)| serde_json::json!({ "name": name, "tags": tags.iter().map(|t| format!("{:?}", t).to_lowercase()).collect::<Vec<_>>().join(",") }))

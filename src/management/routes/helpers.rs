@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use crate::state::BrokerState;
 
-// ─── Helpers ───────────────────────────────────────────
-
 pub fn decode_base64(s: &str) -> Option<Vec<u8>> {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut map = [0u8; 256];
