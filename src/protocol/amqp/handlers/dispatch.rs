@@ -27,7 +27,7 @@ use tracing::{info, warn};
 
 use crate::protocol::amqp::codec::*;
 use crate::protocol::amqp::method::*;
-use crate::protocol::amqp::session::{ChannelState, ConnectionState};
+use crate::protocol::amqp::session::ChannelState;
 use crate::protocol::amqp::types::*;
 use crate::state::Broker;
 
@@ -171,25 +171,17 @@ pub async fn dispatch_method(
     }
 }
 
-// ─── Channel handlers ─────────────────────────────────
-
 async fn handle_channel_open(
     conn_id: u64,
     channel: u16,
     writer: &mut crate::protocol::amqp::AmqpWriter,
     broker: &Broker,
 ) {
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            cs.channels
-                .entry(channel)
-                .or_insert_with(|| ChannelState::new(channel));
-        }
-    }
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.channels
+            .entry(channel)
+            .or_insert_with(|| ChannelState::new(channel));
+    });
 
     info!(conn_id, channel, "channel opened");
     crate::metrics::record_chan_opened();
@@ -215,15 +207,9 @@ async fn handle_channel_close(
         }
     }
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            cs.channels.remove(&channel);
-        }
-    }
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.channels.remove(&channel);
+    });
 
     crate::metrics::record_chan_closed();
     info!(conn_id, channel, "channel closed");
@@ -241,17 +227,9 @@ async fn handle_channel_flow(
 ) {
     let active = args.first().copied().unwrap_or(1) != 0;
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if let Some(ch) = cs.channels.get_mut(&channel) {
-                ch.flow_active = active;
-            }
-        }
-    }
+    crate::protocol::amqp::session::with_channel(broker, conn_id, channel, |ch| {
+        ch.flow_active = active;
+    });
 
     info!(conn_id, channel, active, "channel flow");
     let mut reply_args = Vec::new();
