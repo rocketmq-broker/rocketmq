@@ -34,8 +34,6 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-// ─── Global singleton ─────────────────────────────────────────
-
 static CONFIG: OnceLock<BrokerConfig> = OnceLock::new();
 
 /// Returns a reference to the global broker configuration.
@@ -45,8 +43,6 @@ static CONFIG: OnceLock<BrokerConfig> = OnceLock::new();
 pub fn config() -> &'static BrokerConfig {
     CONFIG.get_or_init(BrokerConfig::load)
 }
-
-// ─── BrokerConfig ─────────────────────────────────────────────
 
 /// Holds every tunable parameter for the broker.
 pub struct BrokerConfig {
@@ -76,11 +72,9 @@ pub struct BrokerConfig {
     /// Milliseconds before a node is declared down after heartbeat loss.
     pub cluster_failover_timeout_ms: u64,
 
-    // ── Sprint 5: Partition handling ──────────────────
     /// Strategy: "pause-minority", "autoheal", or "ignore".
     pub cluster_partition_handling: String,
 
-    // ── Sprint 6: Discovery ──────────────────────────
     /// Discovery backend: "static", "dns", or "k8s".
     pub cluster_discovery_backend: String,
     /// DNS hostname for SRV-based peer discovery.
@@ -90,11 +84,9 @@ pub struct BrokerConfig {
     /// Kubernetes namespace for pod discovery.
     pub cluster_discovery_k8s_namespace: String,
 
-    // ── Sprint 8: Streams ────────────────────────────
     /// Maximum size per stream segment in bytes before rolling.
     pub stream_max_segment_bytes: u64,
 
-    // ── Sprint 9: Operational tooling ────────────────
     /// Rack/zone label for replica placement awareness.
     pub cluster_rack: String,
     /// Cluster zone label for multi-AZ replica spreading.
@@ -134,13 +126,11 @@ impl BrokerConfig {
         let file_values = load_conf_file();
 
         Self {
-            // ── Network ──────────────────────────────────────────
             bind_host: resolve_string("ROCKETMQ_BIND_HOST", &file_values, "bind_host", "127.0.0.1"),
             amqp_port: resolve_u16("ROCKETMQ_AMQP_PORT", &file_values, "amqp_port", 5672),
             amqps_port: resolve_u16("ROCKETMQ_AMQPS_PORT", &file_values, "amqps_port", 5671),
             mgmt_port: resolve_u16("ROCKETMQ_MGMT_PORT", &file_values, "mgmt_port", 15672),
 
-            // ── TLS ──────────────────────────────────────────────
             tls_cert: resolve_string(
                 "ROCKETMQ_TLS_CERT",
                 &file_values,
@@ -154,7 +144,6 @@ impl BrokerConfig {
                 "tls/server.key",
             ),
 
-            // ── Persistence ──────────────────────────────────────
             data_dir: resolve_string("ROCKETMQ_DATA_DIR", &file_values, "data_dir", "data"),
             max_segment_size: resolve_u64(
                 "ROCKETMQ_MAX_SEGMENT_SIZE",
@@ -175,7 +164,6 @@ impl BrokerConfig {
                 1000,
             ),
 
-            // ── Cluster ──────────────────────────────────────────
             cluster_enabled: resolve_bool(
                 "ROCKETMQ_CLUSTER_ENABLED",
                 &file_values,
@@ -210,7 +198,6 @@ impl BrokerConfig {
                 15000,
             ),
 
-            // ── Sprint 5: Partition handling ──────────────
             cluster_partition_handling: resolve_string(
                 "ROCKETMQ_CLUSTER_PARTITION_HANDLING",
                 &file_values,
@@ -218,7 +205,6 @@ impl BrokerConfig {
                 "pause-minority",
             ),
 
-            // ── Sprint 6: Discovery ──────────────────────
             cluster_discovery_backend: resolve_string(
                 "ROCKETMQ_CLUSTER_DISCOVERY_BACKEND",
                 &file_values,
@@ -244,7 +230,6 @@ impl BrokerConfig {
                 "default",
             ),
 
-            // ── Sprint 8: Streams ────────────────────────
             stream_max_segment_bytes: resolve_u64(
                 "ROCKETMQ_STREAM_MAX_SEGMENT_BYTES",
                 &file_values,
@@ -252,11 +237,9 @@ impl BrokerConfig {
                 256 * 1024 * 1024, // 256 MiB
             ),
 
-            // ── Sprint 9: Operational tooling ────────────
             cluster_rack: resolve_string("ROCKETMQ_CLUSTER_RACK", &file_values, "cluster_rack", ""),
             cluster_zone: resolve_string("ROCKETMQ_CLUSTER_ZONE", &file_values, "cluster_zone", ""),
 
-            // ── Authentication ───────────────────────────────────
             default_user: resolve_string(
                 "ROCKETMQ_DEFAULT_USER",
                 &file_values,
@@ -274,7 +257,6 @@ impl BrokerConfig {
             bcrypt_cost: resolve_u64("ROCKETMQ_BCRYPT_COST", &file_values, "bcrypt_cost", 10)
                 as u32,
 
-            // ── Connection ───────────────────────────────────────
             heartbeat_secs: resolve_u64(
                 "ROCKETMQ_HEARTBEAT_SECS",
                 &file_values,
@@ -282,7 +264,6 @@ impl BrokerConfig {
                 60,
             ),
 
-            // ── Delivery pipeline ────────────────────────────────
             delivery_channel_capacity: resolve_u64(
                 "ROCKETMQ_DELIVERY_CHANNEL_CAPACITY",
                 &file_values,
@@ -296,7 +277,6 @@ impl BrokerConfig {
                 5,
             )),
 
-            // ── Background tasks ─────────────────────────────────
             queue_ttl_check_interval: Duration::from_millis(resolve_u64(
                 "ROCKETMQ_QUEUE_TTL_CHECK_INTERVAL_MS",
                 &file_values,
@@ -328,10 +308,8 @@ impl BrokerConfig {
                 100,
             )),
 
-            // ── Logging ──────────────────────────────────────────
             log_filter: resolve_string("RUST_LOG", &file_values, "log_filter", "rocketmq=info"),
 
-            // ── Management UI ────────────────────────────────────
             www_dir: resolve_string(
                 "ROCKETMQ_WWW_DIR",
                 &file_values,
@@ -341,8 +319,6 @@ impl BrokerConfig {
         }
     }
 }
-
-// ─── Conf file parser ─────────────────────────────────────────
 
 /// Locates and parses the config file into a key-value map.
 /// Lookup order:
@@ -394,8 +370,6 @@ fn load_conf_file() -> HashMap<String, String> {
 
     map
 }
-
-// ─── Resolution helpers ───────────────────────────────────────
 
 /// Resolves a string value: env var > config file > default.
 fn resolve_string(
@@ -460,7 +434,6 @@ fn resolve_bool(
     default
 }
 
-// ─── Public accessor functions (backwards-compatible API) ─────
 //
 // These replace the old `pub const` values and `pub fn` getters.
 // All callers use these — they delegate to the global config().
@@ -566,8 +539,6 @@ pub fn get_mgmt_listen_addr() -> String {
 pub fn get_max_segment_size() -> u64 {
     config().max_segment_size
 }
-
-// ── Interval / threshold accessors ────────────────────────────
 
 pub fn delivery_channel_capacity() -> usize {
     config().delivery_channel_capacity

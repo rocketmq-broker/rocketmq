@@ -96,8 +96,6 @@ impl AuthBackend {
         backend
     }
 
-    // ── Authentication ────────────────────────────────────
-
     pub fn authenticate(
         &self,
         username: &str,
@@ -127,8 +125,6 @@ impl AuthBackend {
         self.permissions
             .contains_key(&(username.to_string(), vhost.to_string()))
     }
-
-    // ── Authorization ─────────────────────────────────────
 
     pub fn check_configure(&self, username: &str, vhost: &str, resource: &str) -> bool {
         self.check_permission(username, vhost, resource, |p| &p.configure)
@@ -160,8 +156,6 @@ impl AuthBackend {
             None => false,
         }
     }
-
-    // ── User management ───────────────────────────────────
 
     pub fn add_user(
         &self,
@@ -247,8 +241,6 @@ impl AuthBackend {
             .map(|e| e.value().clone())
             .collect()
     }
-
-    // ── Persistence ───────────────────────────────────────
 
     pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
         let data = credentials::UserStore {

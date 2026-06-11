@@ -531,9 +531,7 @@ mod tests {
         assert!(!bs.queues.contains_key("excl"));
     }
 
-    // ──────────────────────────────────────────────
     // Virtual Host tests
-    // ──────────────────────────────────────────────
 
     #[test]
     fn broker_has_default_vhost() {

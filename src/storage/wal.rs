@@ -493,8 +493,6 @@ impl Wal {
             .read_message_payload(segment_id, offset, length)
     }
 
-    // ── Convenience builders ────────────────────────────────────────────
-
     /// Logs a `DeclareQueue` entry to the WAL for crash recovery.
     pub fn log_declare_queue(&self, name: &str, durable: bool) -> std::io::Result<u64> {
         let mut w = WalWriter::with_capacity(2 + name.len() + 1);
