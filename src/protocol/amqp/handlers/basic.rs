@@ -78,35 +78,110 @@ pub async fn handle_publish(
 
     let confirm_tag = alloc_confirm_tag(conn_id, channel, broker);
 
-    let tx_mode =
-        crate::protocol::amqp::session::with_conn_state_ref(broker, conn_id, |cs| cs.tx_mode)
-            .unwrap_or(false);
-
-    if tx_mode {
-        let mut prop_bytes = Vec::new();
-        properties.encode(&mut prop_bytes).unwrap_or_default();
-        crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
-            cs.tx_buffer.push(PendingOp::Publish {
-                exchange: exchange_name.into(),
-                routing_key: routing_key.into(),
-                headers: prop_bytes.into(),
-                body: body.to_vec().into(),
-            });
-        });
+    if buffer_tx_publish(
+        conn_id,
+        exchange_name,
+        routing_key,
+        properties,
+        body,
+        broker,
+    ) {
         return;
     }
 
-    let priority = properties.priority.unwrap_or(0);
-    let per_msg_ttl = properties
-        .expiration
-        .as_ref()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(Duration::from_millis);
+    let msg_headers = resolve_publish_headers(properties);
+    let target_queues = match route_to_exchanges(
+        conn_id,
+        channel,
+        exchange_name,
+        routing_key,
+        &msg_headers,
+        confirm_tag,
+        writer,
+        broker,
+    )
+    .await
+    {
+        Some(qs) => qs,
+        None => return,
+    };
 
-    // OPT-8: Scope the exchange read lock to routing only.
-    // The lock is dropped before we touch any queues, reducing contention
-    // between concurrent publishers on different exchanges.
-    let msg_headers: HashMap<String, String> = properties
+    if target_queues.is_empty() {
+        handle_no_route(
+            conn_id,
+            channel,
+            exchange_name,
+            routing_key,
+            mandatory,
+            properties,
+            body,
+            confirm_tag,
+            writer,
+        )
+        .await;
+        return;
+    }
+
+    if validate_schemas(
+        conn_id,
+        channel,
+        &target_queues,
+        body,
+        confirm_tag,
+        writer,
+        broker,
+    )
+    .await
+    {
+        return;
+    }
+
+    let published = enqueue_to_targets(
+        conn_id,
+        exchange_name,
+        routing_key,
+        properties,
+        body,
+        &target_queues,
+        confirm_tag,
+        broker,
+    );
+
+    replicate_confirmed_publishes(channel, body, confirm_tag, &published, writer, broker).await;
+}
+
+/// Buffers publish into tx_buffer when the connection is in transaction mode.
+/// Returns true if the message was buffered (caller should return early).
+fn buffer_tx_publish(
+    conn_id: u64,
+    exchange_name: &str,
+    routing_key: &str,
+    properties: &BasicProperties,
+    body: &[u8],
+    broker: &Broker,
+) -> bool {
+    let tx_mode =
+        crate::protocol::amqp::session::with_conn_state_ref(broker, conn_id, |cs| cs.tx_mode)
+            .unwrap_or(false);
+    if !tx_mode {
+        return false;
+    }
+    let mut prop_bytes = Vec::new();
+    properties.encode(&mut prop_bytes).unwrap_or_default();
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.tx_buffer.push(PendingOp::Publish {
+            exchange: exchange_name.into(),
+            routing_key: routing_key.into(),
+            headers: prop_bytes.into(),
+            body: body.to_vec().into(),
+        });
+    });
+    true
+}
+
+/// Extracts a flat HashMap from BasicProperties headers for exchange routing.
+fn resolve_publish_headers(properties: &BasicProperties) -> HashMap<String, String> {
+    properties
         .headers
         .as_ref()
         .map(|h| {
@@ -114,203 +189,324 @@ pub async fn handle_publish(
                 .map(|(k, v)| (k.clone(), format!("{:?}", v)))
                 .collect()
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
 
-    let target_queues = {
-        let exchanges = broker.exchanges.read().await;
-        let exchange = match exchanges.get(exchange_name) {
-            Some(ex) => ex,
-            None => {
-                warn!(conn_id, exchange = exchange_name, "exchange not found");
-                if let Some(tag) = confirm_tag {
-                    send_confirm_ack(channel, tag, writer).await;
-                }
-                return;
+/// Resolves the target queues via the exchange routing table.
+/// Returns None if the exchange was not found (confirm ack already sent).
+async fn route_to_exchanges(
+    conn_id: u64,
+    channel: u16,
+    exchange_name: &str,
+    routing_key: &str,
+    msg_headers: &HashMap<String, String>,
+    confirm_tag: Option<u64>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) -> Option<Vec<std::sync::Arc<str>>> {
+    let exchanges = broker.exchanges.read().await;
+    let exchange = match exchanges.get(exchange_name) {
+        Some(ex) => ex,
+        None => {
+            warn!(conn_id, exchange = exchange_name, "exchange not found");
+            if let Some(tag) = confirm_tag {
+                send_confirm_ack(channel, tag, writer).await;
             }
-        };
-        let mut qs = Vec::new();
-        exchange.route_each(routing_key, &msg_headers, |q| qs.push(q.clone()));
-        qs
+            return None;
+        }
     };
-    // exchange RwLock guard dropped here — all queue ops below are lock-free
-    debug!(conn_id, exchange = exchange_name, routing_key, targets = ?target_queues, "routed");
+    let mut qs = Vec::new();
+    exchange.route_each(routing_key, msg_headers, |q| qs.push(q.clone()));
+    // Drop exchange RwLock guard before touching queues
+    drop(exchanges);
+    debug!(conn_id, exchange = exchange_name, routing_key, targets = ?qs, "routed");
+    Some(qs)
+}
 
-    if target_queues.is_empty() {
-        if mandatory {
-            send_basic_return(
-                channel,
-                NO_ROUTE,
-                "NO_ROUTE",
-                exchange_name,
-                routing_key,
-                properties,
-                body,
-                writer,
-            )
-            .await;
-        }
-        warn!(
-            conn_id,
-            exchange = exchange_name,
+/// Handles the case where routing produced zero target queues.
+async fn handle_no_route(
+    conn_id: u64,
+    channel: u16,
+    exchange_name: &str,
+    routing_key: &str,
+    mandatory: bool,
+    properties: &BasicProperties,
+    body: &[u8],
+    confirm_tag: Option<u64>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+) {
+    if mandatory {
+        send_basic_return(
+            channel,
+            NO_ROUTE,
+            "NO_ROUTE",
+            exchange_name,
             routing_key,
-            "no matching bindings"
-        );
-
-        if let Some(tag) = confirm_tag {
-            send_confirm_ack(channel, tag, writer).await;
-        }
-        return;
+            properties,
+            body,
+            writer,
+        )
+        .await;
     }
+    warn!(
+        conn_id,
+        exchange = exchange_name,
+        routing_key,
+        "no matching bindings"
+    );
+    if let Some(tag) = confirm_tag {
+        send_confirm_ack(channel, tag, writer).await;
+    }
+}
 
-    for queue_name in &target_queues {
+/// Validates message body against each target queue's schema.
+/// Returns true if validation failed (caller should return early).
+async fn validate_schemas(
+    conn_id: u64,
+    channel: u16,
+    target_queues: &[std::sync::Arc<str>],
+    body: &[u8],
+    confirm_tag: Option<u64>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) -> bool {
+    for queue_name in target_queues {
         let schema_err = broker
             .queues
             .get(queue_name.as_ref())
             .and_then(|q| q.schema.clone())
             .and_then(|s| crate::schema::validate::validate_message(&s, body).err());
 
-        if let Some(err) = schema_err {
-            warn!(
-                conn_id,
-                queue = queue_name.as_ref(),
-                "schema validation failed: {}",
-                err
-            );
-            crate::metrics::record_schema_validation_failed(queue_name.as_ref());
-            let broker_err = crate::schema::error::to_broker_error(queue_name.as_ref(), &err);
-            send_channel_error(
-                writer,
-                channel,
-                PRECONDITION_FAILED,
-                &broker_err.to_reply_text(),
-                CLASS_BASIC,
-                METHOD_BASIC_PUBLISH,
-            )
-            .await;
+        let Some(err) = schema_err else { continue };
 
-            if let Some(tag) = confirm_tag {
-                send_confirm_nack(channel, tag, writer).await;
-            }
-            return;
-        }
-    }
-
-    let is_persistent = properties.delivery_mode == Some(2);
-    let mut published_messages = Vec::new();
-
-    // OPT-3: Encode properties once before the queue loop.
-    // Previously encoded per-queue, causing N redundant heap allocs on fanout.
-    let mut prop_bytes = Vec::new();
-    properties.encode(&mut prop_bytes).unwrap_or_default();
-
-    let exchange_arc: std::sync::Arc<str> = exchange_name.into();
-    let rk_arc: std::sync::Arc<str> = routing_key.into();
-    let prop_bytes_bytes: bytes::Bytes = prop_bytes.into();
-    let body_bytes: bytes::Bytes = body.to_vec().into();
-
-    for queue_name in &target_queues {
-        let msg_id = broker.alloc_msg_id();
-        published_messages.push((queue_name.clone(), msg_id));
-
-        let mut queue_ref = match broker.queues.get_mut(queue_name.as_ref()) {
-            Some(q) => q,
-            None => continue,
-        };
-        let queue = queue_ref.value_mut();
-
-        let expiration = match (queue.options.message_ttl, per_msg_ttl) {
-            (Some(qt), Some(pt)) => Some(Instant::now() + qt.min(pt)),
-            (Some(t), None) | (None, Some(t)) => Some(Instant::now() + t),
-            (None, None) => None,
-        };
-
-        let effective_priority = if queue.options.max_priority > 0 {
-            priority.min(queue.options.max_priority)
-        } else {
-            0
-        };
-
-        if let Some(max_len) = queue.options.max_length {
-            while queue.messages.len() >= max_len {
-                if queue.messages.pop_oldest().is_none() {
-                    break;
-                }
-            }
-        }
-
-        let mut disk_ref = None;
-        if queue.options.durable && is_persistent {
-            let wal = broker.wal();
-            if let Ok((seg_id, offset, length)) = wal.log_enqueue(
-                queue_name.as_ref(),
-                msg_id,
-                exchange_name,
-                routing_key,
-                &prop_bytes_bytes,
-                body,
-            ) {
-                disk_ref = Some((seg_id, offset, length));
-            }
-        }
-
-        let msg = if let Some((segment_id, offset, length)) = disk_ref {
-            crate::queue::message::QueueMessage::Ref(crate::queue::message::MessageRef {
-                id: msg_id,
-                segment_id,
-                offset,
-                length,
-                priority: effective_priority,
-                expiration,
-                redelivered: false,
-                delivery_count: 0,
-                exchange: exchange_arc.clone(),
-                routing_key: rk_arc.clone(),
-            })
-        } else {
-            crate::queue::message::QueueMessage::Full(Message {
-                id: msg_id,
-                headers: prop_bytes_bytes.clone(),
-                body: body_bytes.clone(),
-                priority: effective_priority,
-                expiration,
-                redelivered: false,
-                delivery_count: 0,
-                exchange: exchange_arc.clone(),
-                routing_key: rk_arc.clone(),
-            })
-        };
-
-        queue.last_activity = Instant::now();
-        queue.messages.push_back(msg);
-        debug!(
+        warn!(
             conn_id,
-            msg_id,
             queue = queue_name.as_ref(),
-            "queued via AMQP"
+            "schema validation failed: {}",
+            err
         );
-        queue.stat_published += 1;
-        crate::metrics::record_published(queue_name);
+        crate::metrics::record_schema_validation_failed(queue_name.as_ref());
+        let broker_err = crate::schema::error::to_broker_error(queue_name.as_ref(), &err);
+        send_channel_error(
+            writer,
+            channel,
+            PRECONDITION_FAILED,
+            &broker_err.to_reply_text(),
+            CLASS_BASIC,
+            METHOD_BASIC_PUBLISH,
+        )
+        .await;
+        if let Some(tag) = confirm_tag {
+            send_confirm_nack(channel, tag, writer).await;
+        }
+        return true;
+    }
+    false
+}
 
-        if confirm_tag.is_none() {
-            if let Some(c) = broker.cluster() {
-                let c = c.clone();
-                let q_name = queue_name.clone();
-                let body_vec = body.to_vec();
-                tokio::spawn(async move {
-                    let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
-                });
+/// Context shared across the enqueue loop to avoid re-encoding per queue.
+struct EnqueueCtx {
+    exchange_arc: std::sync::Arc<str>,
+    rk_arc: std::sync::Arc<str>,
+    prop_bytes: bytes::Bytes,
+    body_bytes: bytes::Bytes,
+    is_persistent: bool,
+    priority: u8,
+    per_msg_ttl: Option<Duration>,
+}
+
+/// Enqueues the message into each target queue. Returns (queue, msg_id) pairs
+/// for downstream cluster replication.
+fn enqueue_to_targets(
+    conn_id: u64,
+    exchange_name: &str,
+    routing_key: &str,
+    properties: &BasicProperties,
+    body: &[u8],
+    target_queues: &[std::sync::Arc<str>],
+    confirm_tag: Option<u64>,
+    broker: &Broker,
+) -> Vec<(std::sync::Arc<str>, u64)> {
+    // OPT-3: encode properties once before the queue loop
+    let mut raw_props = Vec::new();
+    properties.encode(&mut raw_props).unwrap_or_default();
+
+    let ctx = EnqueueCtx {
+        exchange_arc: exchange_name.into(),
+        rk_arc: routing_key.into(),
+        prop_bytes: raw_props.into(),
+        body_bytes: body.to_vec().into(),
+        is_persistent: properties.delivery_mode == Some(2),
+        priority: properties.priority.unwrap_or(0),
+        per_msg_ttl: properties
+            .expiration
+            .as_ref()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(Duration::from_millis),
+    };
+
+    let mut published = Vec::new();
+    for queue_name in target_queues {
+        let msg_id = broker.alloc_msg_id();
+        published.push((queue_name.clone(), msg_id));
+        enqueue_single(conn_id, queue_name, msg_id, &ctx, confirm_tag, broker);
+    }
+    published
+}
+
+/// Enqueues a single message into one queue, handling TTL, priority capping,
+/// max-length eviction, WAL persistence, and fire-and-forget replication.
+fn enqueue_single(
+    conn_id: u64,
+    queue_name: &std::sync::Arc<str>,
+    msg_id: u64,
+    ctx: &EnqueueCtx,
+    confirm_tag: Option<u64>,
+    broker: &Broker,
+) {
+    let Some(mut queue_ref) = broker.queues.get_mut(queue_name.as_ref()) else {
+        return;
+    };
+    let queue = queue_ref.value_mut();
+
+    let expiration = resolve_ttl(queue.options.message_ttl, ctx.per_msg_ttl);
+    let effective_priority = cap_priority(ctx.priority, queue.options.max_priority);
+    evict_overflow(queue);
+
+    let disk_ref = persist_if_durable(queue, queue_name, msg_id, ctx, broker);
+    let msg = build_queue_message(msg_id, effective_priority, expiration, disk_ref, ctx);
+
+    queue.last_activity = Instant::now();
+    queue.messages.push_back(msg);
+    queue.stat_published += 1;
+    debug!(
+        conn_id,
+        msg_id,
+        queue = queue_name.as_ref(),
+        "queued via AMQP"
+    );
+    crate::metrics::record_published(queue_name);
+
+    if confirm_tag.is_none() {
+        fire_and_forget_replicate(broker, queue_name, msg_id, &ctx.body_bytes);
+    }
+}
+
+fn resolve_ttl(queue_ttl: Option<Duration>, msg_ttl: Option<Duration>) -> Option<Instant> {
+    match (queue_ttl, msg_ttl) {
+        (Some(qt), Some(pt)) => Some(Instant::now() + qt.min(pt)),
+        (Some(t), None) | (None, Some(t)) => Some(Instant::now() + t),
+        (None, None) => None,
+    }
+}
+
+fn cap_priority(requested: u8, max_priority: u8) -> u8 {
+    if max_priority > 0 {
+        requested.min(max_priority)
+    } else {
+        0
+    }
+}
+
+fn evict_overflow(queue: &mut crate::queue::state::QueueState) {
+    if let Some(max_len) = queue.options.max_length {
+        while queue.messages.len() >= max_len {
+            if queue.messages.pop_oldest().is_none() {
+                break;
             }
         }
     }
+}
 
-    if let Some(tag) = confirm_tag {
-        if let Some(c) = broker.cluster() {
-            for (queue_name, msg_id) in &published_messages {
-                let _ = c.replicate_publish(queue_name, *msg_id, body).await;
-            }
-        }
-        send_confirm_ack(channel, tag, writer).await;
+fn persist_if_durable(
+    queue: &crate::queue::state::QueueState,
+    queue_name: &std::sync::Arc<str>,
+    msg_id: u64,
+    ctx: &EnqueueCtx,
+    broker: &Broker,
+) -> Option<(u64, u64, u32)> {
+    if !queue.options.durable || !ctx.is_persistent {
+        return None;
     }
+    broker
+        .wal()
+        .log_enqueue(
+            queue_name.as_ref(),
+            msg_id,
+            &ctx.exchange_arc,
+            &ctx.rk_arc,
+            &ctx.prop_bytes,
+            &ctx.body_bytes,
+        )
+        .ok()
+}
+
+fn build_queue_message(
+    msg_id: u64,
+    priority: u8,
+    expiration: Option<Instant>,
+    disk_ref: Option<(u64, u64, u32)>,
+    ctx: &EnqueueCtx,
+) -> crate::queue::message::QueueMessage {
+    if let Some((segment_id, offset, length)) = disk_ref {
+        crate::queue::message::QueueMessage::Ref(crate::queue::message::MessageRef {
+            id: msg_id,
+            segment_id,
+            offset,
+            length,
+            priority,
+            expiration,
+            redelivered: false,
+            delivery_count: 0,
+            exchange: ctx.exchange_arc.clone(),
+            routing_key: ctx.rk_arc.clone(),
+        })
+    } else {
+        crate::queue::message::QueueMessage::Full(Message {
+            id: msg_id,
+            headers: ctx.prop_bytes.clone(),
+            body: ctx.body_bytes.clone(),
+            priority,
+            expiration,
+            redelivered: false,
+            delivery_count: 0,
+            exchange: ctx.exchange_arc.clone(),
+            routing_key: ctx.rk_arc.clone(),
+        })
+    }
+}
+
+fn fire_and_forget_replicate(
+    broker: &Broker,
+    queue_name: &std::sync::Arc<str>,
+    msg_id: u64,
+    body: &bytes::Bytes,
+) {
+    if let Some(c) = broker.cluster() {
+        let c = c.clone();
+        let q_name = queue_name.clone();
+        let body_vec = body.to_vec();
+        tokio::spawn(async move {
+            let _ = c.replicate_publish(&q_name, msg_id, &body_vec).await;
+        });
+    }
+}
+
+async fn replicate_confirmed_publishes(
+    channel: u16,
+    body: &[u8],
+    confirm_tag: Option<u64>,
+    published: &[(std::sync::Arc<str>, u64)],
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) {
+    let Some(tag) = confirm_tag else { return };
+    if let Some(c) = broker.cluster() {
+        for (queue_name, msg_id) in published {
+            let _ = c.replicate_publish(queue_name, *msg_id, body).await;
+        }
+    }
+    send_confirm_ack(channel, tag, writer).await;
 }
 
 fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64> {
@@ -398,7 +594,6 @@ pub async fn handle_consume(
 
     // AMQP 0-9-1 basic.consume includes an arguments field-table after flags.
     let arguments = read_field_table(&mut r).unwrap_or_default();
-
     let consumer_tag = if consumer_tag_arg.is_empty() {
         None
     } else {
@@ -419,91 +614,12 @@ pub async fn handle_consume(
         return;
     }
 
-    let has_consumers = broker
-        .queues
-        .get(&queue_name)
-        .is_some_and(|q| !q.consumer_tags.is_empty());
-    if exclusive && has_consumers {
-        send_channel_error(
-            writer,
-            channel,
-            ACCESS_REFUSED,
-            "ACCESS_REFUSED - exclusive consumer exists",
-            CLASS_BASIC,
-            METHOD_BASIC_CONSUME,
-        )
-        .await;
+    if reject_exclusive_conflict(channel, &queue_name, exclusive, writer, broker).await {
         return;
     }
 
-    // Consumer schema compatibility: if the consumer sends its own proto
-    // definition, verify every consumer field exists in the queue's schema.
-    if let Some(FieldValue::LongString(raw_schema)) = arguments.get("x-consumer-schema") {
-        let message_name = match arguments.get("x-consumer-schema-message") {
-            Some(FieldValue::LongString(v)) => String::from_utf8_lossy(v).to_string(),
-            _ => {
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    "PRECONDITION_FAILED - x-consumer-schema-message required with x-consumer-schema",
-                    CLASS_BASIC,
-                    METHOD_BASIC_CONSUME,
-                )
-                .await;
-                return;
-            }
-        };
-
-        let consumer_compiled = match crate::schema::compile_proto(raw_schema, &message_name) {
-            Ok(c) => c,
-            Err(_) => {
-                let compile_err = crate::schema::error::BrokerError {
-                    code: crate::schema::error::ErrorCode::SchemaCompileFailed,
-                    queue: queue_name.clone(),
-                    fields: vec![],
-                    truncated: false,
-                };
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &compile_err.to_reply_text(),
-                    CLASS_BASIC,
-                    METHOD_BASIC_CONSUME,
-                )
-                .await;
-                return;
-            }
-        };
-
-        let consumer_subset_err = broker
-            .queues
-            .get(&queue_name)
-            .and_then(|q| q.schema.clone())
-            .and_then(|s| {
-                crate::schema::validate::check_consumer_subset(&s, &consumer_compiled).err()
-            });
-
-        if let Some(err) = consumer_subset_err {
-            warn!(
-                conn_id,
-                queue = queue_name.as_str(),
-                "consumer schema not a subset of queue schema: {}",
-                err
-            );
-            let broker_err = crate::schema::error::to_broker_error(&queue_name, &err);
-            send_channel_error(
-                writer,
-                channel,
-                PRECONDITION_FAILED,
-                &broker_err.to_reply_text(),
-                CLASS_BASIC,
-                METHOD_BASIC_CONSUME,
-            )
-            .await;
-            return;
-        }
+    if validate_consumer_schema(conn_id, channel, &queue_name, &arguments, writer, broker).await {
+        return;
     }
 
     let assigned_tag = match broker.queues.get_mut(&queue_name) {
@@ -539,6 +655,112 @@ pub async fn handle_consume(
         let _ = writer.write_all(&reply).await;
         let _ = writer.flush().await;
     }
+}
+
+/// Rejects a basic.consume if the queue already has consumers and exclusive is set.
+async fn reject_exclusive_conflict(
+    channel: u16,
+    queue_name: &str,
+    exclusive: bool,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) -> bool {
+    let has_consumers = broker
+        .queues
+        .get(queue_name)
+        .is_some_and(|q| !q.consumer_tags.is_empty());
+    if !exclusive || !has_consumers {
+        return false;
+    }
+    send_channel_error(
+        writer,
+        channel,
+        ACCESS_REFUSED,
+        "ACCESS_REFUSED - exclusive consumer exists",
+        CLASS_BASIC,
+        METHOD_BASIC_CONSUME,
+    )
+    .await;
+    true
+}
+
+/// Validates consumer-supplied schema against the queue's schema if x-consumer-schema is present.
+/// Returns true if validation failed (caller should return early).
+async fn validate_consumer_schema(
+    conn_id: u64,
+    channel: u16,
+    queue_name: &str,
+    arguments: &std::collections::BTreeMap<String, FieldValue>,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) -> bool {
+    let Some(FieldValue::LongString(raw_schema)) = arguments.get("x-consumer-schema") else {
+        return false;
+    };
+
+    let message_name =
+        match arguments.get("x-consumer-schema-message") {
+            Some(FieldValue::LongString(v)) => String::from_utf8_lossy(v).to_string(),
+            _ => {
+                send_channel_error(
+                writer, channel, PRECONDITION_FAILED,
+                "PRECONDITION_FAILED - x-consumer-schema-message required with x-consumer-schema",
+                CLASS_BASIC, METHOD_BASIC_CONSUME,
+            )
+            .await;
+                return true;
+            }
+        };
+
+    let consumer_compiled = match crate::schema::compile_proto(raw_schema, &message_name) {
+        Ok(c) => c,
+        Err(_) => {
+            let err = crate::schema::error::BrokerError {
+                code: crate::schema::error::ErrorCode::SchemaCompileFailed,
+                queue: queue_name.to_string(),
+                fields: vec![],
+                truncated: false,
+            };
+            send_channel_error(
+                writer,
+                channel,
+                PRECONDITION_FAILED,
+                &err.to_reply_text(),
+                CLASS_BASIC,
+                METHOD_BASIC_CONSUME,
+            )
+            .await;
+            return true;
+        }
+    };
+
+    let subset_err = broker
+        .queues
+        .get(queue_name)
+        .and_then(|q| q.schema.clone())
+        .and_then(|s| crate::schema::validate::check_consumer_subset(&s, &consumer_compiled).err());
+
+    let Some(err) = subset_err else {
+        return false;
+    };
+
+    warn!(
+        conn_id,
+        queue = queue_name,
+        "consumer schema not a subset of queue schema: {}",
+        err
+    );
+    let broker_err = crate::schema::error::to_broker_error(queue_name, &err);
+    send_channel_error(
+        writer,
+        channel,
+        PRECONDITION_FAILED,
+        &broker_err.to_reply_text(),
+        CLASS_BASIC,
+        METHOD_BASIC_CONSUME,
+    )
+    .await;
+    true
 }
 
 pub async fn handle_cancel(
@@ -717,75 +939,82 @@ pub async fn handle_get(
         }
     };
 
-    match q_msg {
-        Some(q_msg) => {
-            let msg = match q_msg.resolve(broker.wal()) {
-                Ok(m) => m,
-                Err(e) => {
-                    warn!("Failed to resolve basic.get message: {}", e);
-                    let mut reply_args = Vec::new();
-                    write_shortstr(&mut reply_args, "").unwrap();
-                    let reply = encode_method_frame(
-                        channel,
-                        CLASS_BASIC,
-                        METHOD_BASIC_GET_EMPTY,
-                        &reply_args,
-                    );
-                    let _ = writer.write_all(&reply).await;
-                    let _ = writer.flush().await;
-                    return;
-                }
-            };
-            let delivery_tag = msg.id;
-            let msg_count = broker
-                .queues
-                .get(&queue_name)
-                .map(|q| q.messages.len() as u32)
-                .unwrap_or(0);
+    let Some(q_msg) = q_msg else {
+        send_get_empty(channel, writer).await;
+        return;
+    };
 
-            let mut reply_args = Vec::new();
-            write_longlong(&mut reply_args, delivery_tag).unwrap();
-            write_octet(&mut reply_args, if msg.redelivered { 1 } else { 0 }).unwrap();
-            write_shortstr(&mut reply_args, &msg.exchange).unwrap();
-            write_shortstr(&mut reply_args, &msg.routing_key).unwrap();
-            write_long(&mut reply_args, msg_count).unwrap();
-
-            let method =
-                encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_OK, &reply_args);
-            let props = BasicProperties::default();
-            let header = encode_content_header(channel, CLASS_BASIC, msg.body.len() as u64, &props);
-
-            let _ = writer.write_all(&method).await;
-            let _ = writer.write_all(&header).await;
-            if !msg.body.is_empty() {
-                let body_frame = encode_body_frame(channel, &msg.body);
-                let _ = writer.write_all(&body_frame).await;
-            }
-            let _ = writer.flush().await;
-
-            if !no_ack {
-                // OPT-1: Also index this delivery for O(1) ack lookup
-                broker
-                    .delivery_index
-                    .insert(delivery_tag, queue_name.clone().into());
-                broker
-                    .conn_deliveries
-                    .entry(conn_id)
-                    .or_default()
-                    .push((queue_name.clone().into(), delivery_tag));
-                if let Some(mut q) = broker.queues.get_mut(&queue_name) {
-                    q.inflight.insert(delivery_tag, msg);
-                }
-            }
+    let msg = match q_msg.resolve(broker.wal()) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("Failed to resolve basic.get message: {}", e);
+            send_get_empty(channel, writer).await;
+            return;
         }
-        None => {
-            let mut reply_args = Vec::new();
-            write_shortstr(&mut reply_args, "").unwrap();
-            let reply =
-                encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_EMPTY, &reply_args);
-            let _ = writer.write_all(&reply).await;
-            let _ = writer.flush().await;
-        }
+    };
+
+    send_get_ok(channel, &queue_name, &msg, writer, broker).await;
+
+    if !no_ack {
+        track_get_delivery(conn_id, &queue_name, msg, broker);
+    }
+}
+
+async fn send_get_empty(channel: u16, writer: &mut crate::protocol::amqp::AmqpWriter) {
+    let mut reply_args = Vec::new();
+    write_shortstr(&mut reply_args, "").unwrap();
+    let reply = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_EMPTY, &reply_args);
+    let _ = writer.write_all(&reply).await;
+    let _ = writer.flush().await;
+}
+
+async fn send_get_ok(
+    channel: u16,
+    queue_name: &str,
+    msg: &Message,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+) {
+    let msg_count = broker
+        .queues
+        .get(queue_name)
+        .map(|q| q.messages.len() as u32)
+        .unwrap_or(0);
+
+    let mut reply_args = Vec::new();
+    write_longlong(&mut reply_args, msg.id).unwrap();
+    write_octet(&mut reply_args, if msg.redelivered { 1 } else { 0 }).unwrap();
+    write_shortstr(&mut reply_args, &msg.exchange).unwrap();
+    write_shortstr(&mut reply_args, &msg.routing_key).unwrap();
+    write_long(&mut reply_args, msg_count).unwrap();
+
+    let method = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_GET_OK, &reply_args);
+    let props = BasicProperties::default();
+    let header = encode_content_header(channel, CLASS_BASIC, msg.body.len() as u64, &props);
+
+    let _ = writer.write_all(&method).await;
+    let _ = writer.write_all(&header).await;
+    if !msg.body.is_empty() {
+        let body_frame = encode_body_frame(channel, &msg.body);
+        let _ = writer.write_all(&body_frame).await;
+    }
+    let _ = writer.flush().await;
+}
+
+/// Tracks a basic.get delivery for O(1) ack lookup.
+fn track_get_delivery(conn_id: u64, queue_name: &str, msg: Message, broker: &Broker) {
+    let delivery_tag = msg.id;
+    // OPT-1: index this delivery for O(1) ack lookup
+    broker
+        .delivery_index
+        .insert(delivery_tag, queue_name.into());
+    broker
+        .conn_deliveries
+        .entry(conn_id)
+        .or_default()
+        .push((queue_name.into(), delivery_tag));
+    if let Some(mut q) = broker.queues.get_mut(queue_name) {
+        q.inflight.insert(delivery_tag, msg);
     }
 }
 
