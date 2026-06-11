@@ -1,16 +1,14 @@
 # RocketMQ
 
-A message broker with built-in schema validation, written from scratch in Rust. Currently speaks AMQP 0-9-1 (wire-compatible with RabbitMQ), with more protocols on the roadmap.
+A high-performance message broker with **built-in schema enforcement**, written in Rust. One binary, no external services.
 
-## Why
+## Why RocketMQ
 
-Most brokers treat messages as opaque blobs and push schema validation to external services — a schema registry you have to deploy, a sidecar you have to maintain, or client-side logic you have to trust. RocketMQ takes a different approach: **schema validation lives inside the broker itself**.
+**Messages are validated before they're accepted.** Attach a schema (Protobuf or JSON) to any queue and the broker rejects malformed payloads at publish time. Bad data never reaches your consumers. No schema registry to deploy, no sidecar to maintain — it's part of the broker.
 
-When a queue declares a schema (Protobuf or JSON), every message published to that queue is validated at publish time by the broker core. Malformed payloads are rejected before they ever reach a consumer. No sidecar, no gateway, no external service — just the broker doing what a broker should do.
+**Drop-in RabbitMQ alternative.** Wire-compatible with AMQP 0-9-1. Point any standard client (`amqplib`, `pika`, `lapin`) at it and it works. More protocols planned.
 
-The validation is language-agnostic: define your schema once and every producer, regardless of language or client library, gets the same enforcement. This makes RocketMQ particularly well-suited for polyglot architectures where you can't rely on every team using the same serialization library.
-
-Beyond schema validation, RocketMQ is a ground-up Rust implementation focused on performance, correctness, and operational simplicity. It currently implements AMQP 0-9-1 (any standard AMQP client — `amqplib`, `pika`, `lapin`, etc. — works out of the box), with additional protocol support planned.
+**Single binary, zero dependencies.** No JVM, no Zookeeper, no Erlang runtime. `cargo build` and you're running.
 
 ## Features
 
