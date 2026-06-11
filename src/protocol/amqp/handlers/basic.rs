@@ -35,11 +35,9 @@ use crate::protocol::amqp::properties::BasicProperties;
 use crate::protocol::amqp::types::*;
 
 use super::auth_check::send_channel_error;
-use crate::protocol::amqp::session::{ConnectionState, PendingOp};
+use crate::protocol::amqp::session::PendingOp;
 use crate::queue::Message;
 use crate::state::Broker;
-
-// ─── Basic.Publish ────────────────────────────────────
 
 #[inline]
 pub fn parse_publish_args(args: &[u8]) -> (String, String, bool, bool) {
@@ -80,35 +78,21 @@ pub async fn handle_publish(
 
     let confirm_tag = alloc_confirm_tag(conn_id, channel, broker);
 
-    let tx_mode = broker
-        .conn_state
-        .get(&conn_id)
-        .and_then(|guard| {
-            guard
-                .value()
-                .as_any()
-                .downcast_ref::<ConnectionState>()
-                .map(|cs| cs.tx_mode)
-        })
-        .unwrap_or(false);
+    let tx_mode =
+        crate::protocol::amqp::session::with_conn_state_ref(broker, conn_id, |cs| cs.tx_mode)
+            .unwrap_or(false);
 
     if tx_mode {
-        if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-            if let Some(cs) = cs_guard
-                .value_mut()
-                .as_any_mut()
-                .downcast_mut::<ConnectionState>()
-            {
-                let mut prop_bytes = Vec::new();
-                properties.encode(&mut prop_bytes).unwrap_or_default();
-                cs.tx_buffer.push(PendingOp::Publish {
-                    exchange: exchange_name.into(),
-                    routing_key: routing_key.into(),
-                    headers: prop_bytes.into(),
-                    body: body.to_vec().into(),
-                });
-            }
-        }
+        let mut prop_bytes = Vec::new();
+        properties.encode(&mut prop_bytes).unwrap_or_default();
+        crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+            cs.tx_buffer.push(PendingOp::Publish {
+                exchange: exchange_name.into(),
+                routing_key: routing_key.into(),
+                headers: prop_bytes.into(),
+                body: body.to_vec().into(),
+            });
+        });
         return;
     }
 
@@ -329,21 +313,16 @@ pub async fn handle_publish(
     }
 }
 
-// ─── Publisher Confirm Helpers ────────────────────────
-
 fn alloc_confirm_tag(conn_id: u64, channel: u16, broker: &Broker) -> Option<u64> {
-    let mut cs_guard = broker.conn_state.get_mut(&conn_id)?;
-    let cs = cs_guard
-        .value_mut()
-        .as_any_mut()
-        .downcast_mut::<ConnectionState>()?;
-    let ch = cs.channels.get_mut(&channel)?;
-    if !ch.confirm_mode {
-        return None;
-    }
-    let tag = ch.next_delivery_tag;
-    ch.next_delivery_tag += 1;
-    Some(tag)
+    crate::protocol::amqp::session::with_channel(broker, conn_id, channel, |ch| {
+        if !ch.confirm_mode {
+            return None;
+        }
+        let tag = ch.next_delivery_tag;
+        ch.next_delivery_tag += 1;
+        Some(tag)
+    })
+    .flatten()
 }
 
 async fn send_confirm_ack(
@@ -373,8 +352,6 @@ async fn send_confirm_nack(
     let _ = writer.flush().await;
 }
 
-// ─── Basic.Return ─────────────────────────────────────
-
 async fn send_basic_return(
     channel: u16,
     reply_code: u16,
@@ -401,8 +378,6 @@ async fn send_basic_return(
     }
     let _ = writer.flush().await;
 }
-
-// ─── Basic.Consume ────────────────────────────────────
 
 pub async fn handle_consume(
     conn_id: u64,
@@ -566,8 +541,6 @@ pub async fn handle_consume(
     }
 }
 
-// ─── Basic.Cancel ─────────────────────────────────────
-
 pub async fn handle_cancel(
     conn_id: u64,
     channel: u16,
@@ -598,7 +571,21 @@ pub async fn handle_cancel(
     }
 }
 
-// ─── Basic.Ack ────────────────────────────────────────
+/// Decrements the unacked count for a channel. O(1), zero-clone.
+fn decrement_unacked(broker: &Broker, conn_id: u64, channel: u16) {
+    crate::protocol::amqp::session::with_channel(broker, conn_id, channel, |ch| {
+        if ch.unacked_count > 0 {
+            ch.unacked_count -= 1;
+        }
+    });
+}
+
+/// Removes a delivery from conn_deliveries tracking.
+fn untrack_delivery(broker: &Broker, conn_id: u64, delivery_tag: u64) {
+    if let Some(mut deliveries) = broker.conn_deliveries.get_mut(&conn_id) {
+        deliveries.retain(|(_, tag)| *tag != delivery_tag);
+    }
+}
 
 pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
@@ -606,48 +593,30 @@ pub async fn handle_ack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker
     let flags = read_octet(&mut r).unwrap_or(0);
     let _multiple = flags & 0x01 != 0;
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if let Some(ch) = cs.channels.get_mut(&channel) {
-                if ch.unacked_count > 0 {
-                    ch.unacked_count -= 1;
-                }
-            }
-        }
-    }
+    decrement_unacked(broker, conn_id, channel);
 
     // OPT-1: O(1) lookup via delivery_index instead of scanning all queues
     let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
-    if let Some(qn) = queue_name {
-        if let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) {
-            if entry.inflight.remove(&delivery_tag).is_some() {
-                let _ = broker.wal().log_ack(delivery_tag);
-                entry.stat_acked += 1;
-                crate::metrics::record_acked();
-                info!(conn_id, delivery_tag, "acked");
-                if let Some(mut deliveries) = broker.conn_deliveries.get_mut(&conn_id) {
-                    deliveries.retain(|(_, tag)| *tag != delivery_tag);
-                }
-
-                if let Some(c) = broker.cluster() {
-                    let c = c.clone();
-                    let q_name = qn.to_string();
-                    tokio::spawn(async move {
-                        let _ = c.replicate_ack(&q_name, delivery_tag).await;
-                    });
-                }
-                return;
-            }
-        }
+    let Some(qn) = queue_name else {
+        warn!(conn_id, delivery_tag, "ack for unknown delivery tag");
+        return;
+    };
+    let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) else {
+        warn!(conn_id, delivery_tag, "ack for unknown delivery tag");
+        return;
+    };
+    if entry.inflight.remove(&delivery_tag).is_none() {
+        warn!(conn_id, delivery_tag, "ack for unknown delivery tag");
+        return;
     }
-    warn!(conn_id, delivery_tag, "ack for unknown delivery tag");
-}
 
-// ─── Basic.Reject ─────────────────────────────────────
+    let _ = broker.wal().log_ack(delivery_tag);
+    entry.stat_acked += 1;
+    crate::metrics::record_acked();
+    info!(conn_id, delivery_tag, "acked");
+    untrack_delivery(broker, conn_id, delivery_tag);
+    spawn_replicate_ack(broker, &qn, delivery_tag);
+}
 
 pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
@@ -655,46 +624,9 @@ pub async fn handle_reject(conn_id: u64, channel: u16, args: &[u8], broker: &Bro
     let flags = read_octet(&mut r).unwrap_or(0);
     let requeue = flags & 0x01 != 0;
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if let Some(ch) = cs.channels.get_mut(&channel) {
-                if ch.unacked_count > 0 {
-                    ch.unacked_count -= 1;
-                }
-            }
-        }
-    }
-
-    // OPT-1: O(1) lookup via delivery_index
-    let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
-    if let Some(qn) = queue_name {
-        if let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) {
-            if let Some(mut msg) = entry.inflight.remove(&delivery_tag) {
-                if let Some(mut deliveries) = broker.conn_deliveries.get_mut(&conn_id) {
-                    deliveries.retain(|(_, tag)| *tag != delivery_tag);
-                }
-                if requeue {
-                    msg.redelivered = true;
-                    msg.delivery_count += 1;
-                    entry
-                        .messages
-                        .push_front(crate::queue::message::QueueMessage::Full(msg));
-                    info!(conn_id, delivery_tag, "rejected+requeued");
-                } else {
-                    info!(conn_id, delivery_tag, "rejected+discarded");
-                }
-                return;
-            }
-        }
-    }
-    warn!(conn_id, delivery_tag, "reject for unknown delivery tag");
+    decrement_unacked(broker, conn_id, channel);
+    resolve_negative_delivery(broker, conn_id, delivery_tag, requeue, "rejected");
 }
-
-// ─── Basic.Nack ───────────────────────────────────────
 
 pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broker) {
     let mut r = Cursor::new(args);
@@ -703,46 +635,57 @@ pub async fn handle_nack(conn_id: u64, channel: u16, args: &[u8], broker: &Broke
     let _multiple = flags & 0x01 != 0;
     let requeue = flags & 0x02 != 0;
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if let Some(ch) = cs.channels.get_mut(&channel) {
-                if ch.unacked_count > 0 {
-                    ch.unacked_count -= 1;
-                }
-            }
-        }
-    }
-
-    // OPT-1: O(1) lookup via delivery_index
-    let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
-    if let Some(qn) = queue_name {
-        if let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) {
-            if let Some(mut msg) = entry.inflight.remove(&delivery_tag) {
-                if let Some(mut deliveries) = broker.conn_deliveries.get_mut(&conn_id) {
-                    deliveries.retain(|(_, tag)| *tag != delivery_tag);
-                }
-                if requeue {
-                    msg.redelivered = true;
-                    msg.delivery_count += 1;
-                    entry
-                        .messages
-                        .push_front(crate::queue::message::QueueMessage::Full(msg));
-                    info!(conn_id, delivery_tag, "nacked+requeued");
-                } else {
-                    info!(conn_id, delivery_tag, "nacked+discarded");
-                }
-                return;
-            }
-        }
-    }
-    warn!(conn_id, delivery_tag, "nack for unknown delivery tag");
+    decrement_unacked(broker, conn_id, channel);
+    resolve_negative_delivery(broker, conn_id, delivery_tag, requeue, "nacked");
 }
 
-// ─── Basic.Get ────────────────────────────────────────
+/// Shared logic for reject/nack: looks up the inflight message by delivery
+/// tag, optionally requeues it, and cleans up tracking state.
+fn resolve_negative_delivery(
+    broker: &Broker,
+    conn_id: u64,
+    delivery_tag: u64,
+    requeue: bool,
+    verb: &str,
+) {
+    // OPT-1: O(1) lookup via delivery_index
+    let queue_name = broker.delivery_index.remove(&delivery_tag).map(|(_, v)| v);
+    let Some(qn) = queue_name else {
+        warn!(conn_id, delivery_tag, "{}  for unknown delivery tag", verb);
+        return;
+    };
+    let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) else {
+        warn!(conn_id, delivery_tag, "{} for unknown delivery tag", verb);
+        return;
+    };
+    let Some(mut msg) = entry.inflight.remove(&delivery_tag) else {
+        warn!(conn_id, delivery_tag, "{} for unknown delivery tag", verb);
+        return;
+    };
+
+    untrack_delivery(broker, conn_id, delivery_tag);
+    if requeue {
+        msg.redelivered = true;
+        msg.delivery_count += 1;
+        entry
+            .messages
+            .push_front(crate::queue::message::QueueMessage::Full(msg));
+        info!(conn_id, delivery_tag, "{}+requeued", verb);
+    } else {
+        info!(conn_id, delivery_tag, "{}+discarded", verb);
+    }
+}
+
+/// Spawns a cluster ack replication task if clustering is enabled.
+fn spawn_replicate_ack(broker: &Broker, queue_name: &std::sync::Arc<str>, delivery_tag: u64) {
+    if let Some(c) = broker.cluster() {
+        let c = c.clone();
+        let q_name = queue_name.to_string();
+        tokio::spawn(async move {
+            let _ = c.replicate_ack(&q_name, delivery_tag).await;
+        });
+    }
+}
 
 pub async fn handle_get(
     conn_id: u64,
@@ -846,8 +789,6 @@ pub async fn handle_get(
     }
 }
 
-// ─── Basic.Qos ────────────────────────────────────────
-
 pub async fn handle_qos(
     conn_id: u64,
     channel: u16,
@@ -861,29 +802,21 @@ pub async fn handle_qos(
     let flags = read_octet(&mut r).unwrap_or(0);
     let global = flags & 0x01 != 0;
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if global {
-                for ch in cs.channels.values_mut() {
-                    ch.prefetch_count = prefetch_count;
-                }
-            } else if let Some(ch) = cs.channels.get_mut(&channel) {
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        if global {
+            for ch in cs.channels.values_mut() {
                 ch.prefetch_count = prefetch_count;
             }
+        } else if let Some(ch) = cs.channels.get_mut(&channel) {
+            ch.prefetch_count = prefetch_count;
         }
-    }
+    });
 
     info!(conn_id, channel, prefetch_count, global, "qos set");
     let reply = encode_method_frame(channel, CLASS_BASIC, METHOD_BASIC_QOS_OK, &[]);
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
 }
-
-// ─── Basic.Recover ────────────────────────────────────
 
 pub async fn handle_recover(
     conn_id: u64,
@@ -897,8 +830,6 @@ pub async fn handle_recover(
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
 }
-
-// ─── Helpers ──────────────────────────────────────────
 
 #[inline]
 pub fn build_deliver_args(
@@ -921,6 +852,7 @@ pub fn build_deliver_args(
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+    use crate::protocol::amqp::session::ConnectionState;
 
     #[test]
     fn publish_args_parse() {
