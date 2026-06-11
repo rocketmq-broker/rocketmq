@@ -78,20 +78,11 @@ pub async fn send_channel_error(
     let _ = writer.flush().await;
 }
 
-use crate::protocol::amqp::session::ConnectionState;
-
 pub fn get_conn_auth(broker: &Broker, conn_id: u64) -> (String, String) {
-    broker
-        .conn_state
-        .get(&conn_id)
-        .and_then(|guard| {
-            guard
-                .value()
-                .as_any()
-                .downcast_ref::<ConnectionState>()
-                .map(|cs| (cs.username.clone(), cs.vhost.clone()))
-        })
-        .unwrap_or_default()
+    crate::protocol::amqp::session::with_conn_state_ref(broker, conn_id, |cs| {
+        (cs.username.clone(), cs.vhost.clone())
+    })
+    .unwrap_or_default()
 }
 
 pub async fn check_configure(
