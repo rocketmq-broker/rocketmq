@@ -25,12 +25,10 @@ use tracing::{info, warn};
 use crate::protocol::amqp::codec::*;
 use crate::protocol::amqp::method::*;
 
-use crate::protocol::amqp::session::{ConnectionState, PendingOp};
+use crate::protocol::amqp::session::PendingOp;
 use crate::state::Broker;
 
 use super::auth_check::send_channel_error;
-
-// ─── Tx.Select ────────────────────────────────────────
 
 pub async fn handle_tx_select(
     conn_id: u64,
@@ -38,23 +36,15 @@ pub async fn handle_tx_select(
     writer: &mut crate::protocol::amqp::AmqpWriter,
     broker: &Broker,
 ) {
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            cs.tx_mode = true;
-            cs.tx_buffer.clear();
-        }
-    }
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.tx_mode = true;
+        cs.tx_buffer.clear();
+    });
     info!(conn_id, channel, "tx mode enabled");
     let reply = encode_method_frame(channel, CLASS_TX, METHOD_TX_SELECT_OK, &[]);
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
 }
-
-// ─── Tx.Commit ────────────────────────────────────────
 
 pub async fn process_tx_commit(
     conn_id: u64,
@@ -62,70 +52,103 @@ pub async fn process_tx_commit(
     writer: &mut crate::protocol::amqp::AmqpWriter,
     broker: &Broker,
 ) {
-    let ops = {
-        let mut cs_guard = match broker.conn_state.get_mut(&conn_id) {
-            Some(g) => g,
-            None => return,
-        };
-        let cs = match cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            Some(c) => c,
-            None => return,
-        };
-        if !cs.tx_mode {
-            warn!(conn_id, "tx_commit without tx_select");
-            send_channel_error(
-                writer,
-                channel,
-                PRECONDITION_FAILED,
-                "PRECONDITION_FAILED - not in tx mode",
-                CLASS_TX,
-                METHOD_TX_COMMIT,
-            )
-            .await;
-            return;
-        }
-        std::mem::take(&mut cs.tx_buffer)
+    let ops = match drain_tx_buffer(conn_id, channel, writer, broker, METHOD_TX_COMMIT).await {
+        Some(ops) => ops,
+        None => return,
     };
 
-    for op in &ops {
-        if let PendingOp::Publish {
-            routing_key, body, ..
-        } = op
-        {
-            let schema_err = broker
-                .queues
-                .get(routing_key.as_ref())
-                .and_then(|q| q.schema.clone())
-                .and_then(|s| crate::schema::validate::validate_message(&s, body).err());
-
-            if let Some(err) = schema_err {
-                warn!(
-                    conn_id,
-                    queue = routing_key.as_ref(),
-                    "transactional schema validation failed: {}",
-                    err
-                );
-                crate::metrics::record_schema_validation_failed(routing_key);
-                let broker_err = crate::schema::error::to_broker_error(routing_key, &err);
-                send_channel_error(
-                    writer,
-                    channel,
-                    PRECONDITION_FAILED,
-                    &broker_err.to_reply_text(),
-                    CLASS_TX,
-                    METHOD_TX_COMMIT,
-                )
-                .await;
-                return;
-            }
-        }
+    if !validate_tx_schemas(conn_id, channel, writer, broker, &ops).await {
+        return;
     }
 
-    for op in &ops {
+    apply_tx_ops(conn_id, broker, &ops);
+    info!(conn_id, channel, ops = ops.len(), "tx committed");
+    let reply = encode_method_frame(channel, CLASS_TX, METHOD_TX_COMMIT_OK, &[]);
+    let _ = writer.write_all(&reply).await;
+    let _ = writer.flush().await;
+}
+
+/// Drains the tx_buffer from the ConnectionState, returning the pending ops.
+/// Sends a channel error and returns `None` if not in tx mode.
+async fn drain_tx_buffer(
+    conn_id: u64,
+    channel: u16,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+    method_id: u16,
+) -> Option<Vec<PendingOp>> {
+    let result = crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        if !cs.tx_mode {
+            return None;
+        }
+        Some(std::mem::take(&mut cs.tx_buffer))
+    })
+    .flatten();
+
+    if result.is_none() {
+        warn!(conn_id, "tx operation without tx_select");
+        send_channel_error(
+            writer,
+            channel,
+            PRECONDITION_FAILED,
+            "PRECONDITION_FAILED - not in tx mode",
+            CLASS_TX,
+            method_id,
+        )
+        .await;
+    }
+    result
+}
+
+/// Validates all publish ops in the tx buffer against queue schemas.
+/// Returns `false` and sends a channel error on the first validation failure.
+async fn validate_tx_schemas(
+    conn_id: u64,
+    channel: u16,
+    writer: &mut crate::protocol::amqp::AmqpWriter,
+    broker: &Broker,
+    ops: &[PendingOp],
+) -> bool {
+    for op in ops {
+        let PendingOp::Publish {
+            routing_key, body, ..
+        } = op
+        else {
+            continue;
+        };
+        let schema_err = broker
+            .queues
+            .get(routing_key.as_ref())
+            .and_then(|q| q.schema.clone())
+            .and_then(|s| crate::schema::validate::validate_message(&s, body).err());
+
+        let Some(err) = schema_err else { continue };
+
+        warn!(
+            conn_id,
+            queue = routing_key.as_ref(),
+            "transactional schema validation failed: {}",
+            err
+        );
+        crate::metrics::record_schema_validation_failed(routing_key);
+        let broker_err = crate::schema::error::to_broker_error(routing_key, &err);
+        send_channel_error(
+            writer,
+            channel,
+            PRECONDITION_FAILED,
+            &broker_err.to_reply_text(),
+            CLASS_TX,
+            METHOD_TX_COMMIT,
+        )
+        .await;
+        return false;
+    }
+    true
+}
+
+/// Applies committed tx operations (publish + ack) to the broker.
+fn apply_tx_ops(conn_id: u64, broker: &Broker, ops: &[PendingOp]) {
+    for op in ops {
         match op {
             PendingOp::Publish {
                 exchange,
@@ -148,29 +171,28 @@ pub async fn process_tx_commit(
                 }
             }
             PendingOp::Ack { msg_id } => {
-                // OPT-1: O(1) lookup via delivery_index
-                let queue_name = broker.delivery_index.remove(msg_id).map(|(_, v)| v);
-                if let Some(qn) = queue_name {
-                    if let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) {
-                        if entry.inflight.remove(msg_id).is_some() {
-                            let _ = broker.wal().log_ack(*msg_id);
-                            if let Some(mut deliveries) = broker.conn_deliveries.get_mut(&conn_id) {
-                                deliveries.retain(|(_, tag)| tag != msg_id);
-                            }
-                        }
-                    }
-                }
+                apply_tx_ack(conn_id, broker, *msg_id);
             }
         }
     }
-
-    info!(conn_id, channel, ops = ops.len(), "tx committed");
-    let reply = encode_method_frame(channel, CLASS_TX, METHOD_TX_COMMIT_OK, &[]);
-    let _ = writer.write_all(&reply).await;
-    let _ = writer.flush().await;
 }
 
-// ─── Tx.Rollback ──────────────────────────────────────
+/// Applies a single transactional ack to the broker.
+fn apply_tx_ack(conn_id: u64, broker: &Broker, msg_id: u64) {
+    // OPT-1: O(1) lookup via delivery_index
+    let queue_name = broker.delivery_index.remove(&msg_id).map(|(_, v)| v);
+    let Some(qn) = queue_name else { return };
+    let Some(mut entry) = broker.queues.get_mut(qn.as_ref()) else {
+        return;
+    };
+    if entry.inflight.remove(&msg_id).is_none() {
+        return;
+    }
+    let _ = broker.wal().log_ack(msg_id);
+    if let Some(mut deliveries) = broker.conn_deliveries.get_mut(&conn_id) {
+        deliveries.retain(|(_, tag)| *tag != msg_id);
+    }
+}
 
 pub async fn process_tx_rollback(
     conn_id: u64,
@@ -178,44 +200,16 @@ pub async fn process_tx_rollback(
     writer: &mut crate::protocol::amqp::AmqpWriter,
     broker: &Broker,
 ) {
-    let discarded = {
-        let mut cs_guard = match broker.conn_state.get_mut(&conn_id) {
-            Some(g) => g,
-            None => return,
-        };
-        let cs = match cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            Some(c) => c,
-            None => return,
-        };
-        if !cs.tx_mode {
-            warn!(conn_id, "tx_rollback without tx_select");
-            send_channel_error(
-                writer,
-                channel,
-                PRECONDITION_FAILED,
-                "PRECONDITION_FAILED - not in tx mode",
-                CLASS_TX,
-                METHOD_TX_ROLLBACK,
-            )
-            .await;
-            return;
-        }
-        let count = cs.tx_buffer.len();
-        cs.tx_buffer.clear();
-        count
+    let ops = match drain_tx_buffer(conn_id, channel, writer, broker, METHOD_TX_ROLLBACK).await {
+        Some(ops) => ops,
+        None => return,
     };
 
-    info!(conn_id, channel, discarded, "tx rolled back");
+    info!(conn_id, channel, discarded = ops.len(), "tx rolled back");
     let reply = encode_method_frame(channel, CLASS_TX, METHOD_TX_ROLLBACK_OK, &[]);
     let _ = writer.write_all(&reply).await;
     let _ = writer.flush().await;
 }
-
-// ─── Confirm.Select ───────────────────────────────────
 
 pub async fn handle_confirm_select(
     conn_id: u64,
@@ -226,18 +220,10 @@ pub async fn handle_confirm_select(
 ) {
     let no_wait = args.first().copied().unwrap_or(0) & 0x01 != 0;
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            if let Some(ch) = cs.channels.get_mut(&channel) {
-                ch.confirm_mode = true;
-                ch.next_delivery_tag = 1;
-            }
-        }
-    }
+    crate::protocol::amqp::session::with_channel(broker, conn_id, channel, |ch| {
+        ch.confirm_mode = true;
+        ch.next_delivery_tag = 1;
+    });
 
     info!(conn_id, channel, "confirm mode enabled");
     if !no_wait {
@@ -251,6 +237,7 @@ pub async fn handle_confirm_select(
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+    use crate::protocol::amqp::session::ConnectionState;
 
     #[test]
     fn tx_select_ok_frame() {
