@@ -32,8 +32,6 @@ use std::io::{self, Cursor};
 
 use crate::protocol::amqp::properties::BasicProperties;
 
-// ─── Constants ─────────────────────────────────────────
-
 pub const FRAME_METHOD: u8 = 1;
 pub const FRAME_HEADER: u8 = 2;
 pub const FRAME_BODY: u8 = 3;
@@ -47,8 +45,6 @@ pub const DEFAULT_FRAME_MAX: u32 = 131_072;
 pub const DEFAULT_CHANNEL_MAX: u16 = 2047;
 
 pub const DEFAULT_HEARTBEAT: u16 = 60;
-
-// ─── Frame Structures ─────────────────────────────────
 
 #[derive(Clone, Debug)]
 pub struct AmqpFrame {
@@ -70,8 +66,6 @@ pub struct ContentHeader {
     pub body_size: u64,
     pub properties: BasicProperties,
 }
-
-// ─── Frame Encoding ───────────────────────────────────
 
 /// Writes the 7-byte AMQP frame header (type + channel + size) directly
 /// into a pre-allocated buffer using a single memcpy. Avoids per-field
@@ -146,8 +140,6 @@ pub fn heartbeat_bytes() -> &'static [u8; 8] {
 pub fn encode_heartbeat() -> Vec<u8> {
     HEARTBEAT_FRAME.to_vec()
 }
-
-// ─── Frame Decoding ───────────────────────────────────
 
 #[inline]
 pub fn decode_frame(data: &[u8]) -> io::Result<(AmqpFrame, usize)> {
@@ -250,8 +242,6 @@ pub fn split_body_frames(channel: u16, body: &[u8], frame_max: u32) -> Vec<Vec<u
         .map(|chunk| encode_body_frame(channel, chunk))
         .collect()
 }
-
-// ─── Tests ─────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

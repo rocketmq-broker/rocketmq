@@ -22,8 +22,6 @@
 //! These correspond exactly to the AMQP 0-9-1 specification.
 //! Class IDs are u16, method IDs are u16.
 
-// ─── Class IDs ─────────────────────────────────────────
-
 pub const CLASS_CONNECTION: u16 = 10;
 pub const CLASS_CHANNEL: u16 = 20;
 pub const CLASS_EXCHANGE: u16 = 40;
@@ -31,8 +29,6 @@ pub const CLASS_QUEUE: u16 = 50;
 pub const CLASS_BASIC: u16 = 60;
 pub const CLASS_CONFIRM: u16 = 85;
 pub const CLASS_TX: u16 = 90;
-
-// ─── Connection (class 10) ────────────────────────────
 
 pub const METHOD_CONNECTION_START: u16 = 10;
 pub const METHOD_CONNECTION_START_OK: u16 = 11;
@@ -45,16 +41,12 @@ pub const METHOD_CONNECTION_OPEN_OK: u16 = 41;
 pub const METHOD_CONNECTION_CLOSE: u16 = 50;
 pub const METHOD_CONNECTION_CLOSE_OK: u16 = 51;
 
-// ─── Channel (class 20) ───────────────────────────────
-
 pub const METHOD_CHANNEL_OPEN: u16 = 10;
 pub const METHOD_CHANNEL_OPEN_OK: u16 = 11;
 pub const METHOD_CHANNEL_FLOW: u16 = 20;
 pub const METHOD_CHANNEL_FLOW_OK: u16 = 21;
 pub const METHOD_CHANNEL_CLOSE: u16 = 40;
 pub const METHOD_CHANNEL_CLOSE_OK: u16 = 41;
-
-// ─── Exchange (class 40) ──────────────────────────────
 
 pub const METHOD_EXCHANGE_DECLARE: u16 = 10;
 pub const METHOD_EXCHANGE_DECLARE_OK: u16 = 11;
@@ -64,8 +56,6 @@ pub const METHOD_EXCHANGE_BIND: u16 = 30;
 pub const METHOD_EXCHANGE_BIND_OK: u16 = 31;
 pub const METHOD_EXCHANGE_UNBIND: u16 = 50;
 pub const METHOD_EXCHANGE_UNBIND_OK: u16 = 51;
-
-// ─── Queue (class 50) ─────────────────────────────────
 
 pub const METHOD_QUEUE_DECLARE: u16 = 10;
 pub const METHOD_QUEUE_DECLARE_OK: u16 = 11;
@@ -77,8 +67,6 @@ pub const METHOD_QUEUE_DELETE: u16 = 40;
 pub const METHOD_QUEUE_DELETE_OK: u16 = 41;
 pub const METHOD_QUEUE_UNBIND: u16 = 50;
 pub const METHOD_QUEUE_UNBIND_OK: u16 = 51;
-
-// ─── Basic (class 60) ─────────────────────────────────
 
 pub const METHOD_BASIC_QOS: u16 = 10;
 pub const METHOD_BASIC_QOS_OK: u16 = 11;
@@ -99,12 +87,8 @@ pub const METHOD_BASIC_RECOVER: u16 = 110;
 pub const METHOD_BASIC_RECOVER_OK: u16 = 111;
 pub const METHOD_BASIC_NACK: u16 = 120;
 
-// ─── Confirm (class 85) ───────────────────────────────
-
 pub const METHOD_CONFIRM_SELECT: u16 = 10;
 pub const METHOD_CONFIRM_SELECT_OK: u16 = 11;
-
-// ─── Tx (class 90) ────────────────────────────────────
 
 pub const METHOD_TX_SELECT: u16 = 10;
 pub const METHOD_TX_SELECT_OK: u16 = 11;
@@ -112,8 +96,6 @@ pub const METHOD_TX_COMMIT: u16 = 20;
 pub const METHOD_TX_COMMIT_OK: u16 = 21;
 pub const METHOD_TX_ROLLBACK: u16 = 30;
 pub const METHOD_TX_ROLLBACK_OK: u16 = 31;
-
-// ─── AMQP Reply Codes ─────────────────────────────────
 
 pub const REPLY_SUCCESS: u16 = 200;
 pub const CONTENT_TOO_LARGE: u16 = 311;

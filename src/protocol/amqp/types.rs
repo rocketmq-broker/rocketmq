@@ -56,8 +56,6 @@ pub enum FieldValue {
     Void,
 }
 
-// ─── Reading ───────────────────────────────────────────
-
 /// Reads a single unsigned byte (`AMQP octet`) from the stream.
 #[inline(always)]
 pub fn read_octet(r: &mut impl Read) -> io::Result<u8> {
@@ -146,8 +144,6 @@ pub fn read_field_value(r: &mut impl Read) -> io::Result<FieldValue> {
         )),
     }
 }
-
-// ─── Writing ───────────────────────────────────────────
 
 /// Writes a single unsigned byte (`AMQP octet`) to the stream.
 #[inline(always)]
@@ -274,8 +270,6 @@ pub fn write_field_value(w: &mut impl Write, v: &FieldValue) -> io::Result<()> {
         FieldValue::Void => w.write_u8(b'V'),
     }
 }
-
-// ─── Tests ─────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

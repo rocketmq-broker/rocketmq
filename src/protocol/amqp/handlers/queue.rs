@@ -673,8 +673,6 @@ pub async fn handle_unbind(
     let _ = writer.flush().await;
 }
 
-// ─── Helpers ──────────────────────────────────────────
-
 async fn send_declare_ok(
     channel: u16,
     name: &str,

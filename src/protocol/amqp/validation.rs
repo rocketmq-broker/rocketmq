@@ -110,8 +110,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    // ── Channel validation ────────────────────────────
-
     #[test]
     fn connection_class_must_be_channel_zero() {
         assert!(validate_channel(1, CLASS_CONNECTION).is_some());
@@ -134,8 +132,6 @@ mod tests {
         assert!(validate_channel(2047, CLASS_BASIC).is_none());
     }
 
-    // ── Frame type validation ─────────────────────────
-
     #[test]
     fn valid_frame_types() {
         assert!(validate_frame_type(FRAME_METHOD).is_none());
@@ -153,8 +149,6 @@ mod tests {
         assert!(validate_frame_type(255).is_some());
     }
 
-    // ── Frame size validation ─────────────────────────
-
     #[test]
     fn frame_size_within_limit() {
         assert!(validate_frame_size(100, 131072).is_none());
@@ -170,8 +164,6 @@ mod tests {
     fn frame_size_unlimited() {
         assert!(validate_frame_size(1_000_000, 0).is_none());
     }
-
-    // ── Channel number validation ─────────────────────
 
     #[test]
     fn channel_number_within_limit() {
@@ -189,8 +181,6 @@ mod tests {
         assert!(validate_channel_number(65535, 0).is_none());
     }
 
-    // ── Heartbeat validation ──────────────────────────
-
     #[test]
     fn heartbeat_valid() {
         assert!(validate_heartbeat(0, 0).is_none());
@@ -205,8 +195,6 @@ mod tests {
     fn heartbeat_non_empty() {
         assert!(validate_heartbeat(0, 5).is_some());
     }
-
-    // ── Content channel validation ────────────────────
 
     #[test]
     fn content_on_channel_zero_invalid() {
