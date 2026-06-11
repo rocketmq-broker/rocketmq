@@ -28,6 +28,7 @@ pub async fn spawn_listener(
     let listener = TcpListener::bind(addr).await?;
     let protocol_name = adapter.name();
 
+    // TODO: too nested code
     if let Some(acceptor) = tls_acceptor {
         info!("{} (TLS) on {}", protocol_name, addr);
         tokio::spawn(async move {

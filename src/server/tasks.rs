@@ -174,6 +174,7 @@ async fn wal_compact_task(broker: Broker) {
             }
 
             let mut acked_ids: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
             for entry in &entries {
                 if entry.entry_type == EntryType::Ack && entry.data.len() >= 8 {
                     let msg_id = u64::from_be_bytes(entry.data[..8].try_into().unwrap());
@@ -191,6 +192,7 @@ async fn wal_compact_task(broker: Broker) {
                 return None;
             }
 
+            // TODO: Too nested code
             for entry in &entries {
                 match entry.entry_type {
                     EntryType::Enqueue => {
