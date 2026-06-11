@@ -35,7 +35,6 @@ use tracing::{info, warn};
 
 use crate::protocol::amqp::codec::*;
 use crate::protocol::amqp::method::*;
-use crate::protocol::amqp::session::ConnectionState;
 use crate::protocol::amqp::types::*;
 use crate::state::Broker;
 
@@ -100,16 +99,10 @@ pub async fn perform_handshake(
         "SASL PLAIN authenticated"
     );
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            cs.username = username.clone();
-            cs.authenticated = true;
-        }
-    }
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.username = username.clone();
+        cs.authenticated = true;
+    });
 
     let tune_args =
         build_connection_tune(DEFAULT_CHANNEL_MAX, DEFAULT_FRAME_MAX, DEFAULT_HEARTBEAT);
@@ -127,17 +120,11 @@ pub async fn perform_handshake(
     }
 
     let (channel_max, frame_max, heartbeat) = parse_tune_ok(&method.arguments)?;
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            cs.channel_max = channel_max;
-            cs.frame_max = frame_max;
-            cs.heartbeat = heartbeat;
-        }
-    }
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.channel_max = channel_max;
+        cs.frame_max = frame_max;
+        cs.heartbeat = heartbeat;
+    });
     info!(
         conn_id,
         channel_max, frame_max, heartbeat, "tune negotiated"
@@ -166,17 +153,10 @@ pub async fn perform_handshake(
         return Err(());
     }
 
-    let username = broker
-        .conn_state
-        .get(&conn_id)
-        .and_then(|guard| {
-            guard
-                .value()
-                .as_any()
-                .downcast_ref::<ConnectionState>()
-                .map(|cs| cs.username.clone())
-        })
-        .unwrap_or_default();
+    let username = crate::protocol::amqp::session::with_conn_state_ref(broker, conn_id, |cs| {
+        cs.username.clone()
+    })
+    .unwrap_or_default();
     if !broker.auth.check_vhost_access(&username, &vhost) {
         warn!(
             conn_id,
@@ -196,15 +176,9 @@ pub async fn perform_handshake(
         return Err(());
     }
 
-    if let Some(mut cs_guard) = broker.conn_state.get_mut(&conn_id) {
-        if let Some(cs) = cs_guard
-            .value_mut()
-            .as_any_mut()
-            .downcast_mut::<ConnectionState>()
-        {
-            cs.vhost = vhost.clone();
-        }
-    }
+    crate::protocol::amqp::session::with_conn_state(broker, conn_id, |cs| {
+        cs.vhost = vhost.clone();
+    });
 
     let open_ok_args = build_connection_open_ok();
     let open_ok_frame = encode_method_frame(
@@ -239,8 +213,6 @@ pub fn build_connection_close(
 pub fn build_connection_close_ok() -> Vec<u8> {
     Vec::new()
 }
-
-// ─── Internal builders ────────────────────────────────
 
 /// Builds the `Connection.Start` frame sent to the client during
 /// the AMQP handshake, advertising server capabilities and
